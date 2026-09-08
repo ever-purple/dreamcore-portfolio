@@ -1,0 +1,105 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: 'JheriCurls';
+  src: url('/fonts/JheriCurls.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@layer base {
+  :root {
+    --background: 350 80% 17%;
+    --foreground: 40 20% 93%;
+    --card: 350 60% 12%;
+    --card-foreground: 40 20% 93%;
+    --popover: 350 60% 12%;
+    --popover-foreground: 40 20% 93%;
+    --primary: 40 20% 93%;
+    --primary-foreground: 350 80% 17%;
+    --secondary: 350 40% 22%;
+    --secondary-foreground: 40 20% 93%;
+    --muted: 350 30% 25%;
+    --muted-foreground: 40 10% 70%;
+    --accent: 350 40% 22%;
+    --accent-foreground: 40 20% 93%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 350 30% 28%;
+    --input: 350 30% 28%;
+    --ring: 40 20% 93%;
+    --radius: 0.625rem;
+    --sidebar-background: 350 80% 17%;
+    --sidebar-foreground: 40 20% 93%;
+    --sidebar-primary: 40 20% 93%;
+    --sidebar-primary-foreground: 350 80% 17%;
+    --sidebar-accent: 350 40% 22%;
+    --sidebar-accent-foreground: 40 20% 93%;
+    --sidebar-border: 350 30% 28%;
+    --sidebar-ring: 40 20% 93%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    scroll-behavior: auto;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body {
+    @apply bg-wine text-cream font-body overflow-x-hidden;
+  }
+}
+
+@layer components {
+  .text-shadow-soft {
+    text-shadow: 0 2px 20px rgba(0, 0, 0, 0.35);
+  }
+
+  .glass-nav {
+    @apply backdrop-blur-md bg-black/20 border-b border-white/10;
+  }
+
+  .nav-link {
+    @apply relative text-xs tracking-[0.2em] uppercase text-cream/80 font-body font-medium transition-colors duration-300 hover:text-cream;
+  }
+
+  .nav-link::after {
+    content: '';
+    @apply absolute left-0 -bottom-1 w-0 h-px bg-cream transition-all duration-300;
+  }
+
+  .nav-link:hover::after {
+    @apply w-full;
+  }
+
+  .noise-overlay {
+    position: fixed;
+    top: -50%;
+    left: -50%;
+    right: -50%;
+    bottom: -50%;
+    width: 200%;
+    height: 200%;
+    pointer-events: none;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+    opacity: 0.04;
+    animation: grain 8s steps(10) infinite;
+    z-index: 9999;
+  }
+}
+
+/* Hide scrollbar for immersive experience */
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

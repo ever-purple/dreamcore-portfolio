@@ -22,16 +22,16 @@ npm run preview  # 预览构建产物
 
 > 已锁定 `package-lock.json`，在任意装了 Node ≥ 20.19 的终端执行 `npm install && npm run dev` 即可运行。
 
-## 序列帧（运行时资源，不入库）
+## 序列帧（已入库）
 
-首页依赖 `public/frames/0001.jpg … 0120.jpg`（约 64 MB），为可复现的大体积资源，**不纳入 git**。克隆后需自行生成：
+首页依赖 `public/frames/0001.jpg … 0120.jpg`（共 120 张，约 64 MB）。**这些帧已提交进仓库**，克隆后开箱即可看到滚动动画，无需额外步骤。
+
+如需自行重新生成（例如换了源视频），可用脚本：
 
 ```bash
 pip install "imageio[ffmpeg]" Pillow
 python scripts/extract_frames.py "<源视频>.mp4" public/frames 120 --width 2560 --quality 95
 ```
-
-未生成帧时页面仍可正常构建/启动（仅滚动区域为黑底，加载页与 OPEN 交互不受影响）。
 
 ## 目录结构
 

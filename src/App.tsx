@@ -2,7 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Lenis from 'lenis';
 import { LoadingScreen } from '@/components/LoadingScreen';
 import { HomeSection } from '@/sections/HomeSection';
+import { StudioSection } from '@/sections/StudioSection';
 import { useImagePreloader } from '@/hooks/useImagePreloader';
+import type { StudioObject } from '@/data/studio';
 import 'lenis/dist/lenis.css';
 import './App.css';
 
@@ -14,6 +16,10 @@ const frameUrls = Array.from(
 
 function App() {
   const [entered, setEntered] = useState(false);
+  // ?studio=1 可跳过首页直接预览工作室（真实流程：滚到 90% 点 OPEN 进入）
+  const [stage, setStage] = useState<'home' | 'studio'>(() =>
+    new URLSearchParams(window.location.search).has('studio') ? 'studio' : 'home',
+  );
   const { complete, images } = useImagePreloader(frameUrls, true);
 
   const lenisRef = useRef<Lenis | null>(null);
@@ -31,7 +37,7 @@ function App() {
       smoothWheel: true,
       wheelMultiplier: 1,
       touchMultiplier: 1.6,
-      // 首页播放到 100% 时拦截“继续向下”，向上仍然放行
+      // 首页播放到 100% 时拦截"继续向下"，向上仍然放行
       virtualScroll: (data) => {
         if (downBlockedRef.current && data.deltaY > 0) return false;
         return true;
@@ -61,23 +67,44 @@ function App() {
     else lenis.stop();
   }, [entered]);
 
+  // 工作室是整屏，无需滚动
+  useEffect(() => {
+    const lenis = lenisRef.current;
+    if (!lenis) return;
+    if (stage === 'studio') lenis.stop();
+    else if (entered) lenis.start();
+  }, [stage, entered]);
+
   const setDownBlocked = useCallback((blocked: boolean) => {
     downBlockedRef.current = blocked;
   }, []);
 
-  // 本仓库仅包含「加载页 + 首页」。OPEN 之后的房间内容在完整项目（app/）中。
-  const handleOpen = useCallback(() => {}, []);
+  // 开门 → 进入工作室
+  const handleOpen = useCallback(() => {
+    setStage('studio');
+  }, []);
+
+  const handleSelectObject = useCallback((object: StudioObject) => {
+    // 第一步仅做鼠标视差；原地浮层在下一步接入
+    console.log('[studio] select object:', object.id, '→', object.target);
+  }, []);
 
   return (
     <div className="relative min-h-screen bg-wine">
-      <LoadingScreen ready={complete} onEnter={handleEnter} />
-      <HomeSection
-        images={images}
-        complete={complete}
-        entered={entered}
-        onOpen={handleOpen}
-        setDownBlocked={setDownBlocked}
-      />
+      {stage === 'home' ? (
+        <>
+          <LoadingScreen ready={complete} onEnter={handleEnter} />
+          <HomeSection
+            images={images}
+            complete={complete}
+            entered={entered}
+            onOpen={handleOpen}
+            setDownBlocked={setDownBlocked}
+          />
+        </>
+      ) : (
+        <StudioSection onSelectObject={handleSelectObject} />
+      )}
       {/* 全局胶片颗粒叠层 */}
       <div className="noise-overlay" />
     </div>

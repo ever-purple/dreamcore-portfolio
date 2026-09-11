@@ -17,26 +17,30 @@ export type StudioObject = {
 export const studioObjects: StudioObject[] = [
   {
     id: 'computer',
-    name: 'Computer',
-    target: 'About Me · 个人信息',
-    point: { x: 12, y: 47.5 },
+    name: 'About Me',
+    target: '个人信息',
+    // 14.5 / 46.5 不是估的：把 studio-loop 的画帧画到 canvas 上逐点读亮度扫出来的
+    // （屏幕是画面里最暗的那条竖带，x 13.4~15.9%、y 37~56%）。
+    // 这个点同时是感应区圆心、脉冲点、以及"镜头扎进屏幕"的 transform-origin ——
+    // 错 1%，放大 12 倍之后终点就偏 12% 的视口宽，所以必须压在屏幕正中。
+    point: { x: 14.5, y: 46.5 },
   },
   {
     id: 'notebook',
-    name: 'Notebook',
-    target: 'Thinking / Process · 实习与思考',
+    name: 'Thinking / Process',
+    target: '实习与思考',
     point: { x: 61.5, y: 86 },
   },
   {
     id: 'carousel',
-    name: 'Carousel',
-    target: 'Works · 策划项目',
+    name: 'Works',
+    target: '策划项目',
     point: { x: 53.5, y: 40.5 },
   },
   {
     id: 'newsstand',
-    name: 'Newsstand',
-    target: 'Creative Lab · 视频与 AI 作品',
+    name: 'Creative Lab',
+    target: '视频与 AI 作品',
     point: { x: 86.5, y: 40 },
   },
 ];

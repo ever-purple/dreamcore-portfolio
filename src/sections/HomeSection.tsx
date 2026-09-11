@@ -12,6 +12,16 @@ const TOTAL_FRAMES = 120;
 // OPEN / bell trigger at 90% scroll progress
 const THRESHOLD_FRAME = Math.floor(0.9 * (TOTAL_FRAMES - 1)); // 107
 
+// 站点级单例：铃声音频在整个会话内常驻，组件卸载后也能播完，保证用户一定听到
+let sharedBell: HTMLAudioElement | null = null;
+function getBell(): HTMLAudioElement {
+  if (!sharedBell) {
+    sharedBell = new Audio('/bell.mp3');
+    sharedBell.preload = 'auto';
+  }
+  return sharedBell;
+}
+
 export function HomeSection({ images, complete, entered, onOpen, setDownBlocked }: HomeSectionProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -25,15 +35,11 @@ export function HomeSection({ images, complete, entered, onOpen, setDownBlocked 
   const portfolioRef = useRef<HTMLDivElement>(null);
 
   const [showOpen, setShowOpen] = useState(false);
+  const [leaving, setLeaving] = useState(false);
 
-  // Prepare the bell sound
+  // Prepare the bell sound (played on OPEN click — a guaranteed user gesture)
   useEffect(() => {
-    const audio = new Audio('/bell.mp3');
-    audio.preload = 'auto';
-    bellRef.current = audio;
-    return () => {
-      bellRef.current = null;
-    };
+    bellRef.current = getBell();
   }, []);
 
   // Resize canvas to match viewport at device pixel ratio
@@ -130,11 +136,10 @@ export function HomeSection({ images, complete, entered, onOpen, setDownBlocked 
         setDownBlocked(atEnd);
       }
 
-      // OPEN + bell whenever we (re)arrive at the 90% frame
+      // OPEN button appears at 90% (the bell now rings on OPEN click, see handleOpen)
       const atThreshold = targetFrameRef.current >= THRESHOLD_FRAME;
       if (atThreshold && !wasAtThresholdRef.current) {
         setShowOpen(true);
-        bellRef.current?.play().catch(() => {});
       } else if (!atThreshold && wasAtThresholdRef.current) {
         setShowOpen(false);
       }
@@ -178,12 +183,24 @@ export function HomeSection({ images, complete, entered, onOpen, setDownBlocked 
   }, [complete, images]);
 
   const handleOpen = () => {
-    onOpen();
+    // 点击 OPEN 是用户手势，播放铃声一定被允许
+    const a = bellRef.current;
+    if (a) {
+      a.currentTime = 0;
+      a.play().catch(() => {});
+    }
+    // 旧页面先淡出（300ms），快消失时由 App 的 flash 白光接手
+    setLeaving(true);
+    window.setTimeout(onOpen, 350);
   };
 
   return (
     <section id="home" ref={containerRef} className="relative h-[300vh]">
-      <div className="sticky top-0 h-screen w-full overflow-hidden bg-[#0a0a0a]">
+      <div
+        className={`sticky top-0 h-screen w-full overflow-hidden bg-[#0a0a0a] transition-opacity duration-300 ${
+          leaving ? 'opacity-0' : 'opacity-100'
+        }`}
+      >
         <canvas
           ref={canvasRef}
           className="absolute inset-0 w-full h-full"

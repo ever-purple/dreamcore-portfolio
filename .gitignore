@@ -23,3 +23,10 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 .idea
+
+# 本地 CDP / 构建临时目录
+_edgetmp*/
+_dist_old*/
+_shots/
+_park/
+_replay/

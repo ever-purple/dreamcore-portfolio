@@ -10,7 +10,6 @@ import { AboutInspiration } from '@/components/AboutInspiration';
 import { AboutGuestbook } from '@/components/AboutGuestbook';
 import { AboutVisitor } from '@/components/AboutVisitor';
 import { GreenOsBar, GreenOsBoot, GreenOsTitle } from '@/components/GreenOs';
-import { AdminProvider } from '@/context/AdminContext';
 import { PlayerProvider } from '@/context/PlayerContext';
 import { aboutNav } from '@/data/about';
 
@@ -117,7 +116,6 @@ export function AboutOverlay({ open, onClose, onHoverChange, greenOs = false, bo
 
   return (
     <PlayerProvider>
-    <AdminProvider>
     <div
       ref={overlayRef}
       className={`about-overlay${visible ? ' is-visible' : ''}${closing ? ' is-closing' : ''}${
@@ -272,7 +270,6 @@ export function AboutOverlay({ open, onClose, onHoverChange, greenOs = false, bo
       {/* 桌宠：可拖动、可挥手蹦跳（fixed 定位，浮在内容之上） */}
       <AboutPet dockRef={dockRef} onHoverChange={onHoverChange} />
     </div>
-    </AdminProvider>
     </PlayerProvider>
   );
 }

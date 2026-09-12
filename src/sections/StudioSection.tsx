@@ -1,8 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { AboutOverlay } from '@/components/AboutOverlay';
 import { CrtOverlay } from '@/components/GreenOs';
 import { ObjectZone } from '@/components/ObjectZone';
 import { NotebookOverlay } from '@/components/NotebookOverlay';
+
+/**
+ * 木马策划案：Three.js 场景很重，必须懒加载成独立分包。
+ * 悬停木马感应区时预先取包（同 MascotViewer 的做法），点开就不用等。
+ */
+const WorksCarousel = lazy(() => import('@/components/WorksCarousel'));
 import { StudioMenu } from '@/components/StudioMenu';
 import { studioObjects, type StudioObject } from '@/data/studio';
 import { playCrtOff, playCrtOn } from '@/lib/crtAudio';
@@ -44,6 +50,7 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
   const [hoveredId, setHoveredId] = useState<StudioObject['id'] | null>(null);
   const [notebookOpen, setNotebookOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [worksOpen, setWorksOpen] = useState(false);
   // ?about=1 / ?greenos=1 / #about 可直接预览。
   // greenos / crt 也顺带把页面打开 —— 否则想看 Green OS 外观还得写两个参数。
   const [aboutOpen, setAboutOpen] = useState(() => {
@@ -240,12 +247,14 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
   const handleSelect = useCallback(
     (object: StudioObject) => {
       // 进入 About Me（电脑物件）不再播放工作室背景音乐；子页导航同样停；
-      // 只有笔记本浮层保持音乐继续。回到工作室时由各自的 onClose → resumeMusic() 恢复。
-      if (object.id !== 'notebook') {
+      // 笔记本与木马都算"还在工作室里"，音乐继续放着。
+      // 回到工作室时由各自的 onClose → resumeMusic() 恢复。
+      if (object.id !== 'notebook' && object.id !== 'carousel') {
         stopMusic();
       }
       if (object.id === 'notebook') setNotebookOpen(true);
       if (object.id === 'computer') openCrt();
+      if (object.id === 'carousel') setWorksOpen(true);
       onSelectObject?.(object);
     },
     [onSelectObject, openCrt, stopMusic],
@@ -255,6 +264,12 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
   useEffect(() => {
     if (hoveredId !== 'computer') return;
     void import('@/components/MascotViewer');
+  }, [hoveredId]);
+
+  // 同理：悬停木马就预取 3D 木马分包（它比小人还重，Three.js 场景 + OrbitControls）
+  useEffect(() => {
+    if (hoveredId !== 'carousel') return;
+    void import('@/components/WorksCarousel');
   }, [hoveredId]);
 
   // URL 同步：打开时 #about；Green OS 模式下同时写入 ?greenos=1，
@@ -374,6 +389,13 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
           openCrtDirect();
         }}
       />
+
+      {/* 木马策划案（点旋转木马物件 → 原地展开 3D 木马，策划案挂在上面） */}
+      {worksOpen ? (
+        <Suspense fallback={null}>
+          <WorksCarousel open={worksOpen} onClose={() => setWorksOpen(false)} />
+        </Suspense>
+      ) : null}
 
       {/* 镜头穿入屏幕时，电脑屏幕上溢出的那团光（跟着一起被放大到糊满全屏） */}
       {dive === 'in' ? (

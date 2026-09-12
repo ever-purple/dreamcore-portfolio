@@ -1,18 +1,102 @@
-import { createContext, useContext, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
 import { IS_ADMIN } from '@/config';
 
 /**
- * 权限上下文：把「当前是不是作者」往下传。
- * 灵感收藏面板用它决定显不显示上传框 / 删除按钮；
- * 以后其它面板（留言板管理、角色卡编辑……）也能直接 useAdmin() 复用，不用各写一遍。
+ * 作者 / 访客 模式的唯一来源（Single Source of Truth）。
+ *
+ * 背景：以前各面板各写各的，导致「3D 木马是作者模式、Green OS 是访客模式」这种
+ * 不一致。现在全站只认这里的 isAdmin —— 木马「＋提交项目」、「编辑项目」、
+ * About「灵感收藏」的上传/删除，全都走 useAdmin()，切一次模式整站同步。
+ *
+ * 初始值优先级：URL ?admin=1/0  >  localStorage 记忆  >  config 兜底(IS_ADMIN)
+ * 切换时写回 URL + localStorage，刷新后保持。
  */
-const AdminCtx = createContext<boolean>(IS_ADMIN);
+const STORAGE_KEY = 'dreamcore:mode';
+
+export type AdminMode = 'author' | 'guest';
+
+export type AdminState = {
+  /** true = 作者（可编辑）；false = 访客（纯只读） */
+  isAdmin: boolean;
+  mode: AdminMode;
+  setMode: (next: boolean) => void;
+  toggle: () => void;
+};
+
+function readInitialMode(): boolean {
+  if (typeof window === 'undefined') return IS_ADMIN;
+  const url = new URLSearchParams(window.location.search).get('admin');
+  if (url !== null) return url !== '0';
+  try {
+    const saved = window.localStorage.getItem(STORAGE_KEY);
+    if (saved === '1') return true;
+    if (saved === '0') return false;
+  } catch {
+    /* 隐私模式 / 禁用存储时忽略 */
+  }
+  return IS_ADMIN;
+}
+
+function persistMode(isAdmin: boolean) {
+  try {
+    window.localStorage.setItem(STORAGE_KEY, isAdmin ? '1' : '0');
+  } catch {
+    /* 忽略 */
+  }
+  const url = new URL(window.location.href);
+  url.searchParams.set('admin', isAdmin ? '1' : '0');
+  window.history.replaceState(null, '', url.toString());
+}
+
+const AdminCtx = createContext<AdminState>({
+  isAdmin: IS_ADMIN,
+  mode: IS_ADMIN ? 'author' : 'guest',
+  setMode: () => {},
+  toggle: () => {},
+});
 
 export function AdminProvider({ children }: { children: ReactNode }) {
-  return <AdminCtx.Provider value={IS_ADMIN}>{children}</AdminCtx.Provider>;
+  const [isAdmin, setIsAdmin] = useState<boolean>(readInitialMode);
+
+  const setMode = useCallback((next: boolean) => {
+    setIsAdmin(next);
+    persistMode(next);
+  }, []);
+
+  const toggle = useCallback(() => {
+    setIsAdmin((prev) => {
+      const next = !prev;
+      persistMode(next);
+      return next;
+    });
+  }, []);
+
+  const value = useMemo<AdminState>(
+    () => ({
+      isAdmin,
+      mode: isAdmin ? 'author' : 'guest',
+      setMode,
+      toggle,
+    }),
+    [isAdmin, setMode, toggle],
+  );
+
+  return <AdminCtx.Provider value={value}>{children}</AdminCtx.Provider>;
 }
 
 /** true = 作者（可编辑）；false = 访客（纯只读） */
 export function useAdmin(): boolean {
+  return useContext(AdminCtx).isAdmin;
+}
+
+/** 需要「切换按钮」时用它拿 setMode / toggle / mode */
+export function useAdminMode(): AdminState {
   return useContext(AdminCtx);
 }

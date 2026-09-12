@@ -24,6 +24,12 @@ export default defineConfig({
       "three/addons/loaders/GLTFLoader.js",
       "three/addons/libs/meshopt_decoder.module.js",
       "three/addons/environments/RoomEnvironment.js",
+      // 木马策划案用的轨道控制器（同样是懒加载，同样要提前声明）
+      "three/addons/controls/OrbitControls.js",
+      // 木马装饰件合并几何体用（carousel-ornaments.ts）
+      "three/addons/utils/BufferGeometryUtils.js",
+      // PDF 首页作为木马相框封面
+      "pdfjs-dist",
     ],
   },
   server: {

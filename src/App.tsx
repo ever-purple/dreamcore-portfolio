@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Lenis from 'lenis';
 import { LoadingScreen } from '@/components/LoadingScreen';
+import { ModeSwitch } from '@/components/ModeSwitch';
 import { HomeSection } from '@/sections/HomeSection';
 import { StudioSection } from '@/sections/StudioSection';
 import { useImagePreloader } from '@/hooks/useImagePreloader';
@@ -146,6 +147,9 @@ function App() {
       {flash !== 'idle' && (
         <div className={`flash-burst${flash === 'fading' ? ' is-fading' : ''}`} />
       )}
+
+      {/* 作者 / 访客模式切换徽标：进入站点后常驻，全站唯一开关 */}
+      {entered && <ModeSwitch />}
 
       {/* 全局胶片颗粒叠层 */}
       <div className="noise-overlay" />

@@ -40,7 +40,7 @@ export const studioObjects: StudioObject[] = [
   {
     id: 'newsstand',
     name: 'Creative Lab',
-    target: '视频与 AI 作品',
+    target: '创作档案',
     point: { x: 86.5, y: 40 },
   },
 ];

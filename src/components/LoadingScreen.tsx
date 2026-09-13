@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import gsap from 'gsap';
 
 interface LoadingScreenProps {
   /** 序列帧是否预加载完成（与 0→100% 计时相互独立） */
@@ -14,6 +15,8 @@ export function LoadingScreen({ ready, onEnter }: LoadingScreenProps) {
   const [visible, setVisible] = useState(true);
   const startRef = useRef<number | null>(null);
   const rafRef = useRef<number>(0);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const counterRef = useRef<HTMLSpanElement>(null);
 
   // 纯时间驱动的进度：0 -> 100% 在 3 秒内匀速走完
   useEffect(() => {
@@ -45,9 +48,35 @@ export function LoadingScreen({ ready, onEnter }: LoadingScreenProps) {
     const timer = setTimeout(() => {
       setVisible(false);
       onEnter();
-    }, 800);
+    }, 900);
     return () => clearTimeout(timer);
   }, [leaving, onEnter]);
+
+  // 加载数字轻微"呼吸"——让静止的加载页也有生命感
+  useEffect(() => {
+    if (!counterRef.current) return;
+    const tween = gsap.to(counterRef.current, {
+      scale: 1.06,
+      duration: 2.4,
+      ease: 'sine.inOut',
+      yoyo: true,
+      repeat: -1,
+      transformOrigin: 'center',
+    });
+    return () => { tween.kill(); };
+  }, []);
+
+  // 离场：放大 + 模糊 + 淡出（dreamcore 的"呼出"转场），替代原 CSS opacity 过渡
+  useEffect(() => {
+    if (!leaving || !rootRef.current) return;
+    gsap.to(rootRef.current, {
+      scale: 1.08,
+      filter: 'blur(12px)',
+      opacity: 0,
+      duration: 0.9,
+      ease: 'power2.inOut',
+    });
+  }, [leaving]);
 
   if (!visible) return null;
 
@@ -55,11 +84,10 @@ export function LoadingScreen({ ready, onEnter }: LoadingScreenProps) {
 
   return (
     <div
-      className={`fixed inset-0 z-[100] bg-wine transition-opacity duration-700 ease-out ${
-        leaving ? 'opacity-0 pointer-events-none' : 'opacity-100'
-      }`}
+      ref={rootRef}
+      className={`fixed inset-0 z-[100] bg-wine ${leaving ? 'pointer-events-none' : ''}`}
     >
-      <span className="font-body font-bold text-8xl md:text-9xl text-cream tabular-nums absolute bottom-8 right-8">
+      <span ref={counterRef} className="font-body font-bold text-8xl md:text-9xl text-cream tabular-nums absolute bottom-8 right-8">
         {shown}%
       </span>
     </div>

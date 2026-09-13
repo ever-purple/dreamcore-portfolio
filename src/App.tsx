@@ -8,6 +8,7 @@ import { useImagePreloader } from '@/hooks/useImagePreloader';
 import type { StudioObject } from '@/data/studio';
 import 'lenis/dist/lenis.css';
 import './App.css';
+import gsap from 'gsap';
 
 const TOTAL_FRAMES = 120;
 const frameUrls = Array.from(
@@ -57,15 +58,13 @@ function App() {
     });
     lenisRef.current = lenis;
 
-    let raf = 0;
-    const loop = (time: number) => {
-      lenis.raf(time);
-      raf = requestAnimationFrame(loop);
-    };
-    raf = requestAnimationFrame(loop);
+    // GSAP 驱动 Lenis：用 gsap.ticker 统一帧循环，滚动更顺滑、更"活"
+    const tick = (time: number) => lenis.raf(time * 1000);
+    gsap.ticker.add(tick);
+    gsap.ticker.lagSmoothing(0);
 
     return () => {
-      cancelAnimationFrame(raf);
+      gsap.ticker.remove(tick);
       lenis.destroy();
       lenisRef.current = null;
     };
@@ -102,15 +101,14 @@ function App() {
     }
   }, []);
 
-  // 开门 → 进入工作室（白光过曝转场：旧页面快消失时闪一帧 90% 白光，再 0.4s 淡出）
+  // 开门 → 进入工作室（iris 转场：从门心绽放的圆形过曝铺满全屏，再 0.42s 淡出）
   const handleOpen = useCallback(() => {
     clearEntryHash(); // 回到工作室必须是"干净"的工作室，不自动弹 About
-    setFlash('on'); // 瞬间全屏 90% 白光
     setStage('studio'); // 旧页面消失、新页面就位（被白光盖住）
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => setFlash('fading')); // 下一帧开始 0.4s 平滑淡出
-    });
-    window.setTimeout(() => setFlash('idle'), 480);
+    setFlash('on'); // 从门心绽放的圆形过曝（iris-in）开始
+    // 先让花瓣展开到全屏（0.4s），再 0.42s 淡出露出工作室
+    window.setTimeout(() => setFlash('fading'), 400);
+    window.setTimeout(() => setFlash('idle'), 820);
   }, [clearEntryHash]);
 
   // 点击 MY STUDIO → 回到首页初始（滚动归零）

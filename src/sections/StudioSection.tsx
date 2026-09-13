@@ -9,7 +9,11 @@ import { NotebookOverlay } from '@/components/NotebookOverlay';
  * 悬停木马感应区时预先取包（同 MascotViewer 的做法），点开就不用等。
  */
 const WorksCarousel = lazy(() => import('@/components/WorksCarousel'));
+/** 报刊亭 → 创作档案（Creative Lab）3D 展架场景，同样懒加载成独立分包 */
+const NewsstandScene = lazy(() => import('@/components/NewsstandScene'));
 import { StudioMenu } from '@/components/StudioMenu';
+import { StudioLensBackground } from '@/components/StudioLensBackground';
+import { useMagnetic } from '@/hooks/useMagnetic';
 import { studioObjects, type StudioObject } from '@/data/studio';
 import { playCrtOff, playCrtOn } from '@/lib/crtAudio';
 
@@ -51,6 +55,11 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
   const [notebookOpen, setNotebookOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [worksOpen, setWorksOpen] = useState(false);
+  /** 报刊亭 → 创作档案 3D 展架场景开关（?newsstand=1 可直接预览） */
+  const [newsstandOpen, setNewsstandOpen] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.has('newsstand') || params.has('lab');
+  });
   // ?about=1 / ?greenos=1 / #about 可直接预览。
   // greenos / crt 也顺带把页面打开 —— 否则想看 Green OS 外观还得写两个参数。
   const [aboutOpen, setAboutOpen] = useState(() => {
@@ -90,6 +99,10 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
   const musicRef = useRef<HTMLAudioElement | null>(null);
   const musicStoppedRef = useRef(false);
   const timersRef = useRef<number[]>([]);
+
+  // 顶栏按钮磁吸：鼠标靠近时被轻轻吸向指针
+  const magneticBackRef = useMagnetic<HTMLButtonElement>();
+  const magneticMenuRef = useMagnetic<HTMLButtonElement>();
 
   const later = useCallback((ms: number, fn: () => void) => {
     timersRef.current.push(window.setTimeout(fn, ms));
@@ -255,6 +268,7 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
       if (object.id === 'notebook') setNotebookOpen(true);
       if (object.id === 'computer') openCrt();
       if (object.id === 'carousel') setWorksOpen(true);
+      if (object.id === 'newsstand') setNewsstandOpen(true);
       onSelectObject?.(object);
     },
     [onSelectObject, openCrt, stopMusic],
@@ -270,6 +284,12 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
   useEffect(() => {
     if (hoveredId !== 'carousel') return;
     void import('@/components/WorksCarousel');
+  }, [hoveredId]);
+
+  // 悬停报刊亭就预取 3D 展架分包，点开即用不等待
+  useEffect(() => {
+    if (hoveredId !== 'newsstand') return;
+    void import('@/components/NewsstandScene');
   }, [hoveredId]);
 
   // URL 同步：打开时 #about；Green OS 模式下同时写入 ?greenos=1，
@@ -313,17 +333,10 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
         className={`studio-cam${dive === 'in' ? ' is-in' : ''}${dive === 'out' ? ' is-out' : ''}`}
         style={{ transformOrigin: `${CRT_POINT.x}% ${CRT_POINT.y}%` }}
       >
-        <video
-          className="absolute inset-0 h-full w-full object-cover"
-          autoPlay
-          loop
-          muted
-          playsInline
-          preload="auto"
-          poster="/studio/studio-poster.jpg"
-        >
-          <source src="/studio/studio-loop.mp4" type="video/mp4" />
-        </video>
+        {/* 背景双层：底层 = 原始循环视频，上层 = LensDistortion 镜头畸变（fit=cover 铺满）；
+            鼠标滑过处用 CSS mask 挖一个软边圆洞露出底层清晰原图，形成水波般的揭示范围。
+            细节见 @/components/StudioLensBackground.tsx */}
+        <StudioLensBackground />
       </div>
 
       {/* 四个物件悬停感应区（隐形，中心为脉冲提醒点） */}
@@ -342,6 +355,7 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
       {/* 顶部导航 */}
       <header className="studio-topbar absolute inset-x-0 top-0 z-50 flex items-center justify-between p-6 md:p-8">
         <button
+          ref={magneticBackRef}
           type="button"
           onClick={() => {
             stopMusic();
@@ -352,6 +366,7 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
           MY STUDIO
         </button>
         <button
+          ref={magneticMenuRef}
           type="button"
           onClick={() => {
             if (menuOpen) resumeMusic(); // 关闭菜单 → 回到工作室，音乐继续
@@ -394,6 +409,19 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
       {worksOpen ? (
         <Suspense fallback={null}>
           <WorksCarousel open={worksOpen} onClose={() => setWorksOpen(false)} />
+        </Suspense>
+      ) : null}
+
+      {/* 报刊亭 → 创作档案（点报刊亭物件 → 原地展开 3D 绿锈展架，镜头推近 + 房间模糊） */}
+      {newsstandOpen ? (
+        <Suspense fallback={null}>
+          <NewsstandScene
+            open={newsstandOpen}
+            onClose={() => {
+              setNewsstandOpen(false);
+              resumeMusic(); // 关掉展架场景 → 回到工作室，音乐继续
+            }}
+          />
         </Suspense>
       ) : null}
 

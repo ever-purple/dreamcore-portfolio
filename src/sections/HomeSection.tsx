@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import gsap from 'gsap';
 
 interface HomeSectionProps {
   images: HTMLImageElement[];
@@ -33,6 +34,9 @@ export function HomeSection({ images, complete, entered, onOpen, setDownBlocked 
   const wasAtThresholdRef = useRef(false);
   const bellRef = useRef<HTMLAudioElement | null>(null);
   const portfolioRef = useRef<HTMLDivElement>(null);
+  const openBtnRef = useRef<HTMLButtonElement>(null);
+  const innerRef = useRef<HTMLDivElement>(null);
+  const portfolioLineRef = useRef<HTMLSpanElement>(null);
 
   const [showOpen, setShowOpen] = useState(false);
   const [leaving, setLeaving] = useState(false);
@@ -124,6 +128,11 @@ export function HomeSection({ images, complete, entered, onOpen, setDownBlocked 
       else if (p < IN_END) o = (p - IN_START) / (IN_END - IN_START);
       else o = 1 - (p - OUT_START) / (OUT_END - OUT_START);
       el.style.opacity = String(Math.max(0, Math.min(1, o)));
+      el.style.transform = `translateY(${(p - 0.5) * -28}px)`;
+
+      // 遮罩上滑揭示
+      const line = portfolioLineRef.current;
+      if (line) line.classList.toggle('is-revealed', o > 0.02);
     };
 
     const handleScroll = () => {
@@ -174,6 +183,57 @@ export function HomeSection({ images, complete, entered, onOpen, setDownBlocked 
     };
   }, [entered, complete, images, setDownBlocked]);
 
+  // 待机呼吸：房间在静止时也缓慢缩放，像在"呼吸"，消除死板感
+  useEffect(() => {
+    if (!entered || !complete || !canvasRef.current) return;
+    const tween = gsap.to(canvasRef.current, {
+      scale: 1.02,
+      duration: 6,
+      ease: 'sine.inOut',
+      yoyo: true,
+      repeat: -1,
+      transformOrigin: 'center center',
+    });
+    return () => { tween.kill(); };
+  }, [entered, complete]);
+
+  // OPEN 按钮：GSAP 弹性入场 + 磁吸跟随
+  useEffect(() => {
+    if (!showOpen) return;
+    const btn = openBtnRef.current;
+    const inner = innerRef.current;
+    if (!btn || !inner) return;
+
+    // 用 GSAP 接管 transform 来居中，替代 Tailwind 的 -translate
+    gsap.set(btn, { xPercent: -50, yPercent: -50 });
+    const enter = gsap.fromTo(
+      btn,
+      { opacity: 0, scale: 0.85 },
+      { opacity: 1, scale: 1, duration: 0.6, ease: 'back.out(1.6)' },
+    );
+
+    const onMove = (e: MouseEvent) => {
+      const r = btn.getBoundingClientRect();
+      const dx = e.clientX - (r.left + r.width / 2);
+      const dy = e.clientY - (r.top + r.height / 2);
+      const dist = Math.hypot(dx, dy);
+      if (dist < 180) {
+        gsap.to(btn, { x: dx * 0.3, y: dy * 0.3, duration: 0.4, ease: 'power2.out' });
+      } else {
+        gsap.to(btn, { x: 0, y: 0, duration: 0.5, ease: 'power2.out' });
+      }
+    };
+    const onLeave = () => gsap.to(btn, { x: 0, y: 0, duration: 0.5, ease: 'power2.out' });
+
+    inner.addEventListener('mousemove', onMove);
+    inner.addEventListener('mouseleave', onLeave);
+    return () => {
+      enter.kill();
+      inner.removeEventListener('mousemove', onMove);
+      inner.removeEventListener('mouseleave', onLeave);
+    };
+  }, [showOpen]);
+
   // Redraw whenever images array becomes fully populated
   useEffect(() => {
     if (complete && images.length === TOTAL_FRAMES) {
@@ -197,6 +257,7 @@ export function HomeSection({ images, complete, entered, onOpen, setDownBlocked 
   return (
     <section id="home" ref={containerRef} className="relative h-[300vh]">
       <div
+        ref={innerRef}
         className={`sticky top-0 h-screen w-full overflow-hidden bg-[#0a0a0a] transition-opacity duration-300 ${
           leaving ? 'opacity-0' : 'opacity-100'
         }`}
@@ -211,22 +272,28 @@ export function HomeSection({ images, complete, entered, onOpen, setDownBlocked 
         {/* Dark vignette overlay */}
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_30%,rgba(0,0,0,0.4)_100%)]" />
 
-        {/* "Portfolio" — fades in at 10%, fully out before OPEN (90%) */}
+        {/* "Portfolio" — 遮罩上滑揭示 + 淡入，10% 进场、90% 前离场 */}
         <div
           ref={portfolioRef}
           className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center"
           style={{ opacity: 0 }}
         >
-          <span className="font-jheri text-[#76F0CA] leading-none select-none whitespace-nowrap" style={{ fontSize: '16vw' }}>
-            Portfolio
+          <span className="reveal-mask" style={{ fontSize: '16vw' }}>
+            <span
+              ref={portfolioLineRef}
+              className="reveal-line font-jheri text-[#76F0CA] leading-[1.15] select-none whitespace-nowrap"
+            >
+              Portfolio
+            </span>
           </span>
         </div>
 
         {/* OPEN button at the center of the door (appears at 90%) */}
         {showOpen && (
           <button
+            ref={openBtnRef}
             onClick={handleOpen}
-            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-20 flex items-center justify-center px-10 py-4 border border-cream/70 bg-black/30 backdrop-blur-sm text-cream font-body text-base tracking-[0.5em] uppercase transition-all duration-500 animate-[fadeScale_0.6s_ease-out] hover:bg-cream hover:text-wine"
+            className="absolute left-1/2 top-1/2 z-20 flex items-center justify-center px-10 py-4 border border-cream/70 bg-black/30 backdrop-blur-sm text-cream font-body text-base tracking-[0.5em] uppercase transition-colors duration-500 hover:bg-cream hover:text-wine"
           >
             OPEN
           </button>

@@ -1,4 +1,5 @@
 import { useAdminMode } from '@/context/AdminContext';
+import { useMagnetic } from '@/hooks/useMagnetic';
 
 /**
  * 作者 / 访客模式切换徽标。
@@ -12,9 +13,12 @@ import { useAdminMode } from '@/context/AdminContext';
  */
 export function ModeSwitch() {
   const { isAdmin, toggle } = useAdminMode();
+  // 磁吸：鼠标靠近时徽标被轻轻吸向指针（触屏不启用）
+  const magneticRef = useMagnetic<HTMLButtonElement>();
 
   return (
     <button
+      ref={magneticRef}
       type="button"
       className={`mode-switch ${isAdmin ? 'is-author' : 'is-guest'}`}
       onClick={toggle}

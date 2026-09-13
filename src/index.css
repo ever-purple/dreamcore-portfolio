@@ -435,20 +435,39 @@
 }
 
 /* ===== Studio 全屏菜单：中英双语 + 十字辅助线 ===== */
-/* OPEN 转场：白光过曝（瞬间 90% 白 → 0.4s 平滑淡出） */
+/* OPEN 转场：从门心绽放的圆形过曝（iris-in）→ 0.42s 淡出，比平白闪一帧更有"推门而入"的仪式感 */
 .flash-burst {
   position: fixed;
   inset: 0;
   z-index: 999;
   pointer-events: none;
   background: #ffffff;
-  opacity: 0.9;
-  will-change: opacity;
+  clip-path: circle(140% at 50% 50%);
+  will-change: clip-path, opacity;
+  animation: iris-bloom 0.4s ease-out forwards;
 }
 .flash-burst.is-fading {
-  opacity: 0;
-  transition: opacity 0.4s ease-out;
+  animation: iris-fade 0.42s ease-out forwards;
 }
+@keyframes iris-bloom {
+  from { clip-path: circle(0% at 50% 50%); }
+  to   { clip-path: circle(140% at 50% 50%); }
+}
+@keyframes iris-fade {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+/* ===== 首页滚动文字遮罩揭示（Portfolio） ===== */
+/* overflow:hidden 按 padding box 裁剪 —— .reveal-mask 自带 16vw 字号（em 基于它算），
+   上下缓冲承接装饰字体夸张的花体上钩/下摆；等量负外边距抵消 padding 的布局影响 */
+.reveal-mask { display: block; overflow: hidden; padding: 0.3em 0; margin: -0.3em 0; }
+.reveal-line {
+  display: block;
+  transform: translateY(110%);
+  transition: transform 0.7s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.reveal-line.is-revealed { transform: translateY(0); }
 
 .studio-menu-overlay {
   position: fixed;
@@ -4706,6 +4725,201 @@
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* Studio 背景：底层镜头畸变 + 上层清晰原图，鼠标处「水波」揭示           */
+/* ------------------------------------------------------------------ */
+
+/* 水波半径可以走 CSS 过渡（Chromium 支持用 @property 过渡自定义属性） */
+@property --lens-r {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+
+/* 漂移向量。只用 2 个自定义属性驱动 4 个外瓣的漂移（见 .studio-lens-clear 里的
+   线性组合），而不是给每瓣各开 2 个 —— 自定义属性一旦变化，整条 mask-image
+   都要重新解析+重绘，8 个变 2 个直接省掉 3/4 的每帧开销（实测：8 个时软渲染
+   直接崩掉整页，2 个时正常）。必须先注册成 @property 才能在 keyframes 里动。 */
+@property --lens-dx { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@property --lens-dy { syntax: "<length>"; inherits: false; initial-value: 0px; }
+
+.studio-lens-root {
+  position: absolute;
+  inset: 0;
+  /* 背景层不接事件，物件的感应区在更上层 */
+  pointer-events: none;
+  --lens-x: 50%;
+  --lens-y: 50%;
+  /* 尾迹位置：由 StudioLensBackground.tsx 里更慢的一档跟随算出，用来拖出"水尾" */
+  --lens-tx: 50%;
+  --lens-ty: 50%;
+  /* ⚠️ 收起时**不能**用半径 0：半径为 0 的 radial-gradient 是退化渐变，
+     Chromium 会拿第一档颜色（不透明）铺满整层 → 清晰层会全屏盖住畸变层。
+     所以收起时保留一个小半径，可见性交给 opacity 控制。 */
+  --lens-r: 60px;
+}
+
+/* 两层都铺满 */
+.studio-lens-distort,
+.studio-lens-clear {
+  position: absolute;
+  inset: 0;
+}
+
+/* 上层里的原始视频 */
+.studio-lens-video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* 上层：清晰原视频。只有「水波」范围内不透明，其余地方透明 → 透出底层畸变。
+   ⚠️ 刻意不用单个正圆（用户否决"规则图形"），但也不许偏长条（用户第二轮：要"均匀一点"）。
+   → 5 个软斑叠加：中心近圆核心 + 4 个**半径相近、绕心距离相近、角间距不均**的外瓣。
+     CSS 多图层 mask 默认相加（union），叠出来是各个方向都被撑到的有机轮廓，没有主导长轴。
+   → 再加 2 个**半透明尾迹瓣**（跟更慢的 --lens-tx/--lens-ty）拖出"水尾"。
+   外瓣由 lens-drift-* 缓慢漂移 → 边界持续变形。漂移幅度刻意压小（±14~20px），
+   否则几瓣一拉开又会变回"长条"。
+   各瓣相对光标的位置和大小都按 --lens-r 等比缩放，所以张合时会整体长大/缩回。 */
+.studio-lens-clear {
+  --lens-dx: 0px;
+  --lens-dy: 0px;
+  -webkit-mask-image:
+    /* ① 核心：近圆，略大于外瓣（不再是横向扁椭圆 —— 那是"长条"的来源） */
+    radial-gradient(
+      ellipse calc(var(--lens-r) * 0.62) calc(var(--lens-r) * 0.58) at calc(var(--lens-x) + var(--lens-r) * 0.02)
+        calc(var(--lens-y) - var(--lens-r) * 0.03),
+      #000 0%,
+      rgba(0, 0, 0, 0.9) 60%,
+      rgba(0, 0, 0, 0) 100%
+    ),
+    /* ②③④⑤ 外瓣：半径 0.48~0.54、绕心距离都落在 0.43~0.48，但角间距不均匀
+       → 各个方向都被撑到（不偏长条），又保持不规则（不是圆） */
+    radial-gradient(
+      circle calc(var(--lens-r) * 0.54) at calc(var(--lens-x) + var(--lens-r) * 0.42 + var(--lens-dx))
+        calc(var(--lens-y) - var(--lens-r) * 0.08 + var(--lens-dy)),
+      #000 0%,
+      rgba(0, 0, 0, 0.84) 58%,
+      rgba(0, 0, 0, 0) 100%
+    ),
+    radial-gradient(
+      circle calc(var(--lens-r) * 0.52) at calc(var(--lens-x) - var(--lens-r) * 0.33 - var(--lens-dy))
+        calc(var(--lens-y) + var(--lens-r) * 0.29 + var(--lens-dx)),
+      #000 0%,
+      rgba(0, 0, 0, 0.82) 58%,
+      rgba(0, 0, 0, 0) 100%
+    ),
+    radial-gradient(
+      circle calc(var(--lens-r) * 0.53) at calc(var(--lens-x) - var(--lens-r) * 0.25 - var(--lens-dx) * 0.8)
+        calc(var(--lens-y) - var(--lens-r) * 0.4 - var(--lens-dy) * 0.8),
+      #000 0%,
+      rgba(0, 0, 0, 0.82) 58%,
+      rgba(0, 0, 0, 0) 100%
+    ),
+    radial-gradient(
+      circle calc(var(--lens-r) * 0.48) at calc(var(--lens-x) + var(--lens-r) * 0.12 + var(--lens-dy) * 0.8)
+        calc(var(--lens-y) + var(--lens-r) * 0.47 - var(--lens-dx) * 0.8),
+      #000 0%,
+      rgba(0, 0, 0, 0.78) 58%,
+      rgba(0, 0, 0, 0) 100%
+    ),
+    /* ⑥⑦ 尾迹：跟随更慢的 --lens-tx/--lens-ty，而且是**半透明**（alpha<1）
+       → 拖出来的是"半清晰"的水尾，越往后越淡。
+       ⑦ 再沿「主水波→尾迹」方向往外延一段：calc(tx*1.5 - x*0.5) 就是把尾迹点
+       沿该方向再推 0.5 倍距离，鼠标一甩尾巴就朝运动反方向甩出去。 */
+    radial-gradient(
+      circle calc(var(--lens-r) * 0.52) at var(--lens-tx) var(--lens-ty),
+      rgba(0, 0, 0, 0.55) 0%,
+      rgba(0, 0, 0, 0.42) 52%,
+      rgba(0, 0, 0, 0) 100%
+    ),
+    radial-gradient(
+      circle calc(var(--lens-r) * 0.36)
+        at calc(var(--lens-tx) * 1.5 - var(--lens-x) * 0.5) calc(var(--lens-ty) * 1.5 - var(--lens-y) * 0.5),
+      rgba(0, 0, 0, 0.34) 0%,
+      rgba(0, 0, 0, 0.22) 50%,
+      rgba(0, 0, 0, 0) 100%
+    );
+  mask-image:
+    radial-gradient(
+      ellipse calc(var(--lens-r) * 0.62) calc(var(--lens-r) * 0.58) at calc(var(--lens-x) + var(--lens-r) * 0.02)
+        calc(var(--lens-y) - var(--lens-r) * 0.03),
+      #000 0%,
+      rgba(0, 0, 0, 0.9) 60%,
+      rgba(0, 0, 0, 0) 100%
+    ),
+    radial-gradient(
+      circle calc(var(--lens-r) * 0.54) at calc(var(--lens-x) + var(--lens-r) * 0.42 + var(--lens-dx))
+        calc(var(--lens-y) - var(--lens-r) * 0.08 + var(--lens-dy)),
+      #000 0%,
+      rgba(0, 0, 0, 0.84) 58%,
+      rgba(0, 0, 0, 0) 100%
+    ),
+    radial-gradient(
+      circle calc(var(--lens-r) * 0.52) at calc(var(--lens-x) - var(--lens-r) * 0.33 - var(--lens-dy))
+        calc(var(--lens-y) + var(--lens-r) * 0.29 + var(--lens-dx)),
+      #000 0%,
+      rgba(0, 0, 0, 0.82) 58%,
+      rgba(0, 0, 0, 0) 100%
+    ),
+    radial-gradient(
+      circle calc(var(--lens-r) * 0.53) at calc(var(--lens-x) - var(--lens-r) * 0.25 - var(--lens-dx) * 0.8)
+        calc(var(--lens-y) - var(--lens-r) * 0.4 - var(--lens-dy) * 0.8),
+      #000 0%,
+      rgba(0, 0, 0, 0.82) 58%,
+      rgba(0, 0, 0, 0) 100%
+    ),
+    radial-gradient(
+      circle calc(var(--lens-r) * 0.48) at calc(var(--lens-x) + var(--lens-r) * 0.12 + var(--lens-dy) * 0.8)
+        calc(var(--lens-y) + var(--lens-r) * 0.47 - var(--lens-dx) * 0.8),
+      #000 0%,
+      rgba(0, 0, 0, 0.78) 58%,
+      rgba(0, 0, 0, 0) 100%
+    ),
+    radial-gradient(
+      circle calc(var(--lens-r) * 0.52) at var(--lens-tx) var(--lens-ty),
+      rgba(0, 0, 0, 0.55) 0%,
+      rgba(0, 0, 0, 0.42) 52%,
+      rgba(0, 0, 0, 0) 100%
+    ),
+    radial-gradient(
+      circle calc(var(--lens-r) * 0.36)
+        at calc(var(--lens-tx) * 1.5 - var(--lens-x) * 0.5) calc(var(--lens-ty) * 1.5 - var(--lens-y) * 0.5),
+      rgba(0, 0, 0, 0.34) 0%,
+      rgba(0, 0, 0, 0.22) 50%,
+      rgba(0, 0, 0, 0) 100%
+    );
+  /* 收起时不靠"半径=0"隐藏，而是整层淡出（见上面 --lens-r 的说明） */
+  opacity: 0;
+  transition:
+    opacity 380ms ease,
+    --lens-r 560ms cubic-bezier(0.22, 0.61, 0.36, 1);
+  /* 四瓣各自漂移：周期互质 → 轮廓组合一直在缓慢变形，不会周期性"复位" */
+  animation: lens-drift 9.1s ease-in-out infinite alternate;
+}
+
+/* 鼠标进入 → 清晰层淡入，同时水波半径从一个很小的值长大 */
+.studio-lens-root.is-revealing {
+  --lens-r: 190px;
+}
+.studio-lens-root.is-revealing .studio-lens-clear {
+  opacity: 1;
+}
+
+@keyframes lens-drift {
+  0%   { --lens-dx: -19px; --lens-dy: 9px; }
+  50%  { --lens-dx: 7px;   --lens-dy: -17px; }
+  100% { --lens-dx: 18px;  --lens-dy: 15px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .studio-lens-clear {
+    animation: none;
+    transition-duration: 1ms;
+  }
+}
+
 /* 屏幕里溢出的那团光：跟着被放大到糊满全屏，负责"穿进去"的那一下 */
 .studio-dive-core {
   position: absolute;
@@ -6048,8 +6262,13 @@ img {
 .mode-switch {
   position: fixed;
   top: 14px;
-  left: 50%;
-  transform: translateX(-50%);
+  /* 磁吸（GSAP）会写 inline transform，所以居中不能再用 translateX(-50%)，
+     否则 GSAP 读到的是已解析成 px 的偏移量、一 hover 就整体右移半个宽度。
+     改成 left/right 归零 + auto margin 居中，把 transform 通道完整让给 GSAP。 */
+  left: 0;
+  right: 0;
+  margin-inline: auto;
+  width: fit-content;
   z-index: 9999;
   display: inline-flex;
   align-items: center;
@@ -6067,15 +6286,16 @@ img {
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   box-shadow: 0 6px 22px rgba(0, 0, 0, 0.42);
+  /* 注意：不要把 transform 放进 transition —— GSAP 每帧都在写 transform，
+     CSS 过渡会和它打架产生抖动。位移全部交给 GSAP，hover 反馈改用阴影。 */
   transition:
     border-color 0.22s ease,
     background 0.22s ease,
-    box-shadow 0.22s ease,
-    transform 0.12s ease;
+    box-shadow 0.22s ease;
   user-select: none;
 }
-.mode-switch:hover { transform: translateX(-50%) translateY(-1px); }
-.mode-switch:active { transform: translateX(-50%) translateY(0); }
+.mode-switch:hover { box-shadow: 0 10px 28px rgba(0, 0, 0, 0.52); }
+.mode-switch:active { box-shadow: 0 4px 14px rgba(0, 0, 0, 0.42); }
 
 .mode-switch-dot {
   width: 8px;
@@ -6118,4 +6338,171 @@ img {
 @media (prefers-reduced-motion: reduce) {
   .mode-switch,
   .mode-switch-flip { transition: none; }
+}
+
+/* ============ 报刊亭 · 创作档案 3D 场景 ============ */
+.newsstand-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 270;
+  overflow: hidden;
+  background: transparent;
+  opacity: 0;
+  animation: ns-in 0.42s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+.newsstand-overlay.is-closing {
+  animation: ns-out 0.38s ease forwards;
+}
+@keyframes ns-in {
+  from { opacity: 0; transform: scale(1.03); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes ns-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* 磨砂玻璃背景：与旋转木马（works-overlay）完全同款 —— 把身后的工作室页面
+   高斯模糊糊掉，再压一层暖色径向渐变，保证 3D 展架读得清。 */
+.newsstand-overlay::before {
+  content: '';
+  position: absolute;
+  inset: -48px; /* 外扩，免得模糊把边缘的清晰画面漏进来 */
+  z-index: 0;
+  backdrop-filter: blur(26px) saturate(118%) brightness(0.72);
+  -webkit-backdrop-filter: blur(26px) saturate(118%) brightness(0.72);
+  background:
+    radial-gradient(ellipse at 50% 34%,
+      rgba(58, 44, 34, 0.28) 0%,
+      rgba(31, 23, 18, 0.58) 58%,
+      rgba(16, 12, 9, 0.8) 100%);
+}
+/* 磨砂颗粒：极淡的噪点，避免大面积模糊看起来像塑料 */
+.newsstand-overlay::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.15;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* 展架接地处的接触阴影：DOM 兜底，和 3D 阴影叠加，强化「踩在地上、不悬浮」 */
+.newsstand-contact {
+  position: absolute;
+  left: 50%;
+  bottom: 15%;
+  width: 54%;
+  height: 15%;
+  transform: translateX(-50%);
+  z-index: 1;
+  background: radial-gradient(ellipse 50% 50% at 50% 50%, rgba(0, 0, 0, 0.4) 0%, rgba(0, 0, 0, 0) 70%);
+  filter: blur(10px);
+  pointer-events: none;
+}
+
+/* 透明画布：只画展架 + 聚光灯，房间由底层 DOM 提供 */
+.newsstand-canvas-host {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+}
+.newsstand-canvas-host canvas {
+  display: block;
+  touch-action: none;
+}
+
+.newsstand-topbar {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 24px;
+}
+.newsstand-brand { display: flex; align-items: baseline; gap: 10px; }
+.newsstand-brand-zh {
+  color: #efe4cf;
+  font-size: 18px;
+  letter-spacing: 0.18em;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+}
+.newsstand-brand-en {
+  color: rgba(243, 233, 210, 0.55);
+  font-size: 11px;
+  letter-spacing: 0.22em;
+}
+.newsstand-btn {
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(243, 233, 210, 0.32);
+  background: rgba(20, 15, 11, 0.5);
+  color: #efe4cf;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  transition: border-color 0.2s, background 0.2s, color 0.2s;
+}
+.newsstand-btn:hover { border-color: rgba(243, 233, 210, 0.8); background: rgba(20, 15, 11, 0.85); }
+.newsstand-close { border-color: rgba(126, 232, 199, 0.5); color: #7ee8c7; }
+
+.newsstand-loading {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 4;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: rgba(243, 233, 210, 0.8);
+  font-size: 13px;
+  letter-spacing: 0.14em;
+}
+.newsstand-spinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(243, 233, 210, 0.25);
+  border-top-color: #7ee8c7;
+  animation: ns-spin 0.8s linear infinite;
+}
+@keyframes ns-spin { to { transform: rotate(360deg); } }
+
+.newsstand-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 32px;
+  z-index: 4;
+  transform: translateX(-50%);
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: rgba(20, 15, 11, 0.45);
+  border: 1px solid rgba(243, 233, 210, 0.18);
+  color: rgba(243, 233, 210, 0.82);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  pointer-events: none;
+  animation: ns-fade 0.4s ease both;
+}
+@keyframes ns-fade { from { opacity: 0; } to { opacity: 1; } }
+
+.newsstand-error {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 4;
+  transform: translate(-50%, -50%);
+  max-width: 320px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: rgba(178, 78, 62, 0.85);
+  color: #fffdf6;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  text-align: center;
 }

@@ -43,3 +43,7 @@ scripts/_pdftext_out.txt
 # 策划案 deck：58MB 超过 GitHub REST API 上限，推不上去，先留本地。
 # 需要入库时用 git add -f。详见 public/works/README.md
 public/works/*.pdf
+
+# 本地工作记忆与技能数据（不进公开仓库）
+.workbuddy/
+_cleanup-manifest.txt

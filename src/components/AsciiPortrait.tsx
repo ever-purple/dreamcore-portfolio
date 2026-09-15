@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { prefersReduced } from '@/lib/motion-pref';
 
 /** 生成噪点用的字符集（与 ascii-art.txt 本身使用的字符一致） */
 const GLYPHS = '#%*+-.:=';
@@ -91,7 +92,7 @@ export function AsciiPortrait({ src = '/about/ascii-art.txt', className }: Props
       if (el) el.textContent = text;
     };
 
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    if (prefersReduced()) {
       plain.forEach((line, i) => paint(i, line));
       setPhase('flow');
       return;

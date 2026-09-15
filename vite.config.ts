@@ -1,11 +1,14 @@
 import path from "path"
 import react from "@vitejs/plugin-react"
 import { defineConfig } from "vite"
+import { studioWriter } from "./studio-writer"
 
 // https://vite.dev/config/
 export default defineConfig({
   base: './',
-  plugins: [react()],
+  // studioWriter 只在 vite dev 下生效：给「作者模式」提供写回源码文件的通道
+  // （/__studio/save-work、/__studio/upload）。构建产物里不含任何写入能力。
+  plugins: [react(), studioWriter()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

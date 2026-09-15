@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { prefersReduced } from '@/lib/motion-pref';
 import { LensDistortion } from '@paper-design/shaders-react';
 
 /**
@@ -52,9 +53,7 @@ export function StudioLensBackground() {
     const STIFF_T = 0.008; // 尾迹刚度（越小拖得越长）
     const FRIC_T = 0.9;
 
-    const reduced =
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const reduced = prefersReduced();
 
     const target = { x: 0.5, y: 0.5 };
     const cur = { x: 0.5, y: 0.5 };

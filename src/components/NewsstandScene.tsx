@@ -8,6 +8,15 @@ import { BOOK_ROWS, createBook } from '@/lib/newsstandBooks';
 type Props = {
   open: boolean;
   onClose: () => void;
+  /**
+   * 点开架上物件（2026-09-15）。
+   * `row='devices'` = 第一排（顶层 DVD/DV/MP3）→ 视频与音乐；
+   * `row='books'`   = 第二排（下层三本书）→ 文案与 AI 项目。
+   * `index` = 设备在 DEVICE_SLOTS 里的序号（0 DVD / 1 DV / 2 MP3，即从左到右）。
+   * 用户规划三台设备各进一个片单（横屏 / AI / 竖屏），所以序号要带出去；
+   * 书架那边没有分流，固定传 0。
+   */
+  onPick?: (row: 'devices' | 'books', index: number) => void;
 };
 
 /** 展架适配后的目标高度（世界单位），相机距离都按它推导，避免依赖原始模型比例 */
@@ -156,7 +165,7 @@ const DEVICE_SCALE = 1.14;
  *    放倒的设备（MP3）同时**转正立起来**，移开平滑复位。
  *  · 右上角「关闭 ✕」/ Esc → 关闭浮层。
  */
-export default function NewsstandScene({ open, onClose }: Props) {
+export default function NewsstandScene({ open, onClose, onPick }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const [mounted, setMounted] = useState(open);
@@ -164,6 +173,14 @@ export default function NewsstandScene({ open, onClose }: Props) {
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const pointerInsideRef = useRef(false);
+  /**
+   * onPick 用 ref 镜像：建场景的 effect 只在 mounted 变化时跑一次，
+   * 直接闭包捕获 onPick 会永远是首次渲染那一个（父组件重渲染后回调就过期了）。
+   */
+  const onPickRef = useRef(onPick);
+  useEffect(() => {
+    onPickRef.current = onPick;
+  }, [onPick]);
 
   /* 入场 / 退场（与 WorksCarousel 同款淡入淡出） */
   useEffect(() => {
@@ -256,6 +273,13 @@ export default function NewsstandScene({ open, onClose }: Props) {
        * 和 DEVICE_SLOTS 的顺序无关。按下标去操作会打到书上。
        */
       label: string;
+      /**
+       * 所在排（2026-09-15）：'devices' = 顶层三件设备（第一排 → 视频/音乐）；
+       * 'books' = 下层三本书（第二排 → 文案/AI）。点开时据此决定进哪个页面。
+       */
+      row: 'devices' | 'books';
+      /** 设备序号（0 DVD / 1 DV / 2 MP3）；书架恒为 0 —— 决定进哪个片单 */
+      deviceIndex: number;
       baseY: number;
       baseZ: number;
       /** 摆放时的基准缩放（设备按宽度归一化过，不是 1） */
@@ -386,6 +410,9 @@ export default function NewsstandScene({ open, onClose }: Props) {
       hoverItems.push({
         group: holder,
         label: spot.file,
+        row: 'devices', // 顶层三件设备 = 第一排 → 视频/音乐页
+        // 从左到右 0 DVD / 1 DV / 2 MP3 —— 三台设备各进一个片单
+        deviceIndex: Math.max(0, DEVICE_SLOTS.indexOf(spot)),
         baseY: holder.position.y,
         baseZ: holder.position.z,
         baseScale: scale,
@@ -515,6 +542,8 @@ export default function NewsstandScene({ open, onClose }: Props) {
             hoverItems.push({
               group: book,
               label: `book:${spec.cover}`,
+              row: 'books', // 下层三本书 = 第二排 → 文案/AI 项目页
+              deviceIndex: 0, // 书架不分流
               baseY: book.position.y,
               baseZ: book.position.z,
               baseScale: 1,
@@ -803,8 +832,30 @@ export default function NewsstandScene({ open, onClose }: Props) {
       rotateState.targetX = 0;
       resetHover();
     };
+
+    /**
+     * 点击架上物件 → 打开对应的作品列表页（2026-09-15）。
+     *
+     * 用「按下-抬手位移阈值」区分点击与拖选：架子是跟随鼠标转的，
+     * 用户在上面划来划去很正常，不能每抬一次手就当一次点击。
+     * 阈值 6px 与 WorkProjectPage 左栏的写法一致。
+     */
+    const downPt = { x: 0, y: 0 };
+    const onPointerDown = (e: PointerEvent) => {
+      downPt.x = e.clientX;
+      downPt.y = e.clientY;
+    };
+    const onPointerClick = (e: PointerEvent) => {
+      if (Math.hypot(e.clientX - downPt.x, e.clientY - downPt.y) > 6) return; // 是拖，不是点
+      const g = hitsItem(e.clientX, e.clientY);
+      if (!g) return;
+      const item = hoverItems.find((b) => b.group === g);
+      if (item) onPickRef.current?.(item.row, item.deviceIndex);
+    };
     renderer.domElement.addEventListener('pointermove', onPointerMove);
     renderer.domElement.addEventListener('pointerleave', onPointerLeave);
+    renderer.domElement.addEventListener('pointerdown', onPointerDown);
+    renderer.domElement.addEventListener('click', onPointerClick);
 
     const resize = () => {
       const rect = host.getBoundingClientRect();
@@ -846,6 +897,8 @@ export default function NewsstandScene({ open, onClose }: Props) {
       window.clearTimeout(fitDumpTimer);
       renderer.domElement.removeEventListener('pointermove', onPointerMove);
       renderer.domElement.removeEventListener('pointerleave', onPointerLeave);
+      renderer.domElement.removeEventListener('pointerdown', onPointerDown);
+      renderer.domElement.removeEventListener('click', onPointerClick);
       observer.disconnect();
       envRT.dispose();
       pmrem.dispose();
@@ -891,15 +944,13 @@ export default function NewsstandScene({ open, onClose }: Props) {
 
       <div className="newsstand-canvas-host" ref={hostRef} />
 
-      <header className="newsstand-topbar">
-        <div className="newsstand-brand">
-          <span className="newsstand-brand-zh">创作档案</span>
-          <span className="newsstand-brand-en">CREATIVE LAB</span>
-        </div>
-        <button type="button" className="newsstand-btn newsstand-close" onClick={onClose}>
-          关闭 ✕
-        </button>
-      </header>
+      {/* 关闭：白圈 ×，置于页面上部正中。
+          会与顶部的「作者 / 访客」切换徽标重叠 —— 收尾时那个徽标会整个移除，重叠无妨。 */}
+      <button type="button" className="newsstand-close-circle" onClick={onClose} aria-label="关闭创作档案">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M6 6 L18 18 M18 6 L6 18" />
+        </svg>
+      </button>
 
       {loading && !failed ? (
         <div className="newsstand-loading" role="status">
@@ -909,7 +960,7 @@ export default function NewsstandScene({ open, onClose }: Props) {
       ) : null}
 
       {!loading && !failed ? (
-        <p className="newsstand-hint">悬停物件 · 拾起查看</p>
+        <p className="newsstand-hint">悬停物件 · 点击打开（上层设备 = 视频与音乐，下层档案 = 文案与 AI）</p>
       ) : null}
 
       {failed ? (

@@ -1,5 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import * as THREE from 'three';
+import { prefersReduced } from '@/lib/motion-pref';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
@@ -77,7 +78,7 @@ export const MascotViewer = forwardRef<MascotHandle, Props>(function MascotViewe
       return;
     }
 
-    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const reduce = prefersReduced();
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setClearAlpha(0);
     renderer.outputColorSpace = THREE.SRGBColorSpace;

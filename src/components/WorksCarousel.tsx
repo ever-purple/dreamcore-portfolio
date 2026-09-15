@@ -7,10 +7,25 @@ import {
 } from '@/lib/carousel/carousel-scene';
 import {
   HANG_PATTERN,
+  hasDiskOverride,
+  rawSeedProject,
   seedProjects,
   type ProjectState,
 } from '@/data/works';
-import { WorkDetail, type ProjectDraft } from '@/components/WorkDetail';
+import { WORK_OVERRIDES, type WorkOverride } from '@/data/works.local';
+import {
+  isPortableUrl,
+  probeWriter,
+  saveOverridesToDisk,
+  uploadAsset,
+} from '@/lib/carousel/works-editor-api';
+import {
+  WorkDetail,
+  type ProjectDraft,
+  type SaveOutcome,
+} from '@/components/WorkDetail';
+import { WorkProjectPage } from '@/components/WorkProjectPage';
+import { WorksWheel, type WorksWheelHandle, type WheelOrigin } from '@/components/WorksWheel';
 import {
   clearProjectLocally,
   objectUrl,
@@ -39,16 +54,41 @@ export function WorksCarousel({ open, onClose }: Props) {
   const [mounted, setMounted] = useState(open);
   const [closing, setClosing] = useState(false);
   const [hydrated, setHydrated] = useState(false);
-  const [projects, setProjects] = useState<ProjectState[]>(() => seedProjects());
+  /**
+   * 运行时覆盖表 = 代码文件里的 `WORK_OVERRIDES` ⊕ 本会话里刚保存的改动。
+   *
+   * 两个用途：
+   *  1. 保存接口每次都发完整的一份，若直接拿模块常量再拼，同一页面里连存两个槽位
+   *     就会把前一次写的内容抹掉 —— 所以这里记住累积结果；
+   *  2. 保存完模块常量还是旧的（要等 HMR 重载才刷新），运行时也得认这一份，
+   *     否则"存完 → 关掉浮层 → 再打开"就看不到自己刚写的内容。
+   */
+  const diskOverridesRef = useRef<Record<string, WorkOverride>>(WORK_OVERRIDES);
+  const [projects, setProjects] = useState<ProjectState[]>(() =>
+    seedProjects(diskOverridesRef.current),
+  );
   const [active, setActive] = useState<number | null>(null);
+  /**
+   * 正在编辑 / 提交的槽位（仅作者模式）。
+   * 阅读这件事已经交给 WorkProjectPage（整屏详情页），
+   * WorkDetail 现在只在「编辑 / 提交」时出场，不再承担浏览。
+   */
+  const [editingSlot, setEditingSlot] = useState<number | null>(null);
   const [focused, setFocused] = useState<number | null>(null);
-  const [spinning, setSpinning] = useState(true);
-  const [night, setNight] = useState(false);
   const [submitMode, setSubmitMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const hostRef = useRef<HTMLDivElement>(null);
   const apiRef = useRef<CarouselAPI | null>(null);
+  const wheelRef = useRef<WorksWheelHandle>(null);
+  /**
+   * 共享元素（FLIP）的起点：详情页从轨道里这张封面长开、也缩回它身上。
+   * 存 { slot, origin } 而不是裸的 origin —— 详情页内部还能「下一个项目」，
+   * 换过项目之后必须缩回**新的**那一张，不能拿旧槽位的封面。
+   */
+  const [flipOrigin, setFlipOrigin] = useState<{ slot: number; origin: WheelOrigin | null } | null>(
+    null,
+  );
   /** 本机提交的原始 Blob（图片 / PDF），保存时"没换文件就沿用旧的"。 */
   const rawRef = useRef<Map<number, SavedProject>>(new Map());
   const projectsRef = useRef(projects);
@@ -75,13 +115,18 @@ export function WorksCarousel({ open, onClose }: Props) {
   useEffect(() => {
     if (!mounted) return;
     let cancelled = false;
-    const base = seedProjects();
+    const base = seedProjects(diskOverridesRef.current);
     readSavedProjects()
       .then((saved) => {
         if (cancelled) return;
         const map = new Map<number, SavedProject>();
         saved.forEach((p) => {
           if (!p || p.slot < 0 || p.slot >= base.length || !p.filled) return;
+          /**
+           * 已经被写进代码文件（works.local.ts）的槽位以「代码」为准，
+           * 跳过浏览器里的旧副本 —— 否则以前存在 IndexedDB 的内容会一直遮住代码。
+           */
+          if (hasDiskOverride(p.slot, diskOverridesRef.current)) return;
           map.set(p.slot, p);
           base[p.slot] = {
             slot: p.slot,
@@ -129,9 +174,19 @@ export function WorksCarousel({ open, onClose }: Props) {
       pattern: HANG_PATTERN,
       faces,
       onPick: (i) => pickRef.current(i),
+      // 放大看图时双击同一张（提交模式下单击）→ 提交模式进表单，否则进整屏详情页
+      onDetail: (i) => {
+        activeRef.current = i;
+        /* 从 3D 相框双击进来没有 DOM 里的缩略图可当共享元素 → 清掉，
+           详情页退回整页淡入（别拿上一次那条轨道的封面瞎起飞）。 */
+        setFlipOrigin(null);
+        if (submitModeRef.current) setEditingSlot(i);
+        else setActive(i);
+      },
+      // ⚠️ 这里读 ref 不读 state：createCarousel 只跑一次，闭包里的 state 永远是
+      // 创建时的旧值（曾经因此让"点空白回全景"整个失效）。
       onMissPick: () => {
-        const dirty = focused !== null || active !== null || submitMode;
-        if (dirty) {
+        if (focusedRef.current !== null || activeRef.current !== null || submitModeRef.current) {
           setActive(null);
           setSubmitMode(false);
           apiRef.current?.selectMode(false);
@@ -143,6 +198,9 @@ export function WorksCarousel({ open, onClose }: Props) {
     });
     api.rotate(true);
     apiRef.current = api;
+    /* 场景 API 暴露到 window（仅 dev）：回归脚本要模拟「聚焦相框 → 单击进内页」，
+       需要能调 focus/reset 而不依赖 three.js 的像素级 raycast 命中。 */
+    if (import.meta.env.DEV) (window as unknown as { __wkpCarousel?: CarouselAPI }).__wkpCarousel = api;
     // 场景建出来时相框一律是"占位卡"（解码是异步的）。已有 cover 先补上。
     projectsRef.current.forEach((p, i) => {
       if (p.cover) api.setFace(i, { code: p.code, title: p.title, cover: p.cover });
@@ -150,6 +208,7 @@ export function WorksCarousel({ open, onClose }: Props) {
     return () => {
       api.dispose();
       apiRef.current = null;
+      if (import.meta.env.DEV) delete (window as unknown as { __wkpCarousel?: CarouselAPI }).__wkpCarousel;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted, hydrated]);
@@ -184,17 +243,16 @@ export function WorksCarousel({ open, onClose }: Props) {
   const submitModeRef = useRef(false);
 
   /**
-   * 场景里点中相框 → 内部 focus() 会回调这里；缩略图按钮直接调 api.focus()，
-   * 走的是同一条路。所以这里**不能**再调 focus，否则会无限递归。
+   * 场景里点中相框 → 内部 focus() 会回调这里（onPick 与相机飞近走同一条路）。
+   * 所以这里**不能**再调 focus，否则会无限递归。
    *
-   * 交互约定：
-   *  · 第一次点相框 → 镜头飞近（focus），不弹详情
-   *  · 再点同一张封面 → 才打开详情（"再点一下封面"）
-   *  · 点了别的相框 → 改聚焦目标，不弹详情
-   *  · 点 3D 空白 → 走 onMissPick 回全景
-   *
+   * 交互约定（2026-09-14 起）：
+   *  · 单击相框 → 镜头飞近放大
+   *  · 放大状态下点**任何地方**（空白 / 别的相框 / 这张图本身）→ 回全景
+   *  · 放大状态下**双击**同一张 → 打开详情面板（场景 onDetail 回调）
+   *  · 提交模式下放大后**单击**同一张 → 直接打开详情（forceEdit）
    * 这里用 ref 而不是 state，因为 onPick 是从 three.js 同步回调进来的，
-   * React 18 的自动批处理会让两次相邻点击看到同一个闭包值，没法判断"再点一次"。
+   * React 18 的自动批处理会让两次相邻点击看到同一个闭包值。
    */
   const handlePick = useCallback((i: number) => {
     if (i < 0) {
@@ -204,21 +262,28 @@ export function WorksCarousel({ open, onClose }: Props) {
       setActive(null);
       return;
     }
-    setSpinning(false);
+    // 聚焦相框时暂停旋转（镜头要停在相框正面）；回到全景由场景 reset() 恢复
     apiRef.current?.rotate(false);
-    if (activeRef.current !== null) return;
-    if (focusedRef.current === i && !submitModeRef.current) {
-      activeRef.current = i;
-      setActive(i);
-      return;
-    }
     focusedRef.current = i;
-    setActive(null);
     setFocused(i);
   }, []);
   useEffect(() => { focusedRef.current = focused; }, [focused]);
   useEffect(() => { activeRef.current = active; }, [active]);
   useEffect(() => { submitModeRef.current = submitMode; }, [submitMode]);
+
+  /* 详情页（WorkProjectPage）整屏不透明地盖在木马上时，暂停 GL 渲染循环（2026-09-15）：
+     背后那个 three.js 场景每帧都在算风场/弹簧/投影，肉眼却完全看不见 —— 实测详情页
+     滚动掉帧主要就是它在抢主线程与 GPU。延迟 0.9s 再停：入场过渡（FLIP/淡入 ~0.7s）
+     期间木马还要在底下飞近，立刻停会让过渡期间背景冻住。关闭时立即恢复。 */
+  const wkpOpen = active !== null && editingSlot === null;
+  useEffect(() => {
+    if (!wkpOpen) {
+      apiRef.current?.setPaused(false);
+      return;
+    }
+    const t = window.setTimeout(() => apiRef.current?.setPaused(true), 900);
+    return () => window.clearTimeout(t);
+  }, [wkpOpen]);
   const pickRef = useRef(handlePick);
   pickRef.current = handlePick;
 
@@ -226,7 +291,6 @@ export function WorksCarousel({ open, onClose }: Props) {
     apiRef.current?.reset();
     apiRef.current?.rotate(true);
     setFocused(null);
-    setSpinning(true);
     setActive(null);
   }, []);
 
@@ -249,10 +313,33 @@ export function WorksCarousel({ open, onClose }: Props) {
     return () => window.removeEventListener('keydown', onKey);
   }, [mounted, active, focused, onClose, resetView]);
 
+  /**
+   * 保存一个槽位。两条路线，按"有没有写入代码的通道"分：
+   *
+   *  A. `vite dev` 下（`/__studio/ping` 探活成功）→ **写回源码文件**。
+   *     图片 / PDF 先经 `/__studio/upload` 落成 `public/works/editor/` 里的实体文件，
+   *     拿到 `/works/editor/xxx.jpg` 这种站内地址后才写进 `src/data/works.local.ts`。
+   *     这样刷新、换端口、换浏览器、重新构建部署都还在，也能被 git 记录。
+   *     ⚠️ 绝不能把 `blob:` 写进代码文件 —— 那是当前页面会话才有效的地址。
+   *
+   *  B. 没有通道（看的是构建产物 / 线上）→ 退回原来的 IndexedDB 方案，
+   *     保存后明确提示"只存在本浏览器"，不让人误以为已经落盘。
+   *
+   * 失败时**抛错**，由 WorkDetail 就地显示原因（以前是静默失败，最坑人）。
+   */
   const save = useCallback(
-    async (slot: number, draft: ProjectDraft) => {
-      const seed = seedProjects()[slot];
+    async (slot: number, draft: ProjectDraft): Promise<SaveOutcome> => {
+      const seed = rawSeedProject(slot);
+      const current = projectsRef.current[slot];
       const raw = rawRef.current.get(slot);
+
+      const title = draft.title.trim() || seed.title;
+      const role = draft.role.trim();
+      const year = draft.year.trim();
+      const tagList = draft.tags.split(/\s+/).filter(Boolean);
+      const sections = draft.sections;
+
+      /* "没换文件就沿用上次传的"—— 新传 > 显式移除 > 沿用已存 */
       const imageBlob = draft.image
         ? draft.image
         : draft.removeImage
@@ -264,19 +351,107 @@ export function WorksCarousel({ open, onClose }: Props) {
           ? null
           : (raw?.pdf ?? null);
 
+      /* ==================== 路线 A：写回代码文件 ==================== */
+      const writer = await probeWriter();
+      if (writer) {
+        let coverOverride: string | null | undefined;
+        let pdfOverride: string | null | undefined;
+        let pdfNameOverride: string | undefined;
+
+        if (draft.image && imageBlob) {
+          const url = await uploadAsset(slot, 'cover', imageBlob);
+          if (!url) throw new Error('封面图上传失败，本次没有写入代码文件。');
+          coverOverride = url;
+        } else if (draft.removeImage) {
+          coverOverride = null;
+        } else if (imageBlob && !isPortableUrl(current?.cover)) {
+          /* 以前只存在浏览器里的图（blob:）→ 顺手转成站内实体文件，否则一刷新就丢 */
+          const url = await uploadAsset(slot, 'cover', imageBlob);
+          if (url) coverOverride = url;
+        }
+        /* 其余情况不动 cover：留空即"沿用种子里的封面"，覆盖表保持精简 */
+
+        if (draft.pdf && pdfBlob) {
+          const url = await uploadAsset(slot, 'pdf', pdfBlob);
+          if (!url) throw new Error('PDF 上传失败，本次没有写入代码文件。');
+          pdfOverride = url;
+          pdfNameOverride = draft.pdf.name;
+        } else if (draft.removePdf) {
+          pdfOverride = null;
+          pdfNameOverride = '';
+        } else if (pdfBlob && !isPortableUrl(current?.pdf)) {
+          const url = await uploadAsset(slot, 'pdf', pdfBlob);
+          if (url) {
+            pdfOverride = url;
+            if (raw?.pdfName) pdfNameOverride = raw.pdfName;
+          }
+        }
+
+        /* 拿"累积的覆盖表 + 本次改动"拼出完整一份发过去（服务端整份重写） */
+        const nextSlots: Record<string, WorkOverride> = { ...diskOverridesRef.current };
+        const override: WorkOverride = {
+          ...nextSlots[String(slot)],
+          title,
+          role,
+          year,
+          summary: draft.summary,
+          tags: tagList,
+          sections,
+        };
+        if (coverOverride !== undefined) override.cover = coverOverride;
+        if (pdfOverride !== undefined) override.pdf = pdfOverride;
+        if (pdfNameOverride !== undefined) override.pdfName = pdfNameOverride;
+        nextSlots[String(slot)] = override;
+
+        await saveOverridesToDisk(nextSlots);
+        diskOverridesRef.current = nextSlots;
+
+        /* 代码已经说了算 —— 浏览器里的旧副本清掉，免得两处内容打架 */
+        await clearProjectLocally(slot).catch(() => {});
+        rawRef.current.delete(slot);
+
+        const nextCover = coverOverride !== undefined ? coverOverride : (current?.cover ?? null);
+        const nextPdf = pdfOverride !== undefined ? pdfOverride : (current?.pdf ?? null);
+
+        setProjects((prev) =>
+          prev.map((p, i) =>
+            i === slot
+              ? {
+                  ...p,
+                  code: seed.code,
+                  title,
+                  role,
+                  year,
+                  client: seed.client,
+                  summary: draft.summary,
+                  tags: draft.tags,
+                  cover: nextCover,
+                  pdf: nextPdf,
+                  pdfName: pdfNameOverride ?? p.pdfName,
+                  sections,
+                  filled: true,
+                }
+              : p,
+          ),
+        );
+        void apiRef.current?.setFace(slot, { code: seed.code, title, cover: nextCover });
+        return 'code';
+      }
+
+      /* ================= 路线 B：只存在本浏览器（兜底） ================= */
       const record: SavedProject = {
         slot,
         code: seed.code,
-        title: draft.title.trim() || seed.title,
-        role: draft.role.trim(),
-        year: draft.year.trim(),
+        title,
+        role,
+        year,
         client: seed.client,
         summary: draft.summary,
         tags: draft.tags,
         image: imageBlob,
         pdf: pdfBlob,
         pdfName: draft.pdf ? draft.pdf.name : draft.removePdf ? '' : (raw?.pdfName ?? ''),
-        sections: draft.sections,
+        sections,
         filled: true,
       };
       await saveProjectLocally(record);
@@ -287,42 +462,58 @@ export function WorksCarousel({ open, onClose }: Props) {
       if (draft.image) cover = await (await import('@/lib/carousel/pdf-cover')).pdfThumbUrl(draft.image, `slot-${slot}`);
       else if (draft.removeImage) cover = seed.cover;
       else if (raw?.image) cover = await (await import('@/lib/carousel/pdf-cover')).pdfThumbUrl(raw.image, `slot-${slot}`);
-      else if (projects[slot].pdf) cover = await (await import('@/lib/carousel/pdf-cover')).pdfThumbUrl(projects[slot].pdf!, `slot-${slot}`, projects[slot].highlightPage ?? 1);
+      else if (current?.pdf) cover = await (await import('@/lib/carousel/pdf-cover')).pdfThumbUrl(current.pdf, `slot-${slot}`, current.highlightPage ?? 1);
       else cover = seed.cover;
 
-      const pdfUrl = pdfBlob ? objectUrl(`pdf-${slot}`, pdfBlob) : draft.removePdf ? null : projects[slot].pdf;
+      const pdfUrl = pdfBlob ? objectUrl(`pdf-${slot}`, pdfBlob) : draft.removePdf ? null : (current?.pdf ?? null);
 
       setProjects((prev) =>
         prev.map((p, i) =>
           i === slot
             ? {
                 ...p,
-                title: record.title,
-                role: record.role,
-                year: record.year,
-                client: record.client,
-                summary: record.summary,
-                tags: record.tags,
+                title,
+                role,
+                year,
+                client: seed.client,
+                summary: draft.summary,
+                tags: draft.tags,
                 cover,
                 pdf: pdfUrl,
                 pdfName: record.pdfName,
-                sections: record.sections,
+                sections,
                 filled: true,
               }
             : p,
         ),
       );
-      void apiRef.current?.setFace(slot, { code: seed.code, title: record.title, cover });
+      void apiRef.current?.setFace(slot, { code: seed.code, title, cover });
+      return 'browser';
     },
-    [projects],
+    [],
   );
 
-  const clearSlot = useCallback(async (slot: number) => {
+  const clearSlot = useCallback(async (slot: number): Promise<SaveOutcome> => {
     await clearProjectLocally(slot);
     rawRef.current.delete(slot);
     objectUrl(`img-${slot}`, null);
     objectUrl(`pdf-${slot}`, null);
-    const seed = seedProjects()[slot];
+
+    /* 有了写回通道之后，清空也得把代码里的覆盖一并删掉 ——
+       否则下次刷新，`seedProjects()` 又会把这份覆盖合回来，像是"没清掉"。 */
+    let outcome: SaveOutcome = 'browser';
+    const overrides = { ...diskOverridesRef.current };
+    if (overrides[String(slot)]) {
+      const writer = await probeWriter();
+      if (writer) {
+        delete overrides[String(slot)];
+        await saveOverridesToDisk(overrides);
+        diskOverridesRef.current = overrides;
+        outcome = 'code';
+      }
+    }
+
+    const seed = rawSeedProject(slot);
     setProjects((prev) =>
       prev.map((p, i) =>
         i === slot
@@ -338,9 +529,13 @@ export function WorksCarousel({ open, onClose }: Props) {
       ),
     );
     void apiRef.current?.setFace(slot, { code: seed.code, title: '待提交项目', cover: seed.cover });
+    return outcome;
   }, []);
 
   if (!mounted) return null;
+
+  // 右侧弧形轨道的景深基准：优先跟随"已聚焦"的相框，其次跟随详情面板打开的那一项
+  const dofIndex = focused ?? active;
 
   return (
     <div
@@ -368,44 +563,13 @@ export function WorksCarousel({ open, onClose }: Props) {
               {submitMode ? '取消提交' : '＋ 提交项目'}
             </button>
           ) : null}
-          <button
-            type="button"
-            className="works-btn"
-            onClick={() => {
-              const next = !spinning;
-              apiRef.current?.rotate(next);
-              setSpinning(next);
-            }}
-          >
-            {spinning ? '暂停旋转' : '继续旋转'}
-          </button>
-          <button
-            type="button"
-            className={`works-btn${night ? ' is-on' : ''}`}
-            onClick={() => {
-              const next = !night;
-              apiRef.current?.light(next);
-              setNight(next);
-            }}
-          >
-            {night ? '白天' : '夜灯'}
-          </button>
-          <button type="button" className="works-btn" onClick={() => apiRef.current?.wind()}>
-            来阵风
-          </button>
-          <button
-            type="button"
-            className="works-btn"
-            onClick={resetView}
-            disabled={focused === null}
-          >
-            回到全景
-          </button>
           <button type="button" className="works-btn works-btn-close" onClick={onClose}>
             关闭 ✕
           </button>
         </div>
       </header>
+
+      <p className="works-hint">拉动木马上的灯绳 · 开灯 / 关灯</p>
 
       <p className="works-credit">
         3D 旋转木马移植自{' '}
@@ -421,55 +585,91 @@ export function WorksCarousel({ open, onClose }: Props) {
         </div>
       ) : null}
 
-      <nav className="works-thumbs" aria-label="策划案槽位">
-        {projects.map((p, i) => (
-          <button
-            key={p.code}
-            type="button"
-            className={`works-thumb${i === focused ? ' is-active' : ''}`}
-            onClick={() => {
-              setFocused(i);
-              setActive(i);
-              // 先开面板，再用 setTimeout 错开相机飞近：否则 focus() 同步触发的
-              // onPick → handlePick 会把刚打开的面板 setActive(null) 关掉
-              window.setTimeout(() => apiRef.current?.focus(i), 0);
-            }}
-            aria-pressed={i === focused}
-          >
-            <span className="works-thumb-cover">
-              {p.cover ? (
-                <img src={p.cover} alt="" loading="lazy" />
-              ) : (
-                <span className="works-thumb-empty" aria-hidden="true" />
-              )}
-            </span>
-            <span className="works-thumb-code">{p.code}</span>
-            <span className="works-thumb-title">
-              {p.filled ? p.title : '待提交'}
-            </span>
-          </button>
-        ))}
-      </nav>
+      {/* 右侧 3D 半圆弧轨道：一次滚轮 / 一次拖拽 = 走一个项目，
+          焦点项放大提亮、两侧按景深虚化，方向键同样可以步进。
+          点条目 = 打开详情面板 + 错开一帧让相机飞近（与场景 onDetail 同一套去向）。 */}
+      <div className="works-wheel-host">
+        <WorksWheel
+          ref={wheelRef}
+          projects={projects}
+          focusIndex={dofIndex}
+          onCenterChange={() => {}}
+          onSelect={(i, origin) => {
+            /* origin = 这张封面在**点击那一刻**的屏幕矩形（轨道还没转，
+               所以它正是用户眼睛看到的位置）。详情页会从它长开成全屏大图。 */
+            setFlipOrigin({ slot: i, origin });
+            setFocused(i);
+            setActive(i);
+            // 先开面板，再用 setTimeout 错开相机飞近：否则 focus() 同步触发的
+            // onPick 回调会与刚打开的面板抢状态
+            window.setTimeout(() => apiRef.current?.focus(i), 0);
+          }}
+        />
+      </div>
 
+      {/* 点项目 → 整屏详情页（左栏固定 + 右栏滚动纸面）。
+          阅读这件事已经完全交给它；原「左字右图」面板只在编辑/提交时出场。 */}
+      {active !== null && editingSlot === null ? (
+        <WorkProjectPage
+          project={projects[active]}
+          slots={projects}
+          canEdit={isAdmin}
+          /* 共享元素：只在这一项确实是「从轨道点进来」的那一项时才给，
+             否则（比如从 3D 相框进来）传 null，详情页退回整页淡入。 */
+          origin={flipOrigin?.slot === active ? (flipOrigin.origin?.el ?? null) : null}
+          originRect={flipOrigin?.slot === active ? (flipOrigin.origin?.rect ?? null) : null}
+          onClose={() => {
+            setActive(null);
+            apiRef.current?.reset();
+            setFocused(null);
+            setFlipOrigin(null);
+          }}
+          onSwitch={(slot) => {
+            setActive(slot);
+            setFocused(slot);
+            /* 换了项目，共享元素也得换成**这一项**的封面 ——
+               关闭时要缩回它身上。关掉之前轨道已经转到位，那时量的位置才准，
+               所以这里只把元素挂上，不急着量飞入起点。 */
+            const el = wheelRef.current?.coverOf(slot) ?? null;
+            setFlipOrigin(el ? { slot, origin: { el, rect: el.getBoundingClientRect() } } : null);
+            apiRef.current?.focus(slot);
+          }}
+          onEdit={isAdmin ? () => setEditingSlot(active) : undefined}
+        />
+      ) : null}
+
+      {/* 编辑 / 提交表单：作者模式从详情页进来，或点顶栏「提交项目」后挑相框进来 */}
       <WorkDetail
-        project={active === null ? null : projects[active]}
+        project={editingSlot === null ? null : projects[editingSlot]}
         totalSlots={projects.length}
-        forceEdit={submitMode}
+        forceEdit
         canEdit={isAdmin}
         onClose={() => {
-          setActive(null);
+          setEditingSlot(null);
           setSubmitMode(false);
           apiRef.current?.selectMode(false);
-          apiRef.current?.reset();
-          setFocused(null);
+          // 不是从详情页进来的（直接提交模式）→ 回木马全景
+          if (active === null) {
+            apiRef.current?.reset();
+            setFocused(null);
+          }
         }}
         onSwitch={(slot) => {
+          setEditingSlot(slot);
           setActive(slot);
           setFocused(slot);
           apiRef.current?.focus(slot);
         }}
-        onSave={(draft) => (active === null ? Promise.resolve() : save(active, draft))}
-        onClear={() => (active === null ? Promise.resolve() : clearSlot(active))}
+        onSave={(draft) =>
+          editingSlot === null
+            ? Promise.resolve<SaveOutcome>('browser')
+            : save(editingSlot, draft)
+        }
+        onClear={() =>
+          editingSlot === null
+            ? Promise.resolve<SaveOutcome>('browser')
+            : clearSlot(editingSlot)
+        }
       />
     </div>
   );

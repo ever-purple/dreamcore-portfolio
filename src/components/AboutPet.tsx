@@ -1,4 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
+import { prefersReduced } from '@/lib/motion-pref';
 import type { MascotHandle } from '@/components/MascotViewer';
 
 const MascotViewer = lazy(() =>
@@ -153,7 +154,7 @@ export function AboutPet({ dockRef, onHoverChange }: Props) {
   // 首次布局完成后停靠；窗口尺寸变化时若仍处于停靠状态则跟着走
   useEffect(() => {
     const raf = requestAnimationFrame(dock);
-    // 自定义字体（JheriCurls）加载完成会撑开 banner，位置会变，需要重新对齐
+    // 自定义字体（手写体 webfont）加载完成会撑开 banner，位置会变，需要重新对齐
     const fonts = (document as Document & { fonts?: FontFaceSet }).fonts;
     fonts?.ready.then(() => dock()).catch(() => {});
     // 兜底：布局稳定前再补两次
@@ -181,7 +182,7 @@ export function AboutPet({ dockRef, onHoverChange }: Props) {
 
   // 闲置自动动作：挥手 / 蹦跳
   useEffect(() => {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (prefersReduced()) return;
     let timer = 0;
     const schedule = () => {
       timer = window.setTimeout(

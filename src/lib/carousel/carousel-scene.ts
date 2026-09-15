@@ -19,6 +19,15 @@ import { createCarouselMotion } from './carousel-motion';
 import { createMemoryProjections } from './memory-projections';
 import { createHorse, addGarden, addPole } from './carousel-ornaments';
 
+/**
+ * ⚠️ HMR 陷阱：three.js 场景只在组件挂载时 `createCarousel()` 一次，
+ * 这个模块热更新后旧场景实例会继续跑 —— 于是出现"JSX 变了但 3D 画面没变"
+ * （比如灯绳、星屑死活不出现）。直接整页刷新，别在这上面浪费时间。
+ */
+if (import.meta.hot) {
+  import.meta.hot.accept(() => window.location.reload());
+}
+
 export type HangSlot = 'single' | 'double';
 
 export type SlotFace = {
@@ -38,22 +47,28 @@ export type CarouselOptions = {
   /** 每个相框的封面信息，长度必须等于相框总数 */
   faces: SlotFace[];
   onPick: (index: number) => void;
+  /** 放大看图时双击同一张（或提交模式下单击）—— 打开项目详情面板 */
+  onDetail?: (index: number) => void;
   /** 点中了 3D 空白处（非相框）—— 可用于"点空白回到全景" */
   onMissPick?: () => void;
+  /** 灯绳被拉动、夜灯状态翻转时回调（顶部按钮已删，留给以后做状态提示） */
+  onNight?: (on: boolean) => void;
   onError?: (message: string) => void;
   onViewSave?: (saved: boolean) => void;
 };
 
+import { prefersReduced } from '@/lib/motion-pref';
 export type CarouselAPI = {
   ready: Promise<void>;
   focus: (index: number) => void;
   reset: () => void;
-  wind: () => void;
   rotate: (on: boolean) => void;
   light: (on: boolean) => void;
   selectMode: (on: boolean) => void;
   /** 换掉某个相框的封面（src 为 null 时画占位卡） */
   setFace: (index: number, face: SlotFace) => Promise<void>;
+  /** 暂停/恢复渲染循环（详情页整屏盖住木马时省主线程与 GPU，2026-09-15） */
+  setPaused: (paused: boolean) => void;
   dispose: () => void;
 };
 
@@ -70,11 +85,33 @@ function loadCover(src: string) {
   });
 }
 
+/**
+ * 构图（2026-09-14）：整台木马挪到页面左侧、略微缩小，给右侧留出空间。
+ * 用「离轴投影」而不是改相机初始机位 —— localStorage 恢复的历史视角、
+ * 用户拖拽后的任意机位都同样生效，也不用作废旧的视角存档。
+ */
+const VIEW_SHIFT_X = 0.2; // 画面内容左移画布宽度的 20%：模型中轴从屏幕 50% → 30%
+const VIEW_SHRINK = 1.1;  // 视角张角放大 10% ≈ 模型观感缩小约 9%
+
+/**
+ * 常态风 —— 「来阵风」按钮已移除，风一直在吹。觉得风太大/太小就改这几个数。
+ * ⚠️ WIND_FREQ 千万别往上调：悬挂链条是阻尼弹簧，驱动频率一旦超过它的固有频率
+ * （约 2.6~3.2 rad/s ≈ 0.45Hz），摆幅会被弹簧滤掉，看起来又变成"没风"。
+ */
+/* 2026-09-16 用户点「吹风调小」：四个幅度常量整体砍到原来的 ~45%，
+   相框不再被吹得满场晃，只剩"有一点空气感"的轻微摆动。
+   注意只动幅度、不动 WIND_FREQ —— 频率一过 2.6 rad/s 弹簧就把摆幅滤没了。 */
+const WIND_BASE = 0.25;  // 常态风力（0~1，1 ≈ 原来手动点一次阵风的强度）
+const WIND_GUST = 0.20;  // 风力在这个幅度内缓慢起伏，像一阵阵吹，而不是死板的匀速摆
+const WIND_FREQ = 2.0;   // 链条摆动角频率 rad/s（约 0.32Hz，弹簧跟得上）
+const WIND_SWING = 0.10; // 满风时链条被吹歪的幅度 rad（约 5.7°，经弹簧放大更明显）
+const WIND_SPIN = 0.06;  // 风推着转台来回滚摆的幅度 rad（有界，不改变平均转速）
+
 export function createCarousel(
   el: HTMLDivElement,
   options: CarouselOptions,
 ): CarouselAPI {
-  const { pattern, faces: slotFaces, onPick, onMissPick, onError = () => {}, onViewSave = () => {} } = options;
+  const { pattern, faces: slotFaces, onPick, onDetail, onMissPick, onNight, onError = () => {}, onViewSave = () => {} } = options;
   const SLOT_COUNT = slotFaces.length;
 
   const savedView = readSavedView();
@@ -212,7 +249,6 @@ export function createCarousel(
     raf = 0,
     active = -1,
     selecting = false,
-    gust = 0,
     night = savedView?.night ? 1 : 0,
     nightTarget = savedView?.night ? 1 : 0,
     rotating = savedView?.spinning ?? false,
@@ -581,7 +617,7 @@ export function createCarousel(
 
     c.fillStyle = '#a8977f';
     c.font = `22px ${FONT}`;
-    c.fillText('点击提交项目', 256, 500);
+    c.fillText('双击打开详情', 256, 500);
   }
 
   function frameTexture(
@@ -597,19 +633,37 @@ export function createCarousel(
     c.fillStyle = '#fff9ed';
     c.fillRect(0, 0, 512, 640);
     if (image) {
-      const s = Math.max(440 / image.width, 520 / image.height);
-      c.save();
-      c.beginPath();
-      c.rect(36, 30, 440, 520);
-      c.clip();
-      c.drawImage(
-        image,
-        36 + (440 - image.width * s) / 2,
-        30 + (520 - image.height * s) / 2,
-        image.width * s,
-        image.height * s,
-      );
-      c.restore();
+      /* 相框内窗是竖的（440×520 ≈ 0.85），而封面素材清一色横构图
+         （2880×2160 / ×1994 / ×1620，比例 1.33~1.78）。三轮改法：
+           · cover  → 两侧裁掉 16:9 只剩 47.6% 宽（用户：「封面显示不全」）
+           · contain + 模糊铺底 → 不裁了但边缘虚化（用户：「不要虚化边缘的」）
+           · contain + 纸色垫底 → 不裁也不虚化但上下大段纸色（用户：「要完整且铺满」）
+         这次的做法：把照片画在一个**与图片同比例**的窗口里，居中放进内窗。
+         照片边缘正好贴窗口（完整且铺满），窗口剩下的纸色是相框的"垫纸"，
+         像裱过的相册页，不是图片的留白。 */
+      const AREA_X = 36,
+        AREA_Y = 30,
+        AREA_W = 440,
+        AREA_H = 520;
+      const ar = image.width / image.height;
+      let winW, winH;
+      if (ar >= AREA_W / AREA_H) {
+        winW = AREA_W;
+        winH = AREA_W / ar;
+      } else {
+        winH = AREA_H;
+        winW = AREA_H * ar;
+      }
+      const winX = AREA_X + (AREA_W - winW) / 2;
+      const winY = AREA_Y + (AREA_H - winH) / 2;
+      c.drawImage(image, winX, winY, winW, winH);
+      /* 回归脚本（verify-covers.mjs）要断言"窗口与图片同比例、且没溢出内窗"。
+         相框纹理是画在 canvas 上的，外面读不到，所以把每次的窗口尺寸挂出来 ——
+         跟 __wkpLenis / __wkpFlip / __wkpPar 一个约定，只在 dev 构建存在。 */
+      if (import.meta.env.DEV) {
+        const dbg = (window as unknown as { __wkpFrameFits?: Record<number, number[]> });
+        (dbg.__wkpFrameFits ??= {})[index] = [image.width, image.height, winW, winH];
+      }
     } else {
       placeholderCard(c, index, title);
     }
@@ -749,6 +803,235 @@ export function createCarousel(
       bell.rotation.z = Math.PI;
     }
   }
+  /* ——————————————————————————————————————————————————————————————
+     夜灯拉绳 —— 从屋檐左缘垂下来的一根绳，末端一颗木珠。
+     点一下（或按住往下拽）就把夜灯打开 / 关掉，松手后绳子自己弹回去荡两下。
+
+     位置：方位角 -0.85 rad ≈ 画面左侧（相机初值在 +X/+Z 方向），半径 2.16
+     刚好在顶棚最大半径 2.13 之外 —— 视线全程都在木马拉开的圆柱外面走，
+     所以既不会被顶棚挡，也不会被转到前面的相框（最外 2.064）遮住，永远点得到。
+     顶端 5.29 贴着顶棚外缘（2.13, 5.33），看起来就是"从灯罩边垂下来"。
+     —————————————————————————————————————————————————————————————— */
+  const CORD_ANGLE = -0.85;
+  const CORD_R = 2.16;
+  const CORD_TOP = 5.29;
+  const CORD_LEN = 0.88;
+  const CORD_GRAB = 0.18;
+  const CORD_MAX_PULL = 0.34; // 手最多能拽下去多少（米）
+  const CORD_TRIGGER = 0.1;   // 拽过这个行程，松手就换灯
+  const cordRoot = new THREE.Group();
+  cordRoot.position.set(
+    Math.sin(CORD_ANGLE) * CORD_R,
+    CORD_TOP,
+    Math.cos(CORD_ANGLE) * CORD_R,
+  );
+  cordRoot.rotation.y = CORD_ANGLE;
+  root.add(cordRoot);
+  // 柱壁上的小铜件，绳从它中间穿出来
+  mesh(
+    new THREE.CylinderGeometry(0.028, 0.038, 0.055, 14),
+    gold,
+    cordRoot,
+    0,
+    -0.024,
+    0.012,
+  );
+  const cordMat = new THREE.MeshStandardMaterial({
+    color: '#f4ead4',
+    roughness: 0.9,
+    metalness: 0.04,
+    emissive: '#ffd79a',
+    emissiveIntensity: 0.12,
+  });
+  const cord = mesh(
+    new THREE.CylinderGeometry(0.018, 0.018, CORD_LEN, 8),
+    cordMat,
+    cordRoot,
+    0,
+    -CORD_LEN / 2,
+  );
+  cord.castShadow = false;
+  const knobMat = new THREE.MeshStandardMaterial({
+    color: '#c9853c',
+    roughness: 0.42,
+    metalness: 0.18,
+    emissive: '#ffbd63',
+    emissiveIntensity: 0.35,
+  });
+  const knob = mesh(
+    new THREE.SphereGeometry(0.072, 20, 16),
+    knobMat,
+    cordRoot,
+    0,
+    -CORD_LEN,
+  );
+  // 木珠外圈的光晕：一闪一闪，告诉人"这里可以拉"
+  const knobGlowMat = new THREE.SpriteMaterial({
+    map: glowMap,
+    transparent: true,
+    opacity: 0.3,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    toneMapped: false,
+  });
+  const knobGlow = new THREE.Sprite(knobGlowMat);
+  knobGlow.scale.set(0.42, 0.42, 1);
+  knob.add(knobGlow);
+  // 绳子太细点不中，套一个看不见的粗管当判定区（材质不可见，不影响 raycast）
+  const cordHit = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.1, 0.1, CORD_LEN + CORD_GRAB, 8),
+    new THREE.MeshBasicMaterial({ visible: false }),
+  );
+  cordHit.position.y = -(CORD_LEN + CORD_GRAB) / 2 + 0.02;
+  cordHit.userData.cord = true;
+  cordRoot.add(cordHit);
+  hits.push(cordHit);
+  /**
+   * 提示星屑：木珠每闪一下，就从它周围蹦出几颗小星星，
+   * 划一道抛物线落到地上停住，再淡掉。纯视觉，不参与拾取。
+   */
+  function sparkTexture() {
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 64;
+    const c = cv.getContext('2d')!;
+    const g = c.createRadialGradient(32, 32, 0, 32, 32, 31);
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(0.2, 'rgba(255,244,214,0.96)');
+    g.addColorStop(0.5, 'rgba(255,208,126,0.4)');
+    g.addColorStop(1, 'rgba(255,178,86,0)');
+    c.fillStyle = g;
+    c.fillRect(0, 0, 64, 64);
+    c.globalCompositeOperation = 'lighter';
+    c.lineCap = 'round';
+    c.strokeStyle = 'rgba(255,252,240,1)';
+    c.lineWidth = 3.8;
+    c.beginPath();
+    c.moveTo(32, 7);
+    c.lineTo(32, 57);
+    c.moveTo(7, 32);
+    c.lineTo(57, 32);
+    c.stroke();
+    c.strokeStyle = 'rgba(255,232,170,0.85)';
+    c.lineWidth = 2;
+    c.beginPath();
+    c.moveTo(16, 16);
+    c.lineTo(48, 48);
+    c.moveTo(48, 16);
+    c.lineTo(16, 48);
+    c.stroke();
+    const t = new THREE.CanvasTexture(cv);
+    t.colorSpace = THREE.SRGBColorSpace;
+    textures.add(t);
+    return t;
+  }
+  const sparkTex = sparkTexture();
+  const SPARK_POOL = 30; // 持续撒播时空中同时十几颗，池子留足余量
+  const SPARK_GROUND = 0.06; // 飘落到这个高度就算"落地"
+  const SPARK_GRAVITY = 3.6;
+  type Spark = {
+    sprite: THREE.Sprite;
+    vel: THREE.Vector3;
+    life: number;
+    landed: boolean;
+    base: number;
+  };
+  const sparks: Spark[] = [];
+  for (let i = 0; i < SPARK_POOL; i++) {
+    /**
+     * 注意混合模式：这里**故意不用**加法混合（AdditiveBlending）。
+     * 星星是围着木珠飞的，开灯后灯罩 / 光晕 / 光锥全在自发光，
+     * 加法混合的小点叠到亮背景上会直接饱和成白色 → 看起来就像"开灯后不掉星星了"。
+     * 普通混合 + 暖橙色，白天压在灰暗背景上够亮，夜里压在亮灯罩上也还看得见色相。
+     */
+    const mat = new THREE.SpriteMaterial({
+      map: sparkTex,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      toneMapped: false,
+    });
+    const sprite = new THREE.Sprite(mat);
+    sprite.visible = false;
+    sprite.scale.setScalar(0.2);
+    root.add(sprite);
+    sparks.push({ sprite, vel: new THREE.Vector3(), life: 0, landed: false, base: 0.2 });
+  }
+  let sparkCursor = 0;
+  let sparkTimer = 0;
+  /** 拉过一次灯绳就不再撒星屑 —— 这只是"这里能点"的引导提示，用户学会后就不该再干扰 */
+  let cordPulled = false;
+  /** 从木珠当前位置撒一把星星（向上为主、水平散开，之后交给重力）。 */
+  function burstSparks() {
+    const origin = new THREE.Vector3();
+    knob.getWorldPosition(origin);
+    /**
+     * 夜灯一亮，灯罩 / 光晕 / 光锥全在发光，加法混合的小星星叠上去会直接饱和成白色
+     * —— 看起来就像"开灯后不掉星星了"。所以夜里把它调得更大、更饱和（金橙），
+     * 并且多撒一颗，落到下面暗处时才看得清。
+     */
+    const nightBoost = night;
+    const lit = night > 0.5 || nightTarget === 1;
+    const count = (lit ? 5 : 4) + Math.floor(Math.random() * 3);
+    for (let k = 0; k < count; k++) {
+      const s = sparks[sparkCursor];
+      sparkCursor = (sparkCursor + 1) % sparks.length;
+      const angle = Math.random() * Math.PI * 2;
+      // 起始点就落在木珠球心附近（偏差 ≤2cm），保证"星星是从圆球里蹦出来的"
+      const r = Math.random() * 0.02;
+      s.sprite.position.set(
+        origin.x + Math.cos(angle) * r,
+        origin.y + (Math.random() - 0.35) * 0.02,
+        origin.z + Math.sin(angle) * r,
+      );
+      s.vel.set(
+        Math.cos(angle) * (0.22 + Math.random() * 0.5),
+        0.95 + Math.random() * 0.7,
+        Math.sin(angle) * (0.22 + Math.random() * 0.5),
+      );
+      s.life = 2.2;
+      s.landed = false;
+      s.base = (0.17 + Math.random() * 0.11) * (1 + nightBoost * 0.18);
+      s.sprite.scale.setScalar(s.base);
+      // 夜里换成更饱和的金橙（白点叠在暖白灯罩上会糊掉，橙点不会）
+      s.sprite.material.color.set(lit ? '#ff9f3c' : '#ffd88a');
+      s.sprite.material.opacity = 1;
+      s.sprite.visible = true;
+    }
+  }
+  let cordPull = 0,
+    cordVel = 0,
+    cordSwingX = 0,
+    cordSwingZ = 0,
+    cordSwingVX = 0,
+    cordSwingVZ = 0,
+    cordDrag = false,
+    cordArmed = false,
+    cordHover = false,
+    cordHoverAmt = 0,
+    dragStartY = 0;
+  /** 放大看图时"单击同一张 = 回全景"要等一小段时间，给双击留出判定窗口 */
+  let pendingTap = 0;
+  /** 翻转夜灯。拉绳和（保留下来的）light() API 都走这里。 */
+  function toggleLight() {
+    nightTarget = nightTarget === 1 ? 0 : 1;
+    cordPulled = true; // 提示达成，之后不再撒星屑
+    burstSparks(); // 拉一下绳也撒最后一把，给个即时反馈
+    persistView();
+    onNight?.(nightTarget === 1);
+  }
+  /** 拽一下绳子：给一个向下的初速度 + 一点随机横向冲量，之后交给弹簧。 */
+  function yankCord(speed: number) {
+    cordVel = speed;
+    cordSwingVX += (Math.random() - 0.5) * 2.4;
+    cordSwingVZ += (Math.random() - 0.5) * 2.4;
+  }
+  function endCordDrag() {
+    if (!cordDrag) return;
+    cordDrag = false;
+    cordArmed = false;
+    controls.enabled = active < 0 && !transition;
+  }
+
   const projections = createMemoryProjections(scene, renderer.getPixelRatio());
   const filled = Array(SLOT_COUNT).fill(false);
   const targetPos = new THREE.Vector3(),
@@ -787,6 +1070,8 @@ export function createCarousel(
 
   function focus(index: number) {
     if (!Number.isInteger(index) || index < 0 || index >= faces.length) return;
+    clearTimeout(pendingTap);
+    pendingTap = 0;
     persistView();
     active = index;
     onPick(index);
@@ -803,10 +1088,16 @@ export function createCarousel(
     highlight();
   }
   function reset() {
+    clearTimeout(pendingTap);
+    pendingTap = 0;
     overviewPosition.copy(home);
     overviewTarget.copy(homeTarget);
     active = -1;
     onPick(-1);
+    // 回到全景必须恢复旋转 —— 「暂停旋转」按钮已删，转台没有手动开关了；
+    // 不在这里 resume 的话，聚焦相框后关掉详情面板，转台会永远停在原地。
+    rotating = true;
+    motion.play(true);
     targetLook.copy(homeTarget);
     targetPos.copy(home);
     transition = true;
@@ -870,46 +1161,120 @@ export function createCarousel(
     if (!e.isPrimary || e.button !== 0) return;
     downX = e.clientX;
     downY = e.clientY;
+    const hit = hitAt(e);
+    if (hit && hit.object.userData.cord) {
+      // 抓住绳子了：接下来是"拽"，别让 OrbitControls 把镜头也一起转了
+      cordDrag = true;
+      cordArmed = false;
+      dragStartY = e.clientY;
+      cordVel = 0;
+      controls.enabled = false;
+    }
   };
   const move = (e: PointerEvent) => {
+    if (cordDrag) {
+      cordPull = THREE.MathUtils.clamp(
+        (e.clientY - dragStartY) / 230,
+        0,
+        CORD_MAX_PULL,
+      );
+      if (cordPull >= CORD_TRIGGER) cordArmed = true;
+      renderer.domElement.style.cursor = 'grabbing';
+      return;
+    }
     if (active >= 0 || transition) {
       renderer.domElement.style.cursor = 'grab';
       return;
     }
-    renderer.domElement.style.cursor = hitAt(e) ? 'pointer' : 'grab';
+    const hit = hitAt(e);
+    cordHover = Boolean(hit && hit.object.userData.cord);
+    renderer.domElement.style.cursor = hit ? 'pointer' : 'grab';
   };
   const up = (e: PointerEvent) => {
     if (!e.isPrimary || e.button !== 0) return;
+    if (cordDrag) {
+      endCordDrag();
+      // 没怎么动的松手就是"点一下"；拽够行程的松手才算"拉到位"
+      const moved = Math.hypot(e.clientX - downX, e.clientY - downY);
+      if (cordArmed || moved < 6) {
+        yankCord(cordArmed ? -0.8 : 4.6);
+        toggleLight();
+      } else {
+        yankCord(-0.8);
+      }
+      cordArmed = false;
+      return;
+    }
     if (Math.hypot(e.clientX - downX, e.clientY - downY) > 6) return;
     const hit = hitAt(e);
-    if (hit) focus(hit.object.userData.photo as number);
-    else onMissPick?.();
+    if (hit && hit.object.userData.cord) {
+      clearTimeout(pendingTap);
+      pendingTap = 0;
+      yankCord(4.6);
+      toggleLight();
+      return;
+    }
+    if (active >= 0 && !transition) {
+      /**
+       * 放大看图状态：点这张图本身 → 直接进详情页（2026-09-14 用户要求
+       * 「点击旋转木马模型上的图片也要进入内页」，把原来「双击进详情 / 单击回全景」
+       * 的隐藏双击改成了单击直进 —— 双击太隐蔽，用户根本发现不了）。
+       * 回全景改为：点空白、点别的相框、或 Esc。
+       */
+      const index = hit ? (hit.object.userData.photo as number) : -1;
+      if (index === active) {
+        clearTimeout(pendingTap);
+        pendingTap = 0;
+        onDetail?.(active);
+        return;
+      }
+      clearTimeout(pendingTap);
+      pendingTap = 0;
+      reset();
+      return;
+    }
+    if (hit) {
+      focus(hit.object.userData.photo as number);
+      return;
+    }
+    onMissPick?.();
   };
   renderer.domElement.addEventListener('pointerdown', down);
   renderer.domElement.addEventListener('pointerup', up);
   renderer.domElement.addEventListener('pointermove', move);
-  renderer.domElement.addEventListener('pointercancel', () => {});
+  renderer.domElement.addEventListener('pointercancel', endCordDrag);
   const resize = () => {
     const w = el.clientWidth,
       h = el.clientHeight;
     renderer.setSize(w, h);
     camera.aspect = w / h;
-    camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(36) / 2) * Math.max(1, .85 / (w / h))));
-    camera.clearViewOffset();
-    camera.updateProjectionMatrix();
+    camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(36) / 2) * Math.max(1, .85 / (w / h)))) * VIEW_SHRINK;
+    // 整体构图左移：离轴投影把画面往左推（模型中轴落到屏幕 ~30% 处）。
+    // setViewOffset 内部会调 updateProjectionMatrix；射线拾取与轨道控制
+    // 基于同一份投影矩阵，所以点击/拖拽不会因为画面左移而错位。
+    camera.setViewOffset(w, h, w * VIEW_SHIFT_X, 0, w, h);
   };
   const observer = new ResizeObserver(resize);
   observer.observe(el);
   resize();
   const clock = new THREE.Timer(),
-    reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    reduced = prefersReduced();
   clock.connect(document);
+  /* 详情页（WorkProjectPage）整屏不透明地盖在木马上时，外层会调 setPaused(true)
+     把渲染循环挂起：rAF 照转但什么都不算不画，主线程与 GPU 全让给滚动页。
+     否则详情页里滚动一卡一卡的 —— 实测滚动掉帧主要就是背后这个 GL 循环在抢。 */
+  let renderPaused = false;
   function animate() {
     raf = requestAnimationFrame(animate);
+    if (renderPaused) return;
     clock.update();
     const dt = Math.min(clock.getDelta(), 0.04),
       t = clock.getElapsed();
-    gust = Math.max(0, gust - dt * 0.15);
+    /**
+     * 常态风：风力不再衰减到 0，而是在 WIND_BASE 上下缓慢起伏
+     * （约二十几秒一个来回），像有风断断续续地吹，而不是死板的匀速摆动。
+     */
+    const wind = WIND_BASE + WIND_GUST * (0.5 + 0.5 * Math.sin(t * 0.26 + Math.sin(t * 0.13) * 1.6));
     night = THREE.MathUtils.lerp(
       night,
       nightTarget,
@@ -935,16 +1300,35 @@ export function createCarousel(
     renderer.toneMappingExposure = 0.94 + night * 0.04;
     scene.environmentIntensity = 0.28 - night * 0.10;
     const movement = motion.update(dt, active >= 0 || selecting, reduced);
+    /**
+     * 风推着转台来回滚一点点。这里必须是**有界摆动**而不是累积量：
+     * 原来「来阵风」是瞬间触发，累积推进没问题；现在风一直吹，
+     * 累积会让转速被永久叠加（约 3 倍速），所以改成围绕 0 摆，平均转速不变。
+     */
+    const windSpin = reduced ? 0 : Math.sin(t * 0.31) * wind * WIND_SPIN;
     // Each suspended chain has its own damped response to rotation and wind.
     pivots.forEach((p, i) => {
       if (active >= 0 || selecting) return;
       const sway = p.userData.sway;
       const spin = movement.speed / (Math.PI * 2 / 28);
-      const amount = reduced ? 0 : 0.012 + gust * 0.11;
-      const targetX = reduced ? 0 : -0.045 * spin * spin
-        + Math.sin(t * (1.1 + i * 0.017) + i) * (amount * 0.55 + Math.abs(spin) * 0.026);
-      const targetZ = reduced ? 0 : -spin * 0.04
-        + Math.sin(t * (1.35 + i * 0.023) + i * 1.7) * (amount + Math.abs(spin) * 0.04);
+      const amount = reduced ? 0 : 0.012 + wind * 0.11;
+      /**
+       * 风要用「低频大幅度」驱动 —— 这正是原来「来阵风」点了没反应的根因：
+       * 悬挂链条是个阻尼弹簧（stiffness 7~10.3 → 固有频率约 2.6~3.2 rad/s），
+       * 而风力原本加在 1.1~1.35Hz（≈7~8.5 rad/s）的高频微摆项上，远高于固有频率，
+       * 被弹簧按 (ωn/ω)²≈0.1 滤掉：0.11rad 的目标传到相框只剩 0.01rad（约 0.6°），
+       * 肉眼根本看不见。改成 ~0.32Hz（2.0 rad/s）的低频推力后弹簧跟得上，
+       * 再配合大幅度，才是"被风吹歪、再荡回来"的样子。
+       * 注：风现在是持续的环境动效，所以 reduce-motion 下按规矩完全关闭
+       * （原来是按钮触发时才给一小段）。
+       */
+      const gustPush = reduced ? 0 : Math.sin(t * WIND_FREQ + i * 0.55) * wind * WIND_SWING;
+      const targetX = (reduced ? 0 : -0.045 * spin * spin
+        + Math.sin(t * (1.1 + i * 0.017) + i) * (amount * 0.55 + Math.abs(spin) * 0.026))
+        + gustPush * 0.45;
+      const targetZ = (reduced ? 0 : -spin * 0.04
+        + Math.sin(t * (1.35 + i * 0.023) + i * 1.7) * (amount + Math.abs(spin) * 0.04))
+        + gustPush;
       const stiffness = 7 + (i % 4) * 1.1;
       sway.vx += ((targetX - sway.x) * stiffness - sway.vx * 2.2) * dt;
       sway.vz += ((targetZ - sway.z) * stiffness - sway.vz * 2.2) * dt;
@@ -953,12 +1337,97 @@ export function createCarousel(
       p.rotation.x = sway.x;
       p.rotation.z = sway.z;
     });
-    rotatingStage.rotation.y = movement.angle;
+    rotatingStage.rotation.y = movement.angle + windSpin;
     horses.forEach((horse, index) => {
       horse.position.y = movement.heights[index];
     });
+    /**
+     * 灯绳：手上拽着的时候完全跟手（cordPull 直接由指针位移给）；
+     * 一松手就交给阻尼弹簧 —— 先被抻长，再回弹、过冲、荡两下停住。
+     * ω≈20.5 rad/s（k=420），阻尼比约 0.32，回弹 2~3 下肉眼刚好舒服。
+     */
+    if (!cordDrag) {
+      const k = reduced ? 620 : 420,
+        damp = reduced ? 34 : 13;
+      cordVel += (-cordPull * k - cordVel * damp) * dt;
+      cordPull += cordVel * dt;
+      if (cordPull < -0.1) {
+        cordPull = -0.1;
+        cordVel *= -0.25;
+      }
+    }
+    cordSwingVX += (-cordSwingX * 92 - cordSwingVX * 5.2) * dt;
+    cordSwingVZ += (-cordSwingZ * 92 - cordSwingVZ * 5.2) * dt;
+    cordSwingX += cordSwingVX * dt;
+    cordSwingZ += cordSwingVZ * dt;
+    // 风也吹得绳子轻轻晃，静止时不至于像根铁丝
+    const cordWind = reduced ? 0 : wind * 0.035;
+    cordRoot.rotation.x = cordSwingX + Math.sin(t * 1.7) * cordWind;
+    cordRoot.rotation.z = cordSwingZ + Math.cos(t * 1.35) * cordWind * 0.8;
+    const cordLen = CORD_LEN + cordPull;
+    cord.scale.y = cordLen / CORD_LEN;
+    cord.position.y = -cordLen / 2;
+    knob.position.y = -cordLen;
+    cordHit.scale.y = (cordLen + CORD_GRAB) / (CORD_LEN + CORD_GRAB);
+    cordHit.position.y = -(cordLen + CORD_GRAB) / 2 + 0.02;
+    cordHoverAmt += (Number(cordHover) - cordHoverAmt) * (reduced ? 1 : 1 - Math.exp(-dt * 12));
+    /**
+     * 木珠一闪一闪地发光（每 ~2.9 秒一次暖光脉冲），像门铃按钮的呼吸灯，
+     * 提示"这里可以拉"。悬停时亮得更稳，拽动时也跟着变亮。
+     * reduce-motion 下不闪，改成常亮的柔和光。
+     */
+    const pulse = Math.pow(0.5 + 0.5 * Math.sin(t * 2.2), 5);
+    // reduce-motion 下不闪，换成更慢更浅的一次"呼吸"：提示仍在，但不刺激
+    const breathe = reduced ? Math.pow(0.5 + 0.5 * Math.sin(t * 0.8), 2) * 0.45 : pulse;
+    knobMat.emissiveIntensity =
+      0.35 + breathe * 1.7 + cordHoverAmt * 0.6 + Math.max(0, cordPull) * 0.9;
+    knobGlowMat.opacity = 0.3 + breathe * 0.7 + cordHoverAmt * 0.3;
+    knobGlow.scale.setScalar(0.42 + breathe * 0.16 + cordHoverAmt * 0.12);
+    knob.scale.setScalar(1 + cordHoverAmt * 0.16);
+    // 绳身跟着一起亮一下，不然只有小球在闪、绳子还是没存在感
+    cordMat.emissiveIntensity = 0.12 + breathe * 0.6;
+    /**
+     * 星屑：一进页面就一直在掉（"这里能拉"），拉过一次灯绳就停。
+     * ⚠️ 这里**故意不看 reduced**：系统开了"减少动态效果"时，引导提示也该在，
+     * 只是把节拍放慢一倍、并去掉闪烁（见下面 twinkle）—— 是"减弱"而不是"移除"。
+     * （之前写成 `!reduced` 硬闸门，一旦系统开了减少动效，星星会整个消失，看起来就像功能坏了。）
+     */
+    if (!cordPulled) {
+      sparkTimer -= dt;
+      if (sparkTimer <= 0) {
+        burstSparks();
+        sparkTimer = reduced ? 1.5 + Math.random() * 0.7 : 0.7 + Math.random() * 0.6;
+      }
+    }
+    sparks.forEach((s) => {
+      if (!s.sprite.visible) return;
+      if (!s.landed) {
+        s.life -= dt;
+        // 出球的前 0.18s 慢慢加速，视觉上就是"从圆球里冒出来"，而不是凭空出现在旁边
+        const ramp = Math.min(1, (2.2 - s.life) / 0.18);
+        s.vel.y -= SPARK_GRAVITY * dt * ramp;
+        s.sprite.position.addScaledVector(s.vel, dt * ramp);
+        const twinkle = reduced ? 0.86 : 0.72 + 0.28 * Math.sin((2.2 - s.life) * 26);
+        s.sprite.material.opacity = twinkle;
+        s.sprite.scale.setScalar(s.base * (0.85 + 0.35 * twinkle));
+        if (s.sprite.position.y <= SPARK_GROUND || s.life <= 0) {
+          s.sprite.position.y = Math.max(s.sprite.position.y, SPARK_GROUND);
+          s.landed = true;
+          s.life = 0.6; // 落地后的淡出时间
+        }
+      } else {
+        s.life -= dt;
+        s.sprite.material.opacity = Math.max(0, s.life / 0.6);
+        if (s.life <= 0) {
+          s.sprite.visible = false;
+          s.sprite.material.opacity = 0;
+        }
+      }
+    });
     if (transition) {
-      const alpha = reduced ? 1 : 1 - Math.exp(-dt * 4);
+      // 收敛比原版（×4）快一档：放大/回全景后尽快交还点击判定，
+      // 拖太久的 transition 会让"点哪里都回全景"晚几秒才生效。
+      const alpha = reduced ? 1 : 1 - Math.exp(-dt * 5.5);
       camera.position.lerp(targetPos, alpha);
       controls.target.lerp(targetLook, alpha);
       if (camera.position.distanceTo(targetPos) < 0.008) {
@@ -969,7 +1438,7 @@ export function createCarousel(
     faces.forEach((face, index) => {
       face.material.emissiveIntensity = filled[index] ? night * 0.33 : 0;
     });
-    projections.update(night, t, reduced, gust, movement.angle);
+    projections.update(night, t, reduced, wind, movement.angle + windSpin);
     controls.update();
     renderer.render(scene, camera);
     if (t - lastViewWrite >= .3) { persistView(); lastViewWrite = t; }
@@ -1000,20 +1469,22 @@ export function createCarousel(
       motion.play(on);
       persistView();
     },
-    wind() {
-      gust = 1;
-    },
     light(on) {
       nightTarget = on ? 1 : 0;
       persistView();
+      onNight?.(nightTarget === 1);
     },
     selectMode(on) {
       selecting = on;
       highlight();
     },
     setFace,
+    setPaused(on) {
+      renderPaused = on;
+    },
     dispose() {
       persistView();
+      clearTimeout(pendingTap);
       controls.removeEventListener('end', persistView);
       window.removeEventListener('pagehide', persistView);
       document.removeEventListener('visibilitychange', saveOnHide);
@@ -1025,6 +1496,7 @@ export function createCarousel(
       renderer.domElement.removeEventListener('pointerdown', down);
       renderer.domElement.removeEventListener('pointerup', up);
       renderer.domElement.removeEventListener('pointermove', move);
+      renderer.domElement.removeEventListener('pointercancel', endCordDrag);
       renderer.domElement.removeEventListener('webglcontextlost', contextLost);
       clock.dispose();
       projections.dispose();
@@ -1039,6 +1511,8 @@ export function createCarousel(
         }
       });
       textures.forEach((t) => t.dispose());
+      sparks.forEach((s) => s.sprite.material.dispose());
+      knobGlowMat.dispose();
       haloMat.dispose();
       rimGlowMaterial.dispose();
       env.dispose();

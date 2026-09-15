@@ -2,10 +2,35 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================================
+   动效策略（2026-09-16）：本站**整体忽略** `prefers-reduced-motion: reduce`。
+   原因：作者本人机器的 Windows「动画效果」是关的，Chromium 因此全量上报 reduce，
+   尊重它的结果是作者自己永远看不到做好的动效（滚动退回原生阶梯＝卡顿、视差全灭、
+   过渡清零＝入场瞬切）。作者明确要求："关着的情况下也拿满效果"。
+   实现：
+     · JS —— 所有判据统一走 src/lib/motion-pref.ts 的 prefersReduced()（恒 false）；
+     · CSS —— 下面全部 13 个 `prefers-reduced-motion` 块的媒体条件被加成
+       ` and (min-width: 100000px)`（永不成立），块体原样保留。
+   要恢复无障碍合规：把 FORCE_FULL_MOTION 改回 false，并删掉那 13 处媒体条件后缀。
+   ============================================================================ */
+
 @font-face {
   font-family: 'JheriCurls';
   src: url('/fonts/JheriCurls.ttf') format('truetype');
   font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* 手写英文的**正文用字**（2026-09-15 第六轮换的）。
+   原来是 JheriCurls：卷得太花，"Focus" 里的 o/c/s 全靠猜，小字号下基本不可读
+   （用户拿着光标 Focus 的截图说「里面的英文不太好认」）。
+   换成 Caveat：仍是手写/钢笔感，但字腔开、字母结构清楚，19px 也一眼认得出；
+   OFL 许可，可商用。可变字重 400~700 —— 光标标签压在照片上时用 500 补一点分量。 */
+@font-face {
+  font-family: 'Caveat';
+  src: url('/fonts/Caveat-var.woff2') format('woff2');
+  font-weight: 400 700;
   font-style: normal;
   font-display: swap;
 }
@@ -25,6 +50,18 @@
 @font-face {
   font-family: 'Cubic11';
   src: url('/fonts/Cubic_11.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* 纳米老宋-A（NanoOldSongA）—— 内页 display 字体（hero 大标题 / 宣言带 / 步骤标题）。
+   2026-09-14 用户指定，替换原 Cinzel/Noto Serif SC 衬线栈。
+   原 ttf 67MB，用 fontTools 按网页实际用到的 268 字符子集化成 300KB 的 woff2
+   （详见 _subset_font.py）。免费商用（基于汇文明朝体，作者寒沙）。 */
+@font-face {
+  font-family: 'NanoOldSongA';
+  src: url('/fonts/NanoOldSongA-subset.woff2') format('woff2');
   font-weight: 400;
   font-style: normal;
   font-display: swap;
@@ -167,87 +204,159 @@
   pointer-events: auto;
 }
 
-/* uiverse tooltip 按钮（kelvin_9865 风格，按站点配色重制） */
+/* ---- 物件标签：手绘描边（2026-09-15 第五轮，替换掉原来的实色 tooltip 按钮） ----
+   原来是 uiverse 那一路：奶白**实色**块 + 深色圆角按钮 + 三角箭头，三个"硬色块"。
+   用户指着工作室截图说「把 my studio 的这种硬色块，改成跟光标一样的手写圆圈和方框」。
+   现在全部换成**无填充的手绘描边**，笔画 path 与跟随光标那两笔一字不差（见 HandFrame.tsx）：
+     · 板块名（个人信息 / 策划项目 …）        → 圆圈（浮在按钮上方，像随手批注）
+   2026-09-15 二次调整：原先物体名（About Me / Works / Creative Lab…）外面还有一圈**方框**，
+   用户说「把英文的圈去掉，中文的留着」—— 方框撤掉，英文回归纯手写文本（`.studio-btn__name`）。
+   颜色统一走 `currentColor`，所以只在这里声明一次奶白。 */
 .studio-btn {
-  --tt-bg: #f3e9d2;
-  --tt-fg: #2b0a0c;
   position: relative;
-  padding: 0.7em 1.9em;
-  border-radius: 10px;
-  border: 1px solid rgba(243, 233, 210, 0.4);
-  background: rgba(24, 6, 7, 0.82);
-  backdrop-filter: blur(6px);
+  display: inline-block;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 0;
+  background: none;
   color: #f3e9d2;
-  font-family: 'Cinzel', serif;
-  font-size: 14px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
+  line-height: 1.05;
   white-space: nowrap;
-  transition: all 0.2s ease;
+  cursor: pointer;
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .studio-btn:hover {
-  border-color: rgba(243, 233, 210, 0.85);
-  background: rgba(43, 10, 12, 0.92);
-  box-shadow: rgba(0, 0, 0, 0.35) 0 8px 20px;
-  transform: scale(1.05);
+  transform: scale(1.04);
 }
 
-/* tooltip：显示作品集板块，弹出时带摇晃动画 */
+/* ---- 手绘描边的通用件（HandFrame 用）----
+   笔画挂在一个绝对定位、比内容盒略大的 SVG 上，`preserveAspectRatio:none`
+   把它拉到内容的长宽 —— 所以圈/框永远贴着字，长标签也不会把线拉细。 */
+.hand {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.hand__s {
+  position: absolute;
+  inset: -3px -6px;
+  width: calc(100% + 12px);
+  height: calc(100% + 6px);
+  overflow: visible;
+  pointer-events: none;
+}
+.hand__stroke {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  /* 标签长短变化时不把笔画拉粗变细 —— 少了它，长标签的线会细成一根头发 */
+  vector-effect: non-scaling-stroke;
+  /* pathLength=100 已在 JSX 里归一化，所以这里直接按 100 计起笔长度。
+     ⚠️ 2026-09-15 第七轮记一笔：这套「用 dash 藏笔」只在**路径的屏幕长度 ≤ 100** 时才成立
+     （小标签的圈实测弧长才 70 上下，所以一直没露馅）。它挂着 `non-scaling-stroke`，
+     而浏览器在非等比缩放的 SVG 里会把 dash 当**屏幕像素**算、pathLength 的归一化会失效 ——
+     长路径于是变成「100 实 / 100 虚」的虚线。菜单下划线（弧长 292）就踩了这个坑，
+     已单独改用 clip-path 揭示。**别再往长路径上套这里的隐藏逻辑。** */
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  transition: stroke-dashoffset 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.04s;
+}
+/* 第二笔晚 0.16s 起笔 —— 与光标那一圈同一个节奏（一次画完像描边，错开才像随手圈的） */
+.hand__stroke:last-child {
+  transition-delay: 0.16s;
+}
+/* 鼠标进感应区（或焦点在按钮上）→ 两笔依次画出来 */
+.studio-zone:hover .hand__stroke,
+.studio-zone:focus-within .hand__stroke,
+.hand--always .hand__stroke,
+.studio-pill .hand__stroke {
+  stroke-dashoffset: 0;
+}
+.hand__txt {
+  position: relative;          /* 压在笔画之上 */
+  /* ⚠️ 字体必须声明在 **.hand__txt** 上，不能只写在外层 .hand 上 ——
+     子节点自己声明了 font-family，会盖掉父级的，外层那句等于没写
+     （2026-09-15 探针抓到：tooltip 的中文其实一直落在 Noto Serif，声明的 NanoOldSongA 从没生效）。
+     于是改成用变量下发：谁需要别的字族就设 --hand-font。 */
+  font-family: var(--hand-font, 'Caveat', 'Noto Serif SC', serif);
+  letter-spacing: 0.02em;
+}
+
+/* 物体名：手写字，**不加框**（2026-09-15 用户要求「把英文的圈去掉，中文的留着」）。
+   铅笔线只留给中文批注，英文回到纯手写文本 —— 去掉原来那圈手绘方框后，
+   按钮也就没有描边了，所以内边距从 11/22 收回到 8/10（原来那点留白是给框让位的）。
+   字族 2026-09-15 第六轮跟着光标一起换成 Caveat（JheriCurls 卷得认不出）。 */
+.studio-btn__name {
+  display: inline-block;
+  font-family: 'Caveat', 'Noto Serif SC', serif;
+  font-weight: 500;
+  font-size: clamp(16px, 1.5vw, 24px);
+  letter-spacing: 0.02em;
+}
+/* 板块名：中文批注，浮在物体名上方，整块歪 2.5° —— 正着摆就变回"印刷"了 */
 .studio-tooltip {
   position: absolute;
-  top: 0;
   left: 50%;
+  bottom: calc(100% + 13px);
+  padding: 8px 15px;
   transform: translateX(-50%);
-  padding: 0.4em 1em;
-  border-radius: 8px;
-  background: var(--tt-bg);
-  color: var(--tt-fg);
-  font-family: 'Inter', 'Noto Serif SC', serif;
-  font-size: 12px;
-  font-weight: 600;
+  rotate: -2.5deg;
+  /* 中文批注走 display 宋体（子集里已收「个人信息/实习与思考/策划项目/创作档案」）——
+     ⚠️ 声明在 .hand__txt 上（变量下发），写在这层会被子节点覆盖掉。 */
+  --hand-font: 'NanoOldSongA', 'Noto Serif SC', 'Songti SC', serif;
+  font-size: 15px;
   letter-spacing: 0.08em;
-  text-transform: none;
-  white-space: nowrap;
-  box-shadow: rgba(0, 0, 0, 0.3) 0 8px 15px;
   opacity: 0;
   pointer-events: none;
-  scale: 0;
-  transform-origin: 0 0;
-  transition: all 0.4s cubic-bezier(0.23, 1, 0.32, 1);
+  transition: opacity 0.3s ease, transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
 }
-.studio-tooltip::before {
-  content: '';
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  border-left: 0.35em solid transparent;
-  border-right: 0.35em solid transparent;
-  border-top: 0.35em solid var(--tt-bg);
+.studio-zone:hover .studio-tooltip,
+.studio-zone:focus-within .studio-tooltip {
+  opacity: 0.94;
+  transform: translateX(-50%) translateY(-3px);
+  /* 贴着写上去的：落笔时轻微晃一下，落定在 -2.5° */
+  animation: hand-note-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
-.studio-zone:hover .studio-tooltip {
-  top: -160%;
-  opacity: 1;
-  scale: 1;
-  animation: studio-tip-shake 0.5s ease-in-out both;
-}
-
-@keyframes studio-tip-shake {
+@keyframes hand-note-in {
   0% {
-    rotate: 0deg;
-  }
-  25% {
-    rotate: 7deg;
-  }
-  50% {
     rotate: -7deg;
   }
-  75% {
-    rotate: 1deg;
+  55% {
+    rotate: -0.5deg;
   }
   100% {
-    rotate: 0deg;
+    rotate: -2.5deg;
   }
+}
+
+/* MENU / Close：原来是 rounded-full + border 的"胶囊"（也算硬边框）。
+   换成手绘圆圈 + 手写体，且**常显**（按钮不该只在悬停时才"存在"）。 */
+.studio-pill {
+  position: relative;
+  display: inline-block;
+  padding: 6px 18px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: #f3e9d2;
+  font-family: 'Caveat', 'Cinzel', serif;
+  font-weight: 500;
+  font-size: clamp(17px, 1.5vw, 23px);
+  /* 1.05 是给 JheriCurls 那种宽扁字配的；Caveat 的字母上下伸得长（ink 0.685/−0.225em），
+     行高太小字母会从手绘圈里漏出去 —— 1.2 刚好把它们装住，内边距相应收一点，
+     圈的松紧看着才和原来一致。 */
+  line-height: 1.2;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  opacity: 0.9;
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s ease;
+}
+.studio-pill:hover {
+  opacity: 1;
+  transform: scale(1.05);
 }
 
 /* ===== 线圈本弹层（复刻参考站：背景模糊 + 纸张右侧滑入） ===== */
@@ -530,21 +639,41 @@
 .studio-menu-link:hover {
   opacity: 0.85;
 }
-/* 悬停时文字下方动态横杠：从左向右展开 */
-.studio-menu-link::after {
-  content: '';
+/* 悬停时的手写下划线（2026-09-15）：原来是 `::after` 一条 0.05em 高的实心横杠。
+   现在是两笔来回描的弧线，与光标圈注同一套笔触。
+   高度按 em 走，所以中英混排的每一行都贴着字底。 */
+.menu-underline {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -0.07em;
-  height: 0.05em;
-  background: #f3e9d2;
-  transform: scaleX(0);
-  transform-origin: left center;
-  transition: transform 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+  left: -2%;
+  bottom: -0.14em;
+  width: 104%;
+  height: 0.13em;
+  overflow: visible;
+  color: #f3e9d2;
+  pointer-events: none;
 }
-.studio-menu-link:hover::after {
-  transform: scaleX(1);
+/* ⚠️ 2026-09-15 第七轮修 bug：这里**不能**再借 `.hand__stroke` 的 dash 藏笔法。
+   本行弧长实测 292，而 `.hand__stroke` 的 `dasharray:100 / dashoffset:100` 只在
+   「屏幕长度 ≤ 100」时成立；配上 `non-scaling-stroke`，浏览器把 dash 按屏幕像素算、
+   pathLength 的归一化失效 → 100 实 / 100 虚 交替，**rest 态每一行菜单都露出一截断线**
+   （用户截图里那些莫名其妙的"横杠"），hover 也只是把断线接长，几乎没变化。
+   改法：这两笔改走 `clip-path` 擦除揭示 —— 第一笔从左往右显影、第二笔从右往左，
+   还是"两笔来回描"，但 rest 态是真正的 0 像素，也不依赖任何长度测量。
+   上下给足负 inset：clip 的百分比按元素盒子算，不放开会把 2.2px 笔画连同圆头裁掉。 */
+.menu-underline .hand__stroke {
+  stroke-dasharray: none;
+  stroke-dashoffset: 0;
+  clip-path: inset(-100% 100% -100% 0);
+  transition: clip-path 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.04s;
+}
+.menu-underline .hand__stroke:last-child {
+  /* 第二笔反向：右端先显影、往左收 —— 手写"回描"的方向 */
+  clip-path: inset(-100% 0 -100% 100%);
+  transition-delay: 0.16s;
+}
+.studio-menu-link:hover .menu-underline .hand__stroke,
+.studio-menu-link:focus-visible .menu-underline .hand__stroke {
+  clip-path: inset(-100% -3% -100% -3%);
 }
 
 /* 英文：大字号，Juice ITC（如本地/网络可用），否则 Cinzel 回退 */
@@ -1659,7 +1788,10 @@
     transform: translateY(-7px) rotate(1.6deg);
   }
 }
-@media (prefers-reduced-motion: reduce) {
+@media (prefers-reduced-motion: reduce) and (min-width: 100000px) {
+  /* 已停用（2026-09-16）：作者要求"系统关着动画也拿满效果" ——
+     把媒体条件加成永不成立。恢复无障碍降级：删掉 ` and (min-width: 100000px)`。
+     策略与开关见 src/lib/motion-pref.ts 的 FORCE_FULL_MOTION。 */
   .about-empty-sticker {
     animation: none;
   }
@@ -2862,7 +2994,10 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
+@media (prefers-reduced-motion: reduce) and (min-width: 100000px) {
+  /* 已停用（2026-09-16）：作者要求"系统关着动画也拿满效果" ——
+     把媒体条件加成永不成立。恢复无障碍降级：删掉 ` and (min-width: 100000px)`。
+     策略与开关见 src/lib/motion-pref.ts 的 FORCE_FULL_MOTION。 */
   .about-cv-dir {
     transition: none;
   }
@@ -3141,7 +3276,10 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
+@media (prefers-reduced-motion: reduce) and (min-width: 100000px) {
+  /* 已停用（2026-09-16）：作者要求"系统关着动画也拿满效果" ——
+     把媒体条件加成永不成立。恢复无障碍降级：删掉 ` and (min-width: 100000px)`。
+     策略与开关见 src/lib/motion-pref.ts 的 FORCE_FULL_MOTION。 */
   .about-insp-card,
   .about-insp-tab,
   .about-insp-subtab,
@@ -4183,7 +4321,10 @@
     transform: scaleY(1);
   }
 }
-@media (prefers-reduced-motion: reduce) {
+@media (prefers-reduced-motion: reduce) and (min-width: 100000px) {
+  /* 已停用（2026-09-16）：作者要求"系统关着动画也拿满效果" ——
+     把媒体条件加成永不成立。恢复无障碍降级：删掉 ` and (min-width: 100000px)`。
+     策略与开关见 src/lib/motion-pref.ts 的 FORCE_FULL_MOTION。 */
   .about-insp-meq b {
     animation: none;
     transform: scaleY(0.7);
@@ -4718,7 +4859,10 @@
     filter: brightness(1) contrast(1) saturate(1) blur(0);
   }
 }
-@media (prefers-reduced-motion: reduce) {
+@media (prefers-reduced-motion: reduce) and (min-width: 100000px) {
+  /* 已停用（2026-09-16）：作者要求"系统关着动画也拿满效果" ——
+     把媒体条件加成永不成立。恢复无障碍降级：删掉 ` and (min-width: 100000px)`。
+     策略与开关见 src/lib/motion-pref.ts 的 FORCE_FULL_MOTION。 */
   .studio-cam.is-in,
   .studio-cam.is-out {
     animation-duration: 0.28s;
@@ -4913,7 +5057,10 @@
   100% { --lens-dx: 18px;  --lens-dy: 15px; }
 }
 
-@media (prefers-reduced-motion: reduce) {
+@media (prefers-reduced-motion: reduce) and (min-width: 100000px) {
+  /* 已停用（2026-09-16）：作者要求"系统关着动画也拿满效果" ——
+     把媒体条件加成永不成立。恢复无障碍降级：删掉 ` and (min-width: 100000px)`。
+     策略与开关见 src/lib/motion-pref.ts 的 FORCE_FULL_MOTION。 */
   .studio-lens-clear {
     animation: none;
     transition-duration: 1ms;
@@ -5126,7 +5273,10 @@ body.green-boot-on .crt-screen .crt-flicker,
   animation-duration: 0.07s;
   background: rgba(214, 255, 236, 0.08);
 }
-@media (prefers-reduced-motion: reduce) {
+@media (prefers-reduced-motion: reduce) and (min-width: 100000px) {
+  /* 已停用（2026-09-16）：作者要求"系统关着动画也拿满效果" ——
+     把媒体条件加成永不成立。恢复无障碍降级：删掉 ` and (min-width: 100000px)`。
+     策略与开关见 src/lib/motion-pref.ts 的 FORCE_FULL_MOTION。 */
   .crt-screen .crt-flicker,
   .crt-screen .crt-roll {
     animation: none;
@@ -5549,7 +5699,10 @@ body.green-os .about-overlay .about-pet {
     0 1px 0 rgba(10, 42, 30, 0.6),
     0 0 6px rgba(126, 232, 199, 0.5);
 }
-@media (prefers-reduced-motion: reduce) {
+@media (prefers-reduced-motion: reduce) and (min-width: 100000px) {
+  /* 已停用（2026-09-16）：作者要求"系统关着动画也拿满效果" ——
+     把媒体条件加成永不成立。恢复无障碍降级：删掉 ` and (min-width: 100000px)`。
+     策略与开关见 src/lib/motion-pref.ts 的 FORCE_FULL_MOTION。 */
   .green-menu {
     animation: none;
   }
@@ -5685,33 +5838,55 @@ body.green-os .about-overlay .about-pet {
   color: var(--wk-mint);
 }
 
-/* 原作者署名（carousel-lamp 非商业许可 §2 要求公开部署时可见） */
+/* 原作者署名（carousel-lamp 非商业许可 §2 要求公开部署时可见）
+   —— 右下角低调白字，链接不再单独给色，靠下划线区分 */
 .works-credit {
   position: absolute;
-  left: 24px;
-  top: 66px;
+  right: 24px;
+  bottom: 18px;
   z-index: 3;
-  max-width: 44ch;
+  max-width: 52ch;
   font-size: 10px;
   line-height: 1.75;
   letter-spacing: 0.06em;
-  color: rgba(239, 228, 207, 0.4);
+  text-align: right;
+  color: rgba(243, 233, 210, 0.28);
   pointer-events: auto;
 }
 .works-credit a {
-  color: rgba(126, 232, 199, 0.62);
+  color: rgba(243, 233, 210, 0.28);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
-
-.works-hint {
-  display: none;
+.works-credit a:hover {
+  color: rgba(243, 233, 210, 0.62);
 }
-/* 资源错误浮窗：右下角小提示，不打扰 3D 沉浸感 */
+
+/* 「夜灯」按钮已移除，改成 3D 里真实可拉的灯绳 —— 这行只在刚进来时出现几秒，
+   告诉人绳子在哪，之后自己淡掉，不留在画面上。 */
+.works-hint {
+  position: absolute;
+  right: 24px;
+  bottom: 62px;
+  z-index: 3;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-align: right;
+  color: rgba(243, 233, 210, 0.34);
+  pointer-events: none;
+  animation: works-hint-fade 9s ease-in-out forwards;
+}
+@keyframes works-hint-fade {
+  0% { opacity: 0; }
+  6% { opacity: 1; }
+  70% { opacity: 1; }
+  100% { opacity: 0; }
+}
+/* 资源错误浮窗：右下角小提示，不打扰 3D 沉浸感（底部槽位条已移除，贴底即可） */
 .works-error {
   position: absolute;
   right: 24px;
-  bottom: 132px;
+  bottom: 24px;
   z-index: 4;
   max-width: 320px;
   padding: 10px 14px;
@@ -5723,70 +5898,340 @@ body.green-os .about-overlay .about-pet {
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
 }
 
-/* 槽位条：3D 里的点击对读屏不可用，这排按钮是键盘与移动端的兜底入口 */
-.works-thumbs {
-  position: absolute;
-  inset-inline: 0;
-  bottom: 0;
-  z-index: 3;
-  display: flex;
-  gap: 10px;
-  padding: 16px 24px 20px;
-  overflow-x: auto;
+/* 保存成功提示：贴在表单动作按钮上方（和 .works-form-error 同一格）。
+   为什么不做成屏幕顶部的吐司：保存时 WorkDetail 是全屏 portal（z-index 268），
+   木马浮层里的任何浮窗都会被它压住 —— 提示必须落在面板自己的版式里才看得见。
+   绿色 = 已经写进 src/data/works.local.ts（刷新 / 换端口 / 重新构建都还在）。 */
+.works-form-notice {
+  margin: 2px 0 0;
+  padding: 9px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(90, 150, 100, 0.5);
+  background: rgba(126, 232, 199, 0.16);
+  color: #2f6b46;
+  font-size: 12px;
+  line-height: 1.6;
+  letter-spacing: 0.04em;
+  animation: works-notice-in 0.28s ease-out both;
 }
-.works-thumb {
-  flex: 0 0 auto;
-  width: 92px;
+/* 没写进代码（只是浏览器副本）—— 换成琥珀色，别让人误以为已经落盘 */
+.works-form-notice.is-warn {
+  border-color: rgba(190, 145, 60, 0.5);
+  background: rgba(226, 186, 106, 0.18);
+  color: #7a5a1c;
+}
+@keyframes works-notice-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ==================================================================
+   右侧 3D 半圆弧轨道（Curved 3D Wheel）—— 仅「项目滚动」这一块
+   ------------------------------------------------------------------
+   宿主容器绝对定位贴在遮罩层右侧，**不改动**遮罩层原有的画布 / 顶栏 /
+   署名 / 错误浮窗 / 详情面板布局（那些都由本文件其它规则负责）。
+   逐帧的 transform / filter / opacity 由 WorksWheel.tsx 直写 inline style，
+   这里只定义"底子"：透视、无边框悬浮条目、竖排刻度。
+   ================================================================== */
+.works-wheel-host {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 6px;
-  border-radius: 10px;
-  border: 1px solid rgba(243, 233, 210, 0.18);
-  background: rgba(31, 23, 18, 0.55);
-  color: rgba(243, 233, 210, 0.7);
-  transition: border-color 0.2s, transform 0.2s, color 0.2s;
+  /* 与 .ww-item 的右内边距 + .ww-gauge 同宽：700px 是弧形+刻度都摆得开的宽度 */
+  width: min(700px, 55vw);
+  /* 上下留白避开顶栏按钮，同时让弧心仍落在画面中线上 */
+  padding: 76px 0;
+  /* 容器自身不吃事件，只有轨道区可交互 —— 不至于把顶栏按钮盖住 */
+  pointer-events: none;
 }
-.works-thumb:hover {
-  border-color: rgba(243, 233, 210, 0.6);
-  transform: translateY(-2px);
+.works-wheel-host > .ww-wrap {
+  pointer-events: auto;
 }
-.works-thumb.is-active {
-  border-color: var(--wk-mint);
-  color: var(--wk-cream);
-}
-.works-thumb-cover {
-  width: 78px;
-  height: 52px;
-  border-radius: 6px;
+
+/* —— 轨道区：手势入口（滚轮 / 拖拽 / 方向键） —— */
+.ww-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: hidden;
-  background: rgba(243, 233, 210, 0.08);
+  cursor: grab;
+  outline: none;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: none;
 }
-.works-thumb-cover img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+.ww-wrap:active {
+  cursor: grabbing;
 }
-.works-thumb-empty {
+
+/* —— 3D 舞台：透视 + preserve-3d 撑出 Z 轴空间 —— */
+.ww-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  /* 透视越短，"远近差距"越夸张，弧形越立体；900 偏平，800 刚好 */
+  perspective: 800px;
+  perspective-origin: 50% 50%;
+  transform-style: preserve-3d;
+}
+
+/* —— 列表项：无卡片底框，封面 + 文字居中悬浮在空间里 —— */
+.ww-item {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 92px;
+  margin-top: -46px;
+  display: flex;
+  align-items: center;
+  justify-content: center; /* 整条居中，而不是贴左 */
+  gap: 18px;
+  /*
+    右侧净空栏必须预留得比"标签宽度"更宽 —— 因为焦点项还会被 scale 放大，
+    内容会被整体往外推 (scale 倍)。按 SCALE_FOCUS=1.10 反推：
+    内容右边缘 = 中心 + 1.10 × 半内容宽，必须 < 标签左边缘。
+  */
+  padding: 0 178px 0 178px;
+  margin-inline-start: 0;
+  border: 0;
+  background: none;
+  color: rgba(239, 228, 207, 0.9);
+  text-align: left;
+  cursor: pointer;
+  pointer-events: auto;
+  transform-origin: 50% 50%;
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+  will-change: transform, filter, opacity;
+}
+/* —— 封面完整显示：object-fit: contain ——
+   项目封面素材清一色横构图（2880×2160 / ×1994 / ×1620，比例 1.33~1.78），
+   而容器多半是竖的或方的。原来一律 object-fit: cover → 两侧被裁：
+   16:9 塞进木马相框那块 0.85 的竖窗只剩 47.6% 宽，首屏（约 1.34）只剩 75% 宽。
+   2026-09-16 用户点「封面显示不全，检查所有封面」→ 全部改成 contain，一个像素都不裁。
+   ⚠️ 同一天用户又否掉了第一版的「模糊铺底」：「不要虚化边缘的」。
+   所以留白处就露出**容器自己的底色**（.ww-cover 透空、首屏是纸色、媒体封面是黑），
+   不做模糊、不做拉伸填充 —— 图完整，边缘干净。 */
+.ww-cover {
+  flex: 0 0 auto;
+  width: 100px;
+  /* 高度由 aspect-ratio 决定，比例在 img.onLoad 时按图片自然比例写到 inline —
+     100 宽的 1.778 封面就是 56 高、1.333 就是 75 高，每个槽位缩略图都恰好铺满。 */
+  aspect-ratio: 3 / 2; /* 加载完会被覆盖，先兜底 */
+  border-radius: 8px;
+  overflow: hidden;
+  /* 无底：不铺底色、不留描边、不加投影，封面图按原比例直接浮在空间里 */
+  background: transparent;
+  box-shadow: none;
+}
+.ww-cover img {
   display: block;
   width: 100%;
   height: 100%;
-  border: 1px dashed rgba(239, 228, 207, 0.5);
+  object-fit: contain;
+  border-radius: 8px;
 }
-.works-thumb-code {
-  font-size: 9px;
-  letter-spacing: 0.14em;
-  color: rgba(126, 232, 199, 0.85);
+.ww-empty {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 8px;
+  background:
+    repeating-linear-gradient(
+      45deg,
+      rgba(126, 232, 199, 0.12) 0 8px,
+      transparent 8px 16px
+    );
 }
-.works-thumb-title {
-  max-width: 82px;
+.ww-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.ww-code {
   font-size: 10px;
-  line-height: 1.3;
-  text-align: center;
+  letter-spacing: 0.22em;
+  color: var(--wk-mint);
+}
+.ww-title {
+  font-size: 15px;
+  line-height: 1.32;
+  color: rgba(243, 233, 210, 0.95);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.ww-en {
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(239, 228, 207, 0.42);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* 焦点态：只提亮文字，不给封面加任何底色/描边/投影 */
+.ww-item.is-focus .ww-title {
+  color: #fffdf6;
+  text-shadow: 0 0 18px rgba(126, 232, 199, 0.55);
+}
+.ww-item.is-focus .ww-en {
+  color: rgba(126, 232, 199, 0.7);
+}
+.ww-item.is-empty .ww-title {
+  color: rgba(239, 228, 207, 0.5);
+}
+
+/* ==================================================================
+   右侧竖向刻度指示器（居中轴线 + 滑动白点）
+   ------------------------------------------------------------------
+     · 一条 1px 竖线在窄栏里**居中**，竖直方向也居中（上下等长留白）
+     · 白点沿这条线上下滑动，位置 = 当前项在列表中的行位置
+     · 滚动时整列文字一起平移，白点跟着走到新的行，形成"刻度在走"的观感
+   所有位移由 JS 写 inline transform，这里只定义底子与外观。
+   ================================================================== */
+.ww-gauge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 178px; /* 与 .ww-item 的右内边距一致 —— 两栏互不侵入 */
+  z-index: 4;
+  pointer-events: none;
+}
+/* 居中竖线：上下等长留白 → 视觉上在窄栏里垂直居中 */
+.ww-gauge-line {
+  position: absolute;
+  top: 50%;
+  right: 30px;
+  width: 1px;
+  height: 62%;
+  transform: translateY(-50%);
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(239, 228, 207, 0.34) 12%,
+    rgba(239, 228, 207, 0.34) 88%,
+    transparent 100%
+  );
+}
+/* 节点文字列：整体由 JS 平移（translate3d），实现"随滚动滑动"
+   top:50% + 负半行高 → 让"第 0 行"正好压在视口中线上；
+   JS 再按 -pos*行高 平移，于是当前项永远对齐那条中线（白点所在处）。 */
+.ww-gauge-list {
+  position: absolute;
+  top: 50%;
+  right: 52px;
+  margin-top: -15px; /* 半行高，见 .ww-gauge-node 的 height */
+  max-width: 76px; /* 超出就省略号 —— 否则长标题会向左压到条目文字上 */
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0;
+  will-change: transform;
+}
+.ww-gauge-node {
+  display: block;
+  max-width: 100%;
+  height: 30px;
+  line-height: 30px;
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: rgba(239, 228, 207, 0.34);
+  /*
+    transform-origin 放右侧，缩放/模糊时文字不会左右乱跑。
+    具体 scale / blur / opacity 由 JS 按"离白点的行距"逐帧写入，
+    所以这里只给兜底值和过渡时长。
+  */
+  transform-origin: 100% 50%;
+  transition: color 0.3s ease;
+  will-change: transform, filter, opacity;
+}
+/* 白点：从视口中线出发，沿竖线上下滑动（JS 写 translate3d） */
+.ww-gauge-cap {
+  position: absolute;
+  top: 50%;
+  right: 30px;
+  width: 7px;
+  height: 7px;
+  margin-right: -3px;
+  margin-top: -3.5px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow:
+    0 0 10px 2px rgba(255, 255, 255, 0.75),
+    0 0 22px 6px rgba(126, 232, 199, 0.32);
+  will-change: transform;
+}
+
+/* 窄屏：收窄右栏 + 等比缩小条目，保证弧线与刻度仍然摆得开 */
+@media (max-width: 1100px) {
+  .works-wheel-host {
+    width: min(560px, 64vw);
+    padding: 68px 0;
+  }
+  .ww-item {
+    height: 82px;
+    margin-top: -41px;
+    padding-inline: 148px;
+  }
+  .ww-gauge {
+    width: 148px;
+  }
+  .ww-cover {
+    width: 88px;
+    height: 60px;
+  }
+  .ww-title {
+    font-size: 14px;
+  }
+}
+@media (max-width: 900px) {
+  .works-wheel-host {
+    top: auto;
+    left: 0;
+    width: 100%;
+    height: 46%;
+    padding: 16px 0 22px;
+  }
+  .ww-wrap {
+    min-height: 180px;
+  }
+  .ww-item {
+    height: 74px;
+    margin-top: -37px;
+    padding-inline: 104px;
+    gap: 14px;
+  }
+  .ww-gauge {
+    width: 104px;
+  }
+  .ww-cover {
+    width: 74px;
+    height: 52px;
+  }
+  .ww-title {
+    font-size: 13px;
+  }
+  .ww-gauge-list {
+    right: 34px;
+    max-width: 58px;
+  }
+  .ww-gauge-line,
+  .ww-gauge-cap {
+    right: 18px;
+  }
 }
 
 /* ============ 项目详情 / 提交面板（左 PDF · 右阐述） ============ */
@@ -6018,10 +6463,18 @@ body.green-os .about-overlay .about-pet {
 }
 .works-form-thumb {
   width: 92px;
-  height: 62px;
-  object-fit: cover;
+  /* 容器：高度按封面比例走（aspect-ratio 在 img.onLoad 写进来）。 */
+  aspect-ratio: 3 / 2; /* 兜底 */
   border-radius: 6px;
   border: 1px solid rgba(69, 81, 63, 0.2);
+  background: rgba(69, 81, 63, 0.06);
+  overflow: hidden;
+}
+.works-form-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 .works-sections-edit {
   display: flex;
@@ -6141,6 +6594,19 @@ body.green-os .about-overlay .about-pet {
   font-size: 12px;
   max-width: 100%;
 }
+/* 表单内联报错（保存 / 清空失败）—— 紧贴在动作按钮上方，不让人以为"存上了" */
+.works-form-error {
+  margin: 2px 0 0;
+  padding: 9px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(178, 78, 62, 0.5);
+  background: rgba(178, 78, 62, 0.14);
+  color: #8e2f22;
+  font-size: 12px;
+  line-height: 1.6;
+  letter-spacing: 0.04em;
+}
+
 .works-form-actions {
   display: flex;
   flex-wrap: wrap;
@@ -6194,14 +6660,8 @@ body.green-os .about-overlay .about-pet {
   padding: 12px 20px 14px;
   border-top: 1px dashed rgba(63, 156, 127, 0.45);
 }
-.works-link {
-  font-size: 12px;
-  color: #3f9c7f;
-  letter-spacing: 0.1em;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-.works-nolink,
+/* .works-link / .works-nolink 随「去线上」入口一起删除（2026-09-14）。
+   注意 .works-hint-sm 原本和 .works-nolink 共用一条规则，摘掉后者时要保留它。 */
 .works-hint-sm {
   font-size: 11px;
   color: #9aa694;
@@ -6236,7 +6696,10 @@ body.green-os .about-overlay .about-pet {
     font-size: 15px;
   }
 }
-@media (prefers-reduced-motion: reduce) {
+@media (prefers-reduced-motion: reduce) and (min-width: 100000px) {
+  /* 已停用（2026-09-16）：作者要求"系统关着动画也拿满效果" ——
+     把媒体条件加成永不成立。恢复无障碍降级：删掉 ` and (min-width: 100000px)`。
+     策略与开关见 src/lib/motion-pref.ts 的 FORCE_FULL_MOTION。 */
   .works-overlay,
   .works-overlay.is-closing,
   .works-detail,
@@ -6335,7 +6798,10 @@ img {
 .mode-switch.is-guest { opacity: 0.88; }
 .mode-switch.is-guest .mode-switch-label { color: rgba(243, 233, 210, 0.82); }
 
-@media (prefers-reduced-motion: reduce) {
+@media (prefers-reduced-motion: reduce) and (min-width: 100000px) {
+  /* 已停用（2026-09-16）：作者要求"系统关着动画也拿满效果" ——
+     把媒体条件加成永不成立。恢复无障碍降级：删掉 ` and (min-width: 100000px)`。
+     策略与开关见 src/lib/motion-pref.ts 的 FORCE_FULL_MOTION。 */
   .mode-switch,
   .mode-switch-flip { transition: none; }
 }
@@ -6414,41 +6880,49 @@ img {
   touch-action: none;
 }
 
-.newsstand-topbar {
+/* 关闭钮：白圈 + 白 ×，悬在页面上部正中。
+   原来的「创作档案 / CREATIVE LAB + 关闭 ✕」顶栏已按 2026-09-15 的要求整个移除；
+   这个圆钮会与顶部的「作者 / 访客」切换徽标（z-index 9999，收尾时移除）重叠 —— 已确认无妨。
+   白圈底下垫一层极淡的暗色 + 轻磨砂，是为了在绿锈展架的亮部上也读得清，并不是改成黑钮。 */
+.newsstand-close-circle {
   position: absolute;
-  inset-inline: 0;
-  top: 0;
-  z-index: 3;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 20px 24px;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.92);
+  background: rgba(10, 9, 8, 0.26);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.22s ease, transform 0.22s ease, border-color 0.22s ease;
 }
-.newsstand-brand { display: flex; align-items: baseline; gap: 10px; }
-.newsstand-brand-zh {
-  color: #efe4cf;
-  font-size: 18px;
-  letter-spacing: 0.18em;
-  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+.newsstand-close-circle svg {
+  width: 15px;
+  height: 15px;
+  display: block;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  fill: none;
 }
-.newsstand-brand-en {
-  color: rgba(243, 233, 210, 0.55);
-  font-size: 11px;
-  letter-spacing: 0.22em;
+.newsstand-close-circle:hover {
+  border-color: #fff;
+  background: rgba(10, 9, 8, 0.48);
+  transform: translateX(-50%) scale(1.07);
 }
-.newsstand-btn {
-  padding: 6px 14px;
-  border-radius: 999px;
-  border: 1px solid rgba(243, 233, 210, 0.32);
-  background: rgba(20, 15, 11, 0.5);
-  color: #efe4cf;
-  font-size: 12px;
-  letter-spacing: 0.12em;
-  transition: border-color 0.2s, background 0.2s, color 0.2s;
+.newsstand-close-circle:active { transform: translateX(-50%) scale(0.96); }
+.newsstand-close-circle:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.85);
+  outline-offset: 3px;
 }
-.newsstand-btn:hover { border-color: rgba(243, 233, 210, 0.8); background: rgba(20, 15, 11, 0.85); }
-.newsstand-close { border-color: rgba(126, 232, 199, 0.5); color: #7ee8c7; }
 
 .newsstand-loading {
   position: absolute;
@@ -6505,4 +6979,2265 @@ img {
   font-size: 13px;
   letter-spacing: 0.06em;
   text-align: center;
+}
+
+/* ==================================================================
+   项目详情页（WorkProjectPage）—— 左栏固定 + 右栏滚动纸面
+   ------------------------------------------------------------------
+   ⚙️ 配色 / 字体全部集中在下面 .wkp 的变量里，换配色只改这一段即可。
+   版式参考：左栏深色放项目元信息与数字导航，右栏米白纸面放大标题与正文。
+   ================================================================== */
+.wkp {
+  /* —— 配色（换配色改这里） ——
+     取自配色图 Corner Table 菜单的实测色：薄荷 #98CAB8（占 36%，是主色不是点缀）、
+     米白 #E5E5E5 / 暖米 #DCD8CD（纸面）、深棕 #514132（结构条与文字）、沙色 #BAAB8B。
+     所以宣言带用**薄荷实底 + 深棕字**，学图里那张大绿卡。 */
+  --wkp-rail-bg: #514132;          /* 左栏底：深棕 */
+  --wkp-rail-ink: #f1ede3;         /* 左栏主字：奶油 */
+  --wkp-rail-dim: rgba(241, 237, 227, 0.5);
+  --wkp-rail-line: rgba(241, 237, 227, 0.16);
+  --wkp-paper: #e9e7e1;            /* 右栏纸面：暖米白 */
+  --wkp-paper-2: #f1efe9;          /* 首屏底色 */
+  --wkp-ink: #3a2e23;              /* 纸面主字：深棕 */
+  --wkp-dim: rgba(58, 46, 35, 0.6);
+  --wkp-line: rgba(58, 46, 35, 0.15);
+  --wkp-accent: #98cab8;           /* 薄荷：主色 */
+  --wkp-accent-soft: #c7dfd4;      /* 薄荷：浅底 */
+  --wkp-accent-deep: #33604e;      /* 深薄荷：小字 / 悬停 */
+  --wkp-sand: #baab8b;             /* 沙色：第二中性色 */
+  --wkp-band-bg: #98cab8;          /* 大字宣言带的底：薄荷实底 */
+  --wkp-band-ink: #6b4423;         /* 大字宣言带的字：巧克力棕（2026-09-14 用户要求，原 #3a2e23 深棕偏黑） */
+
+  /* —— 字体 —— */
+  --wkp-display: 'NanoOldSongA', 'Noto Serif SC', 'Songti SC', serif;
+  --wkp-body: 'Inter', 'Noto Sans SC', system-ui, sans-serif;
+
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  background: var(--wkp-paper);
+  color: var(--wkp-ink);
+  font-family: var(--wkp-body);
+  /* 进入内页的平滑过渡（2026-09-14 用户要求「点击封面到进入内页中间加过渡」）：
+     从轻微放大 + 全透明进场，像从木马场景推进到内页 —— 比纯 fade 更有"推门而入"的层次感。
+     opacity 交给 transition，scale 用 cubic-bezier 缓出收尾，避免生硬。 */
+  opacity: 0;
+  transform: scale(1.04);
+  transition: opacity 0.45s ease, transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  transform-origin: 50% 50%;
+}
+.wkp.is-in {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* ============ 左栏：固定不滚动 ============ */
+.wkp-rail {
+  flex: 0 0 auto;
+  width: clamp(272px, 25vw, 396px);
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  padding: 26px clamp(20px, 2.2vw, 34px) 22px;
+  background: var(--wkp-rail-bg);
+  color: var(--wkp-rail-ink);
+  overflow: hidden;
+  /* 左栏错峰进入：从左侧轻微滑入，和右栏 .wkp-inner 的下移入场形成"推门"层次 */
+  transform: translateX(-16px);
+  transition: transform 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.08s;
+}
+.wkp.is-in .wkp-rail {
+  transform: translateX(0);
+}
+.wkp-rail-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.wkp-brand {
+  margin: 0 0 2px;
+  font-family: var(--wkp-display);
+  font-size: 15px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.wkp-back {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--wkp-rail-dim);
+  font-family: inherit;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+.wkp-back:hover {
+  color: var(--wkp-rail-ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+/* .wkp-see（左栏的 See Live Site）随「去线上」入口一起删除（2026-09-14）。
+   左栏顶部现在只剩 .wkp-rail-id（品牌 + Back），flex 的 space-between 不会因此错位。 */
+
+/* 项目自述：左栏最显眼的一段字 */
+.wkp-intro {
+  margin: 0;
+  max-width: 34ch;
+  font-size: 14px;
+  line-height: 1.68;
+  letter-spacing: 0.01em;
+  /* 2026-09-15 修复：text-wrap:balance 与 text-align:justify 冲突——balance 拆短行、
+     justify 再拉大字间距，观感很差。改回左对齐 + balance（balance 本身均衡行宽、避免孤字）。 */
+  text-align: left;
+  text-wrap: balance;           /* 孤字行根治：末行与前几行平衡，末行不再落单字 */
+  line-break: strict;           /* 标点不占行首 */
+}
+
+/* 数字导航：竖排，当前项描边 */
+.wkp-nav {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  margin-top: 2px;
+}
+.wkp-nav-num {
+  padding: 1px 2px;
+  border: 0;
+  background: none;
+  color: var(--wkp-rail-dim);
+  font-family: var(--wkp-display);
+  font-size: 15px;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: color 0.2s ease, transform 0.2s ease;
+}
+.wkp-nav-num:hover {
+  color: var(--wkp-rail-ink);
+  transform: translateX(3px);
+}
+.wkp-nav-num.is-on {
+  color: var(--wkp-accent);
+}
+
+/* 元信息两列 */
+.wkp-meta {
+  margin: 4px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  max-width: 100%;
+}
+.wkp-meta-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 18px;
+}
+.wkp-meta-row dt {
+  flex: 0 0 auto;
+  color: var(--wkp-rail-dim);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+.wkp-meta-row dd {
+  margin: 0;
+  flex: 1 1 auto;
+  text-align: right;
+  font-size: 13px;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  /* 客户名可能很长，允许折行但不撑破左栏 */
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.wkp-rail-foot {
+  margin-top: auto;
+  display: flex;
+  justify-content: flex-end;
+  padding-bottom: 4px;
+}
+.wkp-rail-arrow {
+  color: var(--wkp-rail-dim);
+  font-size: 15px;
+}
+
+/* ============ 右栏：滚动纸面 ============ */
+.wkp-scroll {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--wkp-paper);
+  overscroll-behavior: contain;
+}
+.wkp-inner {
+  opacity: 0;
+  transform: translate3d(0, 16px, 0);
+  transition: opacity 0.42s ease 0.04s, transform 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.04s;
+}
+.wkp.is-in .wkp-inner {
+  opacity: 1;
+  transform: none;
+}
+
+/* ============ 共享元素展开（FLIP）：木马封面 → 首屏大图 ============
+   转场那 0.6s 里挂 .is-flip，把 .wkp / .wkp-inner 的位移与缩放**全部让出来**。
+   原因：JS 要靠 getBoundingClientRect() 量大图的终点位置，只要祖先身上还挂着
+   transform（scale 1.04 / translateY 16px），量到的就不是终点，飞行层会落错地方。
+   注：这里只让 transform，opacity 的淡入保留 —— 页面本体从封面周围"长出来"更好看。 */
+.wkp.is-flip,
+.wkp.is-flip .wkp-inner {
+  transform: none;
+}
+/* 关闭：整页淡出（放在 .wkp.is-in 之后，同权重靠来源顺序压住 opacity:1） */
+.wkp.is-in.is-out,
+.wkp.is-out {
+  opacity: 0;
+  transition: opacity 0.34s ease;
+}
+
+/* —— 飞行层：转场期间那唯一一张"在飞的图" ——
+   ⚠️ 必须挂在 body 下、是 .wkp 的**兄弟节点**：.wkp 入场时整块 opacity 0→1，
+   挂在里面就跟着一起淡入 —— 起手半透明，和原缩略图的接缝立刻露馅。
+   用 width/height 补间（而不是 scale）：缩略图 100×68、大图整屏，宽高比不同，
+   scale 会把图拉变形；补尺寸时 object-fit 每帧重算，内容不畸变。
+   圆角 8px → 0 与缩略图的 .ww-cover 圆角对上。
+   2026-09-16：object-fit 从 cover 改 contain —— 跟缩略图 / 首屏大图同一套（三处都不裁），
+   留白各露各的底色，交接那一帧才是逐像素重合。 */
+.wkfly {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 360; /* > .wkp 的 300；只在转场期间存在，转完 autoAlpha 归 0 */
+  margin: 0;
+  object-fit: contain;
+  pointer-events: none;
+  visibility: hidden;
+  opacity: 0;
+  will-change: transform, width, height;
+}
+
+/* ---- 首屏 ---- */
+.wkp-hero {
+  position: relative;
+  /* 不用固定 min-height：高度跟着 aspect-ratio 走。aspect-ratio 在 img.onLoad 时
+     按图片自然比例写到 inline style，封面就能边到边完整铺满整块首屏（用户要求
+     「完整且铺满」）—— 16:9 封面在 1000 宽的右栏里就是 562 高，1.333 就是 750 高。 */
+  aspect-ratio: 16 / 9; /* JS 加载完会立刻被覆盖，先给个兜底 */
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+  background: var(--wkp-paper-2);
+}
+.wkp-hero-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+.wkp-hero-empty {
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(
+      45deg,
+      rgba(152, 202, 184, 0.26) 0 12px,
+      transparent 12px 24px
+    ),
+    linear-gradient(140deg, #514132, #2f5a4a);
+}
+.wkp-hero-veil {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to top,
+    rgba(28, 19, 12, 0.82) 0%,
+    rgba(28, 19, 12, 0.42) 42%,
+    rgba(28, 19, 12, 0.14) 78%,
+    rgba(28, 19, 12, 0.05) 100%
+  );
+}
+.wkp-hero-copy {
+  position: relative;
+  z-index: 2;
+  /* 底部 padding 收小（原 6vh/72px）：hero 副标行已删（2026-09-14 用户要求），
+     标题整体下移、更贴近图片底缘。 */
+  padding: 0 clamp(24px, 5vw, 76px) clamp(28px, 4.5vh, 52px);
+  width: 100%;
+  will-change: transform, opacity;
+}
+.wkp-hero-title {
+  margin: 0;
+  max-width: 22ch;
+  font-family: var(--wkp-display);
+  font-size: clamp(34px, 5.1vw, 86px);
+  font-weight: 400;
+  line-height: 1.18;            /* 原 1.04：行距加大（2026-09-14 用户点名） */
+  letter-spacing: 0.01em;
+  color: #fffdf7;
+  text-shadow: 0 2px 40px rgba(0, 0, 0, 0.4);
+  /* 不写 text-wrap:balance —— 它会把「不破不立，月有 / 隙才照得进光」从半句
+     中间切开（2026-09-14 用户点名）；长句改由 breakPhrase 按标点断行。 */
+}
+.wkp-hero-note {
+  margin: 18px 0 0;
+  font-size: 13px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #dcd2ba;
+}
+/* 全局「上一个 / 下一个项目」箭头：钉在视口右缘垂直居中（挂在 fixed 的 .wkp 上，
+   不随右栏滚动 —— 2026-09-14 用户反馈「滚两下就找不到了」后从首屏里挪出来）。
+   只出箭头不出文字；上一个从第二个已填项目起才出现。
+   半透明纸底圆钮，在深色封面和浅色纸面上都立得住。
+   z-index 30：高于右栏内容，低于放大层 .wkf(40) —— 开大图时被盖住，不会误点。 */
+.wkp-pn {
+  position: absolute;
+  top: 50%;
+  right: clamp(10px, 1.5vw, 24px);
+  transform: translateY(-50%);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.wkp-pn-btn {
+  width: 46px;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid rgba(58, 46, 35, 0.2);
+  border-radius: 999px;
+  background: rgba(233, 231, 225, 0.78);
+  backdrop-filter: blur(6px);
+  color: var(--wkp-ink);
+  font-family: var(--wkp-display);
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.25s ease, color 0.25s ease, border-color 0.25s ease,
+    transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.wkp-pn-btn:hover {
+  background: var(--wkp-accent);
+  border-color: var(--wkp-accent-deep);
+  color: var(--wkp-band-ink);
+}
+.wkp-pn-next:hover {
+  transform: translateX(4px);
+}
+.wkp-pn-prev:hover {
+  transform: translateX(-4px);
+}
+.wkp-pn-btn:focus-visible {
+  outline: 1px solid var(--wkp-accent-deep);
+  outline-offset: 3px;
+}
+
+/* ---- 大字宣言带 ---- */
+.wkp-band {
+  padding: clamp(64px, 12vh, 150px) clamp(24px, 6vw, 92px);
+  background: var(--wkp-band-bg);
+  color: var(--wkp-band-ink);
+  border-top: 1px solid rgba(58, 46, 35, 0.18);
+  /* 多层级视差：宣言带的「背景层」是里面那层超大 ghost 字（比正文慢、方向相反）。
+     薄荷底是不透明实底，会把页级 .wkp-par 环境层整个挡住 —— 所以这一屏自带一层。
+     overflow:hidden 裁掉 ghost 溢出的部分（正文视差最多 ±40px < 上下 padding 64px，不会裁到正文）。 */
+  position: relative;
+  overflow: hidden;
+}
+.wkp-band-text {
+  margin: 0;
+  /* ⚠️ 不写 max-width:xxch —— ch 按半角"0"算宽，34ch≈630px 装不下 23 个全角字
+     （约 860px），会在「一套当 / 代」处再折一行。放开后由 band 容器宽兜底，
+     2.4vw 字号保证 1280 窄视口下 23 字也能一行（777px < 容器 760px 会折 → 微调至 2.4vw=717px ✓）。 */
+  max-width: none;
+  font-family: var(--wkp-display);
+  font-size: clamp(22px, 2.4vw, 36px);   /* 缩小（2026-09-14 用户要求），冒号前 23 字一行装下 */
+  /* 断行已由 breakStatement 的 <br> 接管（冒号前占一行），不写 balance。 */
+  line-height: 1.5;            /* 行距加大（2026-09-14 用户要求） */
+  letter-spacing: 0.015em;
+  line-break: strict;          /* 标点不占行首 */
+}
+
+/* ---- 正文屏：左小标签 + 右段落 ---- */
+/* 2026-09-14 改：标签列从 `0.86fr` 收窄成固定 164px。
+   之前实测（1440 视口）标签列 304px、正文列 530px，而标签只有一个 13px 的词，
+   中间白白空出 ~245px —— 用户截图反馈「中间空了好大的空」。
+   收窄后中缝只剩 gap，正文拿回宽度。 */
+.wkp-block {
+  display: grid;
+  grid-template-columns: minmax(0, 164px) minmax(0, 1fr);
+  gap: clamp(26px, 3.2vw, 52px);
+  padding: clamp(56px, 9vh, 118px) clamp(26px, 4.4vw, 74px) clamp(28px, 4vh, 56px);
+  border-bottom: 1px solid var(--wkp-line);
+  /* 多层级视差：.wkp-block-ghost（超大幽灵序号）的定位父级。
+     ⚠️ 这里**不加** overflow:hidden —— 屏内配图 .wkp-figs 会被视差上下推 ±24px，
+     而本屏下 padding 最小值只有 28px，一旦裁切，图在滚动途中会被切掉一条边。 */
+  position: relative;
+}
+.wkp-label {
+  position: relative;
+  margin: 0;
+  padding: 3px 0 0 15px;
+  /* 2026-09-14：列收窄到 164px 后，13px 的字在小列里偏"正文感"。
+     压到 12.5px + 加宽字距，让它读起来是眉标而不是段落。 */
+  font-size: 12.5px;
+  line-height: 1.5;
+  letter-spacing: 0.08em;
+  color: var(--wkp-dim);
+}
+.wkp-label::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 11px;
+  width: 9px;
+  height: 1px;
+  background: var(--wkp-accent-deep);
+}
+.wkp-body {
+  min-width: 0;
+}
+.wkp-p {
+  margin: 0 0 1.15em;
+  /* 原 max-width:62ch（≈448px，只装 29 个全角字）会让 40 字段落折出「样。」孤字行；
+     2026-09-14 用户要求「变成一行」→ 放开限制，行长由容器（约 669px，44 字）兜住。 */
+  max-width: none;
+  font-size: 15px;
+  line-height: 1.88;
+  letter-spacing: 0.012em;
+  /* 2026-09-15 修复：balance 与 justify 冲突（字间距被拉大），改左对齐 + balance */
+  text-align: left;
+  text-wrap: balance;           /* 孤字行根治：末行与前几行平衡，不再落单字 */
+  line-break: strict;           /* 强化 CJK 避头尾：标点不占行首（2026-09-14 用户要求） */
+}
+.wkp-p:last-child {
+  margin-bottom: 0;
+}
+.wkp-p-dim {
+  color: var(--wkp-dim);
+}
+.wkp-tags {
+  margin: 1.6em 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.wkp-tag {
+  padding: 3px 10px;
+  border: 1px solid rgba(51, 96, 78, 0.22);
+  border-radius: 999px;
+  background: var(--wkp-accent-soft);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--wkp-accent-deep);
+}
+/* 区块外链（如新片场视频）：正文下方一个轻量文字入口，箭头悬停右移 */
+.wkp-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 1.3em;
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  color: var(--wkp-accent-deep);
+  text-decoration: none;
+  border-bottom: 1px solid currentColor;
+  padding-bottom: 2px;
+  transition: color 0.2s ease, gap 0.2s ease;
+}
+.wkp-link:hover {
+  color: var(--wkp-accent);
+  gap: 11px;
+}
+.wkp-link-arrow {
+  font-size: 13px;
+  line-height: 1;
+}
+/* 区块内嵌视频：封面 + 播放键 → 点击后 iframe 页面内播放。
+   四周圆角（2026-09-15 用户要求），16:9。 */
+.wkp-media {
+  margin-top: 1.6em;
+  width: 100%;
+  max-width: 720px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #000;
+}
+.wkp-media-frame {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 0;
+  border-radius: 14px;
+}
+.wkp-media-cover {
+  position: relative;
+  display: block;
+  width: 100%;
+  /* 高度按封面比例走（aspect-ratio 在 img.onLoad 写进来），16:9 / 4:3 / 1.333 都能
+     边到边完整铺满。 */
+  aspect-ratio: 16 / 9; /* 兜底 */
+  padding: 0;
+  border: 0;
+  background: #000;
+  cursor: pointer;
+  border-radius: 14px;
+  overflow: hidden;
+}
+.wkp-media-cover-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.wkp-media-cover-empty {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(160deg, #1a1a1a, #000);
+}
+/* 播放键：居中圆钮，悬停轻微放大 */
+.wkp-media-play {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(4px);
+  color: #fff;
+  transition: transform 0.25s ease, background 0.25s ease;
+}
+.wkp-media-play svg {
+  margin-left: 3px;   /* 三角视觉居中微调 */
+}
+.wkp-media-cover:hover .wkp-media-play {
+  background: rgba(255, 255, 255, 0.28);
+  transform: translate(-50%, -50%) scale(1.08);
+}
+/* 区块内嵌音频：原生播放器（自带播放键） */
+.wkp-audio {
+  margin-top: 1.6em;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.wkp-audio-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.wkp-audio-title {
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  color: var(--wkp-dim);
+}
+.wkp-audio-player {
+  width: 100%;
+  max-width: 720px;
+  border-radius: 12px;
+}
+/* 正文配图：**占满内容宽 + 单列**。
+   2026-09-14 改：以前 `grid-column: 2/-1` 只占正文那一列（实测 530px，
+   占内容宽 50%），还按张数排 2 列 → 每张只有 253×190。
+   而配图是 1920px 宽的策划案页面，253px 显示等于 13% 缩放，正文只有 ~2.6px，
+   完全读不了，用户只能一张张点开放大 —— 阅读成本全在这一步。
+   改成满宽单列后按 ~950px 显示（≈46% 缩放，deck 正文约 11px），不点开也能读。 */
+.wkp-figs {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(14px, 1.8vw, 26px);
+  max-width: 1120px;                 /* 超宽屏别把图撑得过高 */
+  margin-top: clamp(26px, 4.4vh, 54px);
+  justify-self: start;
+}
+.wkp-figs img {
+  display: block;
+  width: 100%;
+  height: auto;
+  /* min-width:0 是必须的：flex/grid item 默认 min-width:auto，图片一旦加载出固有尺寸
+     就不肯收缩到 flex-basis（挂载前 259px → 加载后 530px），
+     后果是「两张图」的那几屏行高从 194 蹿到 398，把下面所有屏往下推 ——
+     表现就是「点左栏目录跳过去落偏 203px」。
+     注意：不要加 aspect-ratio / object-fit:cover —— 策划案页面是 16:9 横版，
+     cover 会把左右裁掉，用户看到的就是「图片没显示全」。原比例 width:100% 即可。 */
+  min-width: 0;
+}
+/* is-multi / is-grid 是「按张数分栏」时代的类名，现在统一单列，
+   两个类只保留下来当语义标记，不再改变布局（别删类名：组件还在挂）。 */
+.wkp-figs.is-multi,
+.wkp-figs.is-grid {
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(14px, 1.8vw, 26px);
+  width: 100%;
+  justify-content: stretch;
+}
+.wkp-figs.is-multi img,
+.wkp-figs.is-grid img {
+  width: 100%;
+  flex: none;
+}
+/* 双排：2 列网格（项目背景 4 图 → 2×2；核心策略 2 图 → 1×2）。
+   图按原比例满宽显示，不再裁切。 */
+.wkp-figs.is-grid2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+/* 五列横向滚动：全平台规划各平台各占一列，整体可横向滚动（底部滚动条）。 */
+.wkp-cols {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: clamp(14px, 1.6vw, 24px);
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 14px;
+  margin-top: clamp(26px, 4.4vh, 54px);
+  max-width: 1120px;
+  justify-self: start;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120, 90, 60, 0.4) transparent;
+}
+.wkp-cols::-webkit-scrollbar {
+  height: 8px;
+}
+.wkp-cols::-webkit-scrollbar-thumb {
+  background: rgba(120, 90, 60, 0.4);
+  border-radius: 4px;
+}
+.wkp-cols::-webkit-scrollbar-track {
+  background: transparent;
+}
+.wkp-col {
+  flex: 0 0 auto;
+  width: clamp(220px, 26vw, 300px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.wkp-col-title {
+  font-family: var(--wkp-display, 'Noto Serif SC', 'Songti SC', serif);
+  font-size: clamp(15px, 1.1vw, 19px);
+  font-weight: 600;
+  color: var(--wkp-ink, #2a2118);
+  margin: 0 0 2px;
+  letter-spacing: 0.02em;
+}
+.wkp-col-imgs {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.wkp-col-imgs img {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-width: 0;
+  cursor: pointer;
+  border-radius: 2px;
+}
+
+/* ---- 三步流程 ----
+   2026-09-14 改：原来是 `repeat(3, minmax(0,1fr))` 三栏卡片，每张配图只剩
+   265–414px 宽 —— 而配图是 2880×2160 的 deck 页，缩到 300px 等于 10 倍缩小，
+   deck 里 24px 的正文会变成 2.4px，全糊，用户只能一张张点开放大
+   （就是「图片必须点开才能看见，阅读成本太高」那条反馈）。
+   现在整节改成「一步一行」：左栏 01 + 步骤名，右栏正文 + 满宽配图，
+   和 .wkp-block 共用同一套栅格（164px 标签栏 + 1fr 内容栏），
+   左右边界也跟着对齐了（外层 padding 原来比 .wkp-block 宽 18px，图会错开）。 */
+.wkp-steps {
+  padding: clamp(56px, 9vh, 118px) clamp(26px, 4.4vw, 74px) clamp(28px, 4vh, 56px);
+  border-bottom: 1px solid var(--wkp-line);
+}
+.wkp-h2 {
+  margin: 0 0 clamp(28px, 5vh, 56px);
+  font-family: var(--wkp-display);
+  font-size: clamp(22px, 2.4vw, 34px);
+  font-weight: 400;
+  line-height: 1.2;
+}
+.wkp-steps-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);   /* 单列：一步一行（见上方改动说明） */
+  gap: clamp(44px, 6.4vh, 84px);
+}
+/* 一步 = 与 .wkp-block 同构的两栏：序号+标题 / 正文+配图 */
+.wkp-step {
+  display: grid;
+  grid-template-columns: minmax(0, 164px) minmax(0, 1fr);
+  gap: 0 clamp(26px, 3.2vw, 52px);
+  align-items: start;
+}
+.wkp-step-head {
+  grid-column: 1;
+}
+.wkp-step-no {
+  margin: 0 0 10px;
+  font-family: var(--wkp-display);
+  font-size: 12.5px;
+  letter-spacing: 0.14em;
+  color: var(--wkp-accent-deep);
+}
+.wkp-step-title {
+  margin: 0;
+  font-family: var(--wkp-display);
+  font-size: clamp(17px, 1.5vw, 21px);
+  font-weight: 400;
+  line-height: 1.35;
+  /* 2026-09-15 修复孤字：窄栏（164px）里「十一 · 伴手礼集市」折行会把「市」挤到
+     末行落单。balance 均衡折成两行，末行不再只剩一个字。 */
+  text-wrap: balance;
+}
+.wkp-step-content {
+  grid-column: 2;
+  min-width: 0;
+}
+.wkp-step-body {
+  margin: 0;
+  /* 同 .wkp-p：放开 62ch，让 37~45 字的步骤简介一行装下（「…主题套 / 房。」孤字修复） */
+  max-width: none;
+  font-size: 15px;          /* 原来 14px —— 跟 .wkp-p 正文拉平 */
+  line-height: 1.88;
+  letter-spacing: 0.012em;
+  color: var(--wkp-dim);
+  /* 2026-09-15 修复：balance 与 justify 冲突（字间距被拉大），改左对齐 + balance */
+  text-align: left;
+  text-wrap: balance;           /* 孤字行根治：末行与前几行平衡，不再落单字 */
+  line-break: strict;           /* 标点不占行首（2026-09-14 用户要求） */
+}
+/* 每一步挂的 deck 配图：**满内容宽 + 单列**，与 .wkp-figs 完全同一套尺寸
+   （grid-column: 1/-1 跨两栏 + 1120px 上限）。原本挂在右栏里只有 728px 宽，
+   和正文配图的 938px 左边不齐、也白丢了 29% 的宽度 —— 现在全页配图共用
+   同一条左缘、同一个宽度（点图仍可放大看细节）。 */
+.wkp-step-figs {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(14px, 1.8vw, 26px);
+  max-width: 1120px;
+  margin-top: clamp(20px, 3.4vh, 40px);
+  justify-self: start;
+}
+.wkp-step-figs img {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-width: 0;              /* 防 flex/grid item 固有尺寸导致的加载后跳高 */
+  transition: opacity 0.35s ease, transform 0.5s ease;
+}
+.wkp-step-figs img:hover {
+  opacity: 0.9;
+  transform: translateY(-2px);
+}
+.wkp-step-figs img:focus-visible {
+  outline: 1px solid var(--wkp-accent-deep);
+  outline-offset: 3px;
+}
+
+/* ---- 团队 ---- */
+.wkp-team {
+  padding: clamp(56px, 9vh, 118px) clamp(24px, 6vw, 92px);
+  border-bottom: 1px solid var(--wkp-line);
+}
+.wkp-team-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(20px, 3vw, 48px);
+}
+.wkp-avatar {
+  display: block;
+  width: 46px;
+  height: 46px;
+  margin-bottom: 14px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: rgba(58, 46, 35, 0.08);
+  border: 1px solid var(--wkp-line);
+}
+.wkp-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.wkp-person-name {
+  margin: 0 0 4px;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+}
+.wkp-person-role {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--wkp-dim);
+}
+
+/* ---- 页脚动作 ---- */
+.wkp-foot {
+  padding: clamp(34px, 6vh, 70px) clamp(24px, 6vw, 92px) clamp(40px, 8vh, 90px);
+}
+.wkp-foot-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 22px;
+}
+.wkp-act {
+  padding: 8px 0;
+  border: 0;
+  background: none;
+  color: var(--wkp-ink);
+  font-family: inherit;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid var(--wkp-ink);
+  cursor: pointer;
+  text-decoration: none;
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+.wkp-act:hover {
+  color: var(--wkp-accent-deep);
+  border-color: var(--wkp-accent-deep);
+}
+.wkp-act.is-primary {
+  padding: 9px 18px;
+  border: 1px solid var(--wkp-accent);
+  border-radius: 999px;
+  background: var(--wkp-accent);
+  color: var(--wkp-band-ink);
+}
+.wkp-act.is-primary:hover {
+  background: var(--wkp-accent-deep);
+  border-color: var(--wkp-accent-deep);
+  color: #fff;
+}
+/* 页脚「下一个项目」箭头：沿用 .wkp-act 的下划线样式，箭头随悬停右移（2026-09-14 加） */
+.wkp-act-next {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+.wkp-act-next-arrow {
+  font-family: var(--wkp-display);
+  font-size: 19px;
+  line-height: 1;
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.wkp-act-next:hover .wkp-act-next-arrow {
+  transform: translateX(4px);
+}
+.wkp-foot-hint {
+  margin: 22px 0 0;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--wkp-dim);
+}
+
+/* ---- 逐屏淡入 ---- */
+.wkp-rise {
+  opacity: 0;
+  transform: translate3d(0, 22px, 0);
+  transition: opacity 0.62s ease, transform 0.72s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.wkp-rise.is-in {
+  opacity: 1;
+  transform: none;
+}
+/* ⚠️ 多层级视差的必配：大招标题（.wkp-h2）与团队卡（.wkp-person）**自己就是 .wkp-rise**，
+   身上带着 `transition: … transform 0.72s`。GSAP 每帧写一次 transform 时，
+   这个过渡会把每一帧的新值再抹平 0.72s —— 实测位移量只剩 5px（本该 60px），等于白做，
+   而且人眼看到的是"糊"的慢半拍。所以这两类元素把 transform 从过渡里摘掉：
+   入场只留 opacity 淡入，位移全权交给 GSAP（本来 .wkp-rise 的 22px 上浮也被
+   GSAP 的内联 transform 顶掉了，摘掉过渡不会丢任何东西）。 */
+.wkp-h2.wkp-rise,
+.wkp-person.wkp-rise {
+  transition: opacity 0.62s ease;
+}
+
+/* ==================================================================
+   多层级视差（Multi-layer Parallax，2026-09-15）
+   ------------------------------------------------------------------
+   三层**速度不同、轨道方向也不同**的位移，全站只在这一段 + wkp-motion.ts 里实现。
+   全部走 transform：不参与布局 → scrollHeight 不变 → 左栏目录 jumpTo 的落点仍准；
+   不写死位移量（GSAP 每帧写 transform），这里只给静态基准样式 ——
+   无 JS / prefers-reduced-motion 时这些层必须静止也好看。
+
+     ① 背景层（最慢，跟滚动**反向**＝滞后，读起来就是"更远"）
+        .wkp-par 页级环境层（网格 + 两团柔斑）、.wkp-band-ghost、.wkp-block-ghost
+     ② 大字层（最快，跟滚动同向**上浮**，像从背景里冲出来）
+        .wkp-band-text、.wkp-h2、.wkp-label
+     ③ 卡片层（交错轨道：相邻一上一下，团队卡再叠一条横向斜轨）
+        .wkp-figs、.wkp-col、.wkp-step-figs、.wkp-person、.wkp-media
+   ================================================================== */
+
+/* —— ① 页级环境层：.wkp-inner 的第一个孩子，永远在所有板块之下 ——
+   ⚠️ 两层设计（踩过坑，别改回去）：
+     · 外层 .wkp-par 老老实实 inset:0 + **不参与位移**，只负责 overflow:hidden 裁切；
+     · 位移全部落在里面的 .wkp-par-grid / .wkp-par-blob（和板块里的 ghost）身上。
+   为什么：.wkp-scroll 是 overflow:auto 的滚动容器，绝对定位后代一旦被 translate 到
+   内容盒**下方**，那个溢出区域会计入 scrollable overflow —— 底部凭空多出一段空白可滚，
+   而且是"滚到底了还有一大截白"这种最难查的 bug。
+   父层 overflow:hidden 之后，子层的位移被裁掉，不再向上传播溢出（排版高度纹丝不动）。
+   板块统一 z-index:1 抬到它上面；薄荷宣言带 / 首屏大图是不透明底，会把环境层挡住 ——
+   那两屏各自另有自己的背景层（band-ghost / 首屏大图的慢速视差）。 */
+.wkp-inner {
+  position: relative;
+}
+.wkp-par {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+/* 网格：比父层上下各高 6%（≈420px），这样被 translate ±210px 时上下缘都不会露出一条"没有网格"的带 */
+.wkp-par-grid {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -6%;
+  bottom: -6%;
+  background-image:
+    linear-gradient(to right, rgba(58, 46, 35, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(58, 46, 35, 0.05) 1px, transparent 1px);
+  background-size: 76px 76px;
+}
+/* 两团柔斑：草绿一团在左上、沙色一团在右下，各自跟不同的板块走不同的量（见 JS）。
+   用 radial-gradient 自带柔边，不用 filter:blur —— 后者在这块 ~7000px 高的层上太贵。 */
+.wkp-par-blob {
+  position: absolute;
+  border-radius: 50%;
+}
+.wkp-par-blob.is-a {
+  left: -12vw;
+  top: 16%;
+  width: 52vw;
+  height: 52vw;
+  max-width: 660px;
+  max-height: 660px;
+  background: radial-gradient(circle, rgba(152, 202, 184, 0.34), rgba(152, 202, 184, 0) 68%);
+}
+.wkp-par-blob.is-b {
+  right: -14vw;
+  top: 56%;
+  width: 46vw;
+  height: 46vw;
+  max-width: 580px;
+  max-height: 580px;
+  background: radial-gradient(circle, rgba(186, 171, 139, 0.32), rgba(186, 171, 139, 0) 68%);
+}
+/* 板块整体抬到环境层之上。用 :not(.wkp-par) 排除环境层自身，
+   否则它也会被抬成 z-index:1，反而盖住下面不透明的 band。 */
+.wkp-inner > *:not(.wkp-par) {
+  position: relative;
+  z-index: 1;
+}
+
+/* —— ①-附 宣言带的 ghost 大字（薄荷带里的"背景层"）——
+   整句宣言是那一屏的"大字层"（JS 里上浮更快），这层是它的底：project code 的超大幽灵字，
+   跟滚动**反向**滞后。数字/字母用 display 字体 + 7.5% 巧克力棕，几乎读不出来，只提供纵深。 */
+.wkp-band-ghost {
+  position: absolute;
+  right: clamp(12px, 3vw, 44px);
+  top: 8%;
+  font-family: var(--wkp-display);
+  font-size: clamp(96px, 17vw, 250px);
+  line-height: 0.8;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  color: rgba(107, 68, 35, 0.075);
+  pointer-events: none;
+  user-select: none;
+}
+
+/* —— ①-附 正文屏的 ghost 序号（纸面上的"背景层"）——
+   跟左栏目录用的是同一套编号。**必须锚在屏的顶部**：
+   这一屏的配图 .wkp-figs 是 grid-column: 1/-1 的满宽不透明图，锚在底部的话
+   整块 ghost 会被图盖住，只在底 padding 里露出一条数字边角（像渲染残渣）。
+   锚在 top:0（含上 padding 那 56~118px 空白）→ 上半段露在空白纸上、下半段压在
+   正文后面（正文不是不透明块，5% 深棕会隐隐透出来，正是要的层次）。 */
+.wkp-block-ghost {
+  position: absolute;
+  right: clamp(18px, 4vw, 60px);
+  top: 0;
+  font-family: var(--wkp-display);
+  font-size: clamp(72px, 10vw, 168px);
+  line-height: 0.82;
+  letter-spacing: -0.02em;
+  color: rgba(58, 46, 35, 0.05);
+  pointer-events: none;
+  user-select: none;
+}
+
+/* ==================================================================
+   ⑧ 左栏视差（2026-09-15 追加，用户：「左边的也要有视差效果」）
+   ------------------------------------------------------------------
+   左栏 .wkp-rail 是 position:fixed 的固定列，**自己不滚** —— 所以它的视差只能由
+   右栏滚动进度驱动（JS 里用整页 pass）。右栏读下去，左栏那层纸也跟着错位，
+   读起来才是"左栏浮在纸面之下"，而不是一块贴死的色板。
+
+   幅度设计（硬约束，改前先读）：
+     · 一条背景轨 .wkp-rail-ghost：巨型淡字（项目编号），跟右栏滚动**反向**，
+       幅度最大（±70px）—— 它是"最远的那层"；
+     · 五条内容轨幅度**自上而下递增**（8 / 13 / 18 / 22 / 12px）：
+       为什么递增而不是上下交错 —— 左栏块与块之间只有 26px gap，递增让相邻间隔
+       越滚越大（下面的块跑得更远），永远不会互相压上；交错配对就会撞在一起；
+     · 最底的 .wkp-rail-foot 收到 12px：它下面只剩 22px padding，
+       再多就被 .wkp-rail 的 overflow:hidden 把那个 ↗ 切掉。
+   全部只动 transform，且左栏本身 overflow:hidden —— 右栏 scrollHeight 与左栏
+   排版高度都不受影响（左栏目录 jumpTo 的落点是按 scrollTop 算的，不能被带偏）。
+   ================================================================== */
+.wkp-rail {
+  position: relative;
+}
+.wkp-rail-ghost {
+  position: absolute;
+  left: -3%;
+  bottom: 5%;
+  z-index: 0;
+  font-family: var(--wkp-display);
+  font-size: clamp(88px, 11vw, 176px);
+  line-height: 0.8;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  color: rgba(241, 237, 227, 0.05);   /* 深棕栏底上的奶油淡字，只提供纵深 */
+  pointer-events: none;
+  user-select: none;
+}
+/* 左栏里的内容块抬到 ghost 之上（ghost 是背景层） */
+.wkp-rail > *:not(.wkp-rail-ghost) {
+  position: relative;
+  z-index: 1;
+}
+
+/* ---- 窄屏：左栏变成顶部条，右栏回到正常文档流 ---- */
+@media (max-width: 1024px) {
+  /* 窄屏左栏是一条可滚的横条（max-height:46vh + overflow-y:auto），
+     背景 ghost 大字没有纵深可言，只会跟正文抢视线 —— 直接不显示。 */
+  .wkp-rail-ghost {
+    display: none;
+  }
+  .wkp {
+    flex-direction: column;
+  }
+  .wkp-rail {
+    width: 100%;
+    flex: 0 0 auto;
+    gap: 14px;
+    padding: 16px 18px 14px;
+    max-height: 46vh;
+    overflow-y: auto;
+  }
+  .wkp-intro {
+    max-width: none;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .wkp-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .wkp-nav-num:hover {
+    transform: none;
+  }
+  .wkp-meta {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 6px 20px;
+  }
+  .wkp-meta-row {
+    gap: 8px;
+  }
+  .wkp-meta-row dd {
+    text-align: left;
+  }
+  .wkp-rail-foot {
+    display: none;
+  }
+  .wkp-scroll {
+    flex: 1 1 auto;
+    height: auto;
+  }
+  .wkp-hero {
+    min-height: 54vh;
+  }
+  .wkp-block {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+  }
+  .wkp-figs {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+  .wkp-figs img {
+    width: 100%;
+  }
+  .wkp-team-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 26px;
+  }
+  /* 窄屏：一步的两栏塌成一栏，序号+标题压在正文上 */
+  .wkp-step {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .wkp-step-head,
+  .wkp-step-content,
+  .wkp-step-figs {
+    grid-column: auto;
+  }
+  .wkp-step-figs {
+    margin-top: 18px;
+  }
+  /* 窄屏：全局箭头贴边缩小一圈，别占内容宽 */
+  .wkp-pn {
+    right: 8px;
+    gap: 8px;
+  }
+  .wkp-pn-btn {
+    width: 38px;
+    height: 38px;
+    font-size: 20px;
+  }
+  /* 窄屏：ghost 与柔斑都收一号 —— 视口窄了以后 17vw 的幽灵字会顶到正文上 */
+  .wkp-band-ghost {
+    font-size: clamp(68px, 22vw, 150px);
+  }
+  .wkp-block-ghost {
+    font-size: clamp(56px, 16vw, 110px);
+  }
+  .wkp-par-blob.is-a,
+  .wkp-par-blob.is-b {
+    width: 78vw;
+    height: 78vw;
+    max-width: none;
+    max-height: none;
+  }
+}
+
+/* reduced-motion 降级（2026-09-15 改，原来是 transition:none + opacity:1 一刀切）：
+   Windows「动画效果」关闭时 Chromium 全量上报 reduce —— 一刀切后页面**瞬切**入场，
+   体感就是"过渡效果完全没有"。降级原则：位移类运动全部摘掉（transform:none），
+   但保留一次 0.18s 的纯透明度淡入 —— 运动量最小，页面却是活的。 */
+@media (prefers-reduced-motion: reduce) and (min-width: 100000px) {
+  /* 已停用（2026-09-16）：作者要求"系统关着动画也拿满效果" ——
+     把媒体条件加成永不成立。恢复无障碍降级：删掉 ` and (min-width: 100000px)`。
+     策略与开关见 src/lib/motion-pref.ts 的 FORCE_FULL_MOTION。 */
+  .wkp,
+  .wkp-inner,
+  .wkp-rise,
+  .wkp-rail {
+    /* 0.24s：短到不会引起前庭反应，长到肉眼能看出"这是一次淡入"而不是硬切 */
+    transition: opacity 0.24s ease;
+    transform: none;
+  }
+}
+
+/* ============ 手绘圈注式跟随标签（2026-09-15 第三版，照 mattjinn.com 抄） ============
+   形态：**系统光标（手型）保留** + 旁边一坨手写体动作名，外面**两笔手绘弧线**圈住它。
+   参考帧是 `(Play)`：白色手写体，弧线不闭合、起收笔错开，像拿记号笔随手圈的。
+   用户要求「把光标换成视频网站那样」。
+
+   为什么弧线走 SVG 而不是 CSS 边框：手绘感 = 两笔不闭合 + 端点错开 + 粗细均匀，
+   border-radius 画不出来。两条 path 拼一个不闭合椭圆，配
+     · vector-effect: non-scaling-stroke —— 标签长短变化时不把笔画拉粗变细；
+     · pathLength: 100 —— 把路径长度归一化，dash 动画不用手算弧长。
+   位置：整块相对指针右下偏移 (20, 22)，并逆时针转 -5°（正着摆太"印刷"）。
+   滞后与磁吸是 GSAP 干的（见 CursorLabel.tsx）。
+
+   色彩实时反转（Difference Cursor）继续保留：整块 mix-blend-mode:difference，
+   白底→黑、黑底→白、图片上灰白交错，任何背景都看得清；不再需要 is-ink 手动换色。 */
+.cur {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 90;                 /* 必须高于放大层(40)，否则放大后标签被压在下面 */
+  pointer-events: none;
+  mix-blend-mode: difference;  /* 色彩实时反转：文字永远跟背景反着来 */
+  opacity: 0;
+  transition: opacity 0.16s ease;
+  will-change: transform;
+}
+.cur.is-on {
+  opacity: 1;
+}
+.cur-mark {
+  position: relative;
+  display: block;
+  /* 偏移 (18, 32)：系统手型的命中点在**左上角**，可见部分往右下延伸约 20×28px，
+     纵向留到 32 才不会压在手型上（参考站量出来也是"在手下方一段"）。
+     -5° 是手写感的来源，正着摆太"印刷"。 */
+  transform: translate(18px, 32px) rotate(-5deg);
+  transform-origin: 0 0;       /* 绕左上角转，弧线才贴着指针不乱跑 */
+  transition: transform 0.18s ease;
+}
+.cur-ring {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.cur-ring__s {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  /* 起手是"没画"，.is-on 时画出来 */
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  transition: stroke-dashoffset 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.05s;
+}
+.cur.is-on .cur-ring__s {
+  stroke-dashoffset: 0;
+}
+/* 第二笔晚 0.11s 起笔 —— 一次画完像描边，错开才像随手圈的 */
+.cur-ring__s:last-child {
+  transition-delay: 0.16s;
+}
+.cur-label {
+  position: relative;          /* 压在弧线之上 */
+  display: block;
+  /* 留白就是圈注和文字的间距 —— 参考站量出来约 13px 横向 / 9px 纵向，
+     撑太大圈就发空、不像随手圈的（原来 13/26 明显偏松）。
+     2026-09-15 第六轮：字号 25 → 19px（用户「字号有点大」），纵向留白 10 → 8。 */
+  padding: 8px 13px;
+  /* Caveat（OFL 可商用手写体）：结构清楚，19px 也一眼认得出。
+     压照片上用 500 补一点分量；字太细 + difference 混合时会被背景吃掉。 */
+  font-family: 'Caveat', var(--wkp-body, sans-serif);
+  font-weight: 500;
+  font-size: 19px;
+  /* ⚠️ 不能沿用 1.05：Caveat 的字母上下伸得长（ink 0.685 / −0.225em），
+     1.05 的行盒装不下 'p' 的下伸，手绘圈会从字母上切过去。1.2 才装得住。 */
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  /* 基色用纯白：difference 混合下，白色在浅底变深、深底保持接近白，天然自适应 */
+  color: #fff;
+}
+/* 磁吸态（Focus / Back / Close）：轻轻顶一下，让「咬住」看得见。
+   ⚠️ 缩放放在 .cur-mark 上（整块圈注一起放大），别缩文字 —— 否则文字会从圈里溢出去。
+   `.is-press` 必须写在后面：两个类同时在场时后写的赢，按下要优先缩小。 */
+.cur.is-lock .cur-mark {
+  transform: translate(18px, 32px) rotate(-5deg) scale(1.07);
+}
+.cur.is-press .cur-mark {
+  transform: translate(18px, 32px) rotate(-5deg) scale(0.92);
+}
+/* is-ink 已废弃（difference 混合接管了换色），这里保留成空规则占位，
+   避免 CursorLabel 里的 classList.toggle 变成 no-op 时误以为还能手动换色。 */
+.cur.is-ink .cur-label {
+  color: #fff;
+}
+
+/* 首屏的压暗层与文字块都不吃事件：整张封面图（含标题/遮罩区域）都能点开 Focus。
+   ⚠️ 遮罩是 inset:0 的整块 span，不设 pointer-events:none 的话它会把点击截走 ——
+   表现就是"点封面没反应"。 */
+.wkp-hero-veil,
+.wkp-hero-copy {
+  pointer-events: none;
+}
+
+/* ============ 「Focus」放大层 ============
+   2026-09-14：进出场改成 GSAP FLIP（见 ImageFocus.tsx）——
+   打开时图从被点的缩略图长到居中全屏，关闭时缩回原位再卸载。
+   ⚠️ 所以这里**不能**写 opacity / transform 的 transition：
+   CSS 过渡会和 GSAP 抢同一组属性，动画会被拉成两段式的怪样子。
+   初始 opacity 也交给 GSAP 的 autoAlpha；这里只用 visibility 兜首帧不闪。 */
+.wkf {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4.5vh 4vw;
+  background: rgba(20, 14, 9, 0.94);
+  visibility: hidden;
+  opacity: 0;
+  will-change: opacity;
+  cursor: zoom-out;   /* 点任意处关闭 —— 系统光标直接把这个意图说出来 */
+}
+/* 可放大的图：系统光标变手型 pointer（2026-09-14 用户要求「放在图片上时变成手形状」，
+   原来是 zoom-in 放大镜 —— 手型更直观地表达"点它"。放大的意图交给旁边的 Focus 标签）。 */
+.wkp-hero-img,
+.wkp-figs img,
+.wkp-step-figs img {
+  cursor: pointer;
+}
+.wkf-img {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  transform-origin: 50% 50%;
+  will-change: transform;
+}
+.wkf-cap,
+.wkf-hint {
+  position: absolute;
+  bottom: 3.2vh;
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  color: rgba(241, 237, 227, 0.62);
+}
+.wkf-cap {
+  left: 4vw;
+  text-transform: uppercase;
+}
+.wkf-hint {
+  right: 4vw;
+  letter-spacing: 0.08em;
+}
+@media (max-width: 1024px) {
+  .wkf-cap,
+  .wkf-hint {
+    font-size: 11px;
+  }
+}
+@media (prefers-reduced-motion: reduce) and (min-width: 100000px) {
+  /* 已停用（2026-09-16）：作者要求"系统关着动画也拿满效果" ——
+     把媒体条件加成永不成立。恢复无障碍降级：删掉 ` and (min-width: 100000px)`。
+     策略与开关见 src/lib/motion-pref.ts 的 FORCE_FULL_MOTION。 */
+  .wkf,
+  .wkf-img {
+    transition: none;
+  }
+}
+
+/* ============ 观夏 PLAN_01 内容注入（2026-09-14） ============
+   三处结构改动，见 WorkProjectPage / work-pages.ts 的注释：
+   1. 左栏自述 = 小标题（粗体）+ 长文；
+   2. 左栏数字导航从「切换项目」改成「本页板块目录」；
+   3. 元信息块钉到左栏最底部。
+   ------------------------------------------------------------ */
+
+/* 1. 左栏自述：标题 + 段落 */
+.wkp-intro-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.wkp-intro-title {
+  margin: 0;
+  font-family: var(--wkp-display);
+  font-size: 13px;
+  font-weight: 700;              /* 用户要求：标题粗体 */
+  letter-spacing: 0.16em;
+  color: var(--wkp-rail-ink);
+}
+/* 长文进左栏后要把行高收紧，否则 900px 高的窗口会溢出
+   （.wkp-rail 是 overflow:hidden，溢出就是直接看不到） */
+.wkp-rail .wkp-intro {
+  max-width: none;
+  font-size: 12.5px;
+  line-height: 1.62;
+}
+
+/* 2. 板块目录：数字 + 板块标题 */
+.wkp-nav {
+  gap: 4px;
+  margin-top: 0;
+}
+.wkp-nav-item {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  max-width: 100%;
+  padding: 1px 0;
+  border: 0;
+  background: none;
+  color: var(--wkp-rail-dim);
+  font-family: var(--wkp-body);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  text-align: left;
+  cursor: pointer;
+  transition: color 0.2s ease, transform 0.2s ease;
+}
+.wkp-nav-item .wkp-nav-num {
+  flex: 0 0 auto;
+  min-width: 1.05em;
+  padding: 0;
+  font-family: var(--wkp-display);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: inherit;
+}
+.wkp-nav-item .wkp-nav-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wkp-nav-item:hover {
+  color: var(--wkp-rail-ink);
+  transform: translateX(3px);
+}
+.wkp-nav-item.is-on {
+  color: var(--wkp-accent);
+}
+/* 旧的 .wkp-nav-num:hover 是给「按钮本体」写的，现在它只是按钮里的一个 span，
+   不 neutralize 会和 .wkp-nav-item:hover 叠成 6px 位移 */
+.wkp-nav-item .wkp-nav-num:hover {
+  transform: none;
+}
+
+/* 3. 元信息钉到左栏最底：把原本挂在 .wkp-rail-foot 上的 margin-top:auto 挪过来 */
+.wkp-rail .wkp-meta {
+  margin-top: auto;
+}
+.wkp-rail .wkp-rail-foot {
+  margin-top: 0;
+}
+
+/* （原「3 张以上排两列网格」的规则已删：2026-09-14 起正文配图统一满宽单列，
+   两列会把 1920px 的策划案页面压到 ~250px，读不了。
+   单列规则见上面 .wkp-figs 那段。这里留个位置说明，免得以后有人又加回来。） */
+
+/* ============================================================================
+   报刊亭两排的落地页（2026-09-15）
+   ---------------------------------------------------------------------------
+   第一排（顶层设备）→ .mjp-* 视频与音乐，**结构复刻 mattjinn.com/videos/**：
+     100vh 里一次只居中一个视频，所有片子横排成一条靠整体平移切换，
+     左下角 ticker 显示序号，点开进全屏播放器。
+   第二排（下层档案）→ .cp-* 文案与 AI 项目，文字卡片列表。
+   两者都是**全屏独立页**，进出沿用站内「推门而入」过渡（.wkp 同款）：
+     scale 1.04 + 透明 → scale 1，顶栏错峰滑入。
+   ========================================================================== */
+
+/* ==================== 第一排：视频与音乐（复刻 mattjinn.com/videos/） ====================
+   一次只居中一个片子，所有片子横排成一条，靠 --i 平移切换；
+   左下角 ticker 走序号，点开进全屏播放器。
+   ⚠️ --wkp-display / --wkp-body 只定义在 .wkp 内部，这里要自己声明一份，
+      否则 var(--wkp-display) 取不到值、纳米老宋会静默回退。
+   ====================================================================================== */
+.mjp {
+  --wkp-display: 'NanoOldSongA', 'Noto Serif SC', 'Songti SC', serif;
+  --wkp-body: 'Inter', 'Noto Sans SC', system-ui, sans-serif;
+
+  /* 所有格子**等高**，宽度由每条片子自己的 --ar 推出 —— 这样横竖版能混排，
+     9:16 的竖视频才不会被 cover 裁掉。
+     （mattjinn 原版是固定 671px 宽 + 571:350，因为他家片子全是横版）
+     53vh 是照参考站量的：卡片高度占视口约 53%，且**中心落在 44% 高度**（偏上），
+     下面那 40% 留给标题/时长/未来的简介。 */
+  --mjp-h: clamp(240px, 53vh, 700px);
+  /* 卡片间距按**卡片高度**取比例（不是固定 px）—— 参考站量出来 gap ≈ 0.47 × 卡片宽，
+     换算成"步长"刚好是"翻过去一张、下一条只在右缘露 40 来 px"。
+     用固定 px 的话，横版卡片会把左右邻居露出一大片，和参考站差别很大（2026-09-15 实测）。 */
+  --mjp-gap: max(28px, calc(var(--mjp-h) * 0.5));
+  /* 相邻卡片的**垂直错位量** —— 这是"斜着错位摆放"的来源。
+     2026-09-15 从用户录屏（214638）逐帧量出来的：卡片高 366px 时，左邻的顶边比当前卡
+     高 **84~85px**，即 0.232 × 卡片高（换算成整条的角度 ≈ 5.7°）。
+     于是整条片子不是一条水平线，而是一条**向右下倾斜的阶梯**：
+        off=-1 的卡上去 0.23h、off=+1 的卡下去 0.23h，off=0 的当前卡留在中位。
+     副作用正是用户要的"切换手感"—— 推进一格时**每条卡都沿这条斜线上下滑 0.23h**，
+     所以切换不再是纯水平滑动，而是斜着走。 */
+  --mjp-stagger: calc(var(--mjp-h) * 0.232);
+  --mjp-ink: #14110e;            /* 白底 → 文字改近黑 */
+  --mjp-dim: rgba(20, 17, 14, 0.55);
+
+  position: fixed;
+  inset: 0;
+  z-index: 60;                 /* 高于报刊亭浮层 */
+  overflow: hidden;
+  /* 白底 —— 参考站列表页就是纯白（录屏实测像素 #ffffff）。
+     注意全屏播放器 .mjp__player 仍是黑底，两者互不影响。 */
+  background: #ffffff;
+  color: var(--mjp-ink);
+  font-family: var(--wkp-body);
+  /* 推门而入（与 .wkp 同款）：轻微放大 + 全透明 → 落位 */
+  opacity: 0;
+  transform: scale(1.04);
+  transform-origin: 50% 50%;
+  transition: opacity 0.45s ease, transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.mjp.is-in {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* ---- 顶栏：播放态整体淡出（复刻 mattjinn 的 .navigation 行为） ---- */
+.mjp__nav {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  display: grid;
+  /* 两栏：Back 靠左、频道名靠右。正中间留给站内的「作者模式」角标，别去挤。 */
+  grid-template-columns: auto auto;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  padding: clamp(20px, 3vh, 34px) clamp(24px, 5vw, 72px);
+  /* 顶栏错峰滑入，和整页缩放形成"推门"层次 */
+  opacity: 0;
+  transform: translateY(-14px);
+  transition: opacity 0.5s ease 0.12s, transform 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.12s,
+    visibility 0.5s;
+}
+.mjp.is-in .mjp__nav {
+  opacity: 1;
+  transform: none;
+}
+.mjp.is-playing .mjp__nav {
+  opacity: 0;
+  visibility: hidden;
+  transition-delay: 0s;
+}
+/* 返回 —— 这是全页唯一的退出口，**必须一眼能找到**。
+   原来 opacity 0.62（≈ #6b6763 的灰）在白底上太淡，用户反馈「颜色不明显，可能找不到」。
+   现在：近实色 + 前置箭头 + 加一点字距，并留足点击面积（负 margin 把 padding 吃回去，
+   视觉位置不变但热区变大）。 */
+.mjp__back {
+  justify-self: start;
+  margin-left: -10px;
+  padding: 6px 10px;
+  border: 0;
+  background: none;
+  font-family: var(--wkp-display);
+  font-size: 14px;
+  letter-spacing: 0.14em;
+  color: var(--mjp-ink);
+  opacity: 0.94;
+  cursor: pointer;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.mjp__back:hover {
+  opacity: 1;
+  transform: translateX(-3px);
+}
+.mjp__nav-title {
+  justify-self: end;
+  text-align: right;
+  font-family: var(--wkp-display);
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  opacity: 0.62;
+}
+
+/* ---- 横向一条：整体平移切换 ----
+   ⚠️ 透视挂在 viewport（不是 wrapper）：wrapper 是一整条很宽的 flex，
+      透视原点会跑到"整条的中心"去，边缘的卡会被拉得极夸张。
+      挂 viewport 才能让原点落在**屏幕中心**，卡片绕着屏幕中心弯。 */
+.mjp__viewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  perspective: clamp(900px, 120vh, 1800px);
+  perspective-origin: 50% 50%;
+}
+/* ---- 背景大字层（多层视差里最慢的一层）----
+   参考站首页那套「music / videos / shows」的斜体衬线大字，搬来当视频页的远景字：
+   永远小写、极淡、极大，随着 --cur 以约 0.05× 的速度横移（卡片是 1×）。
+   调"多淡"就改这个 opacity，别去动字号 —— 字号是照参考站占满整屏的比例定的。 */
+.mjp__bgword {
+  position: absolute;
+  left: 50%;
+  top: 44%;
+  z-index: 0;
+  /* 多层视差：横移 0.042×（46px / 每格 1086px），并且**跟着那条斜线一起上下走**
+     （卡片每格升 0.232h ≈ 110px，乘 0.042 ≈ 4.6px）—— 两层同方向、不同倍率，
+     才有"卡片从远景字上掠过"的纵深。 */
+  transform: translate(-50%, -50%) translateX(calc(var(--cur, 0) * -46px))
+    translateY(calc(var(--cur, 0) * -4.6px));
+  font-family: var(--wkp-display);
+  font-style: italic;
+  /* 字号必须大到**横跨卡片两侧**才有意义 —— 21vw 时整词宽约 900px，
+     正好被 868px 宽的卡片盖个严实，只在两边各露十几像素（2026-09-15 截图里就是这样）。
+     30vw 下"videos"约 1220px，卡片左右各露 ~175px，才是水印该有的样子。 */
+  font-size: clamp(150px, 30vw, 460px);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  color: var(--mjp-ink);
+  opacity: 0.08;
+  pointer-events: none;
+  user-select: none;
+}
+
+.mjp__wrapper {
+  position: absolute;
+  left: 50%;
+  /* 中心放在 44% 而不是 50% —— 参考站视频条偏上，下面留出信息块的位置 */
+  top: 44%;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--mjp-gap);
+  /* 让子卡片的 3D 变换（rotateY / translateZ）合成到 viewport 的透视里，
+     否则它们会被压平成 2D、曲面感全丢。 */
+  transform-style: preserve-3d;
+  /* X 偏移由 JS 每帧写进 inline transform。
+     ⚠️ 这里**不能**再挂 transition —— 每帧一个新目标值，transition 会一直追不上，
+     反而变成持续的滞后拖影。平滑感完全由 lerp(0.1) 提供。 */
+}
+.mjp__media {
+  /* 这张卡到"当前那条"的距离（JS 每帧写，夹在 ±2.2）—— 曲面造型的驱动量 */
+  --off: 0;
+  flex: 0 0 auto;
+  position: relative;
+  height: var(--mjp-h);
+  width: auto;
+  aspect-ratio: var(--ar, 1.7778);   /* 每条片子自己的比例 */
+  opacity: 0.34;
+  /**
+   * 斜着错位 + 曲面 / 鱼眼（2026-09-15 第五轮 —— 照用户第二段录屏逐帧量过再定参）。
+   *
+   *   ① **斜着错位（本轮新增，最关键的一层）**：`--off * --mjp-stagger`。
+   *      整条子是向右下倾斜的阶梯，静止时就看得出：左邻顶边比当前卡高 0.232h。
+   *      ⚠️ 必须写成最左边的 `translate3d` —— 那是在**父级坐标系**里先落位的平移，
+   *      所以它是"屏幕竖直方向"的位移；写进 rotateY 后面就变成卡片自己坐标系里的方向了。
+   *      ⚠️ 也**不要**指望旋转能造出这个错位：录屏里静止的左邻，顶边斜率实测 **0.00°**
+   *      （全分辨率逐列拟合），两侧卡片一律是正矩形 —— 错位是平移出来的，不是转出来的。
+   *   ② **侧转**：`--off * 3.5deg`，离中心越远越侧过去（很小，只是让边上的卡有厚度）。
+   *   ③ **曲面（圆柱）**：`--off² * --bulge` 按到中心的距离往后退，越靠边退得越多；
+   *      `--off * --bulge` 再转过去，外侧那条边退得更多。
+   *      ⚠️ 2026-09-16 第九轮：**真正的弯曲不在这里** —— CSS 变换是仿射的，屏幕上直线
+   *      变换后还是直线，所以这里无论怎么调都只能拼出"透视梯形 + 斜切"，卡片的上边
+   *      永远笔直，作者的说法是"很生硬"。真·圆柱面（上下边成弧线、两端横向压缩）
+   *      改由 canvas 每帧重画实现，见 `src/lib/gallery/bend.ts`。
+   *      下面这几项只负责**空间摆位**：阶梯错位、侧转、朝观众推出去、再转过去。
+   *   ④ **鱼眼**：另一半在 `.mjp__viewport` 的 perspective —— 跨格时 JS 把透视从 1900px 收到 1000px。
+   * --bulge=0（落位静止）时 ②③④ 全部归位，只留下①的阶梯和一点侧转。
+   *
+   * ⚠️ 2026-09-15 第七轮：这里原来用的是 `--speed`（**速度**），换成了 `--bulge`（**跨格进度**）。
+   *    速度的峰值在起步那一瞬 —— 画面还贴着旧那条的时候就鼓到最大，落位途中反而瘪下去；
+   *    录屏逐帧对下来（参考站 30fps）是**走到半路最鼓、落位回平**，也就是"切换时视频凸出来"。
+   *    `--bulge` = |当前位置到最近整格的距离|×2，正好落位 0 / 中间 1。
+   *    ⚠️ 第九轮把 `skewX(-2.5deg)` 与 `scale(0.98, 1.055)` 都删了：它们是"平面假弯曲"的
+   *    补丁，斜切在视觉上会压过前凸的量（剪影逐列量下来左右缘只差 6%，看着像整条歪了），
+   *    而现在 canvas 是真的在弯，再叠斜切就成了"歪掉的照片 + 弧面"，两头不讨好。
+   */
+  transform: translate3d(0, calc(var(--off) * var(--mjp-stagger)), 0)
+    rotateY(calc(var(--off) * 3.5deg))
+    /* 凸透镜：中间那张**朝观众鼓出来**（+72px）、越往两边越往后退（-60px/格²）。
+       别写成 `off² * -70px`（中心恒为 0）—— 那样居中的卡片没有 Z 位移，
+       viewport 收透视对它完全不起作用，鱼眼只剩邻卡在动（2026-09-15 截了帧才发现）。 */
+    translate3d(0, 0, calc((72px - var(--off) * var(--off) * 60px) * var(--bulge, 0)))
+    rotateY(calc(var(--off) * var(--bulge, 0) * 34deg));
+  transition: opacity 0.6s ease;
+}
+.mjp__media.is-current {
+  opacity: 1;
+}
+/* 曲面高光（`::after` 那道斜向反光）已于 2026-09-16 删除 ——
+   它是一张贴在**平面矩形**上的渐变，卡片弯起来之后反光会溢出弧线之外，
+   左右上角露出两条三角形亮边。体积感改由 canvas 里按切片角度压暗来给
+   （见 bend.ts 的 `shade`）。 */
+.mjp__media-btn {
+  position: absolute;
+  inset: 0;
+  display: block;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  /* ⚠️ 不能再给底色：卡片弯曲时画布四周是透明的，深色底会把"拱起来的剪影"
+     重新填成一个直角矩形，弧线全被吃掉。（之前是 #17130f，用来兜住视频加载前的空档；
+     现在那个空档由 poster 图占着。） */
+  background: none;
+  cursor: pointer;
+}
+/* 可见的那一层：每帧按圆柱面重画的画布（拱起 / 两端后退 / 上下边成弧线） */
+.mjp__media-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+/* 帧源：藏起来只供 drawImage 取帧。
+   ⚠️ 用 opacity:0 **而不是** display:none / visibility:hidden —— 后两者会让浏览器
+   停掉解码，画布再也拿不到新帧（2026-09-16 踩过：卡片死在第一帧）。 */
+.mjp__media-video {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  pointer-events: none;
+}
+/* ---- 卡片下方的居中信息块（标题 / 时长 / 简介） ----
+   位置照参考站量：标题在视口 83% 高度、时长 87%，都在画面中轴上。
+   ⚠️ 卡片上**不再**叠任何文字（2026-09-15 用户：文件名删掉，改为在视频下方加介绍）。 */
+.mjp__info {
+  position: absolute;
+  left: 50%;
+  bottom: clamp(78px, 12vh, 150px);
+  z-index: 3;
+  /* 多层视差的一层：滚动时被卡片"带"着荡一下（往左下），停手即回中位，
+     所以用 --speed 而不是 --cur —— 用位置量会让标题永远偏在中轴之外。
+     纵向那一小点是为了对上卡片的斜线方向（切换时整条在往上走）。 */
+  transform: translate(calc(-50% + var(--speed, 0) * 20px), calc(var(--speed, 0) * 7px));
+  width: min(760px, 80vw);
+  text-align: center;
+  transition: opacity 0.4s ease, visibility 0.4s;
+}
+.mjp.is-playing .mjp__info {
+  opacity: 0;
+  visibility: hidden;
+  transition-delay: 0s;
+}
+.mjp__info__title {
+  margin: 0;
+  font-family: var(--wkp-display);
+  font-size: clamp(19px, 1.9vw, 27px);
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  /* SplitText 逐字符 rotateX 翻转要有透视才立体 —— perspective 值与参考站一致 */
+  perspective: 200px;
+  transform-style: preserve-3d;
+}
+.mjp__info__len {
+  margin: 2px 0 0;
+  font-family: var(--wkp-display);
+  font-size: clamp(13px, 1.15vw, 17px);
+  font-style: italic;
+  opacity: 0.72;
+}
+/* 简介：留给「以后在视频下面加介绍」的槽位，数据里没写 blurb 就不渲染 */
+.mjp__info__blurb {
+  margin: 10px auto 0;
+  max-width: 46em;
+  font-family: var(--wkp-body);
+  font-size: clamp(12px, 1vw, 14px);
+  line-height: 1.75;
+  color: var(--mjp-dim);
+  text-align: center;
+}
+
+/* ---- 左下角 ticker ---- */
+.mjp__ticker {
+  position: absolute;
+  left: clamp(24px, 5vw, 72px);
+  /* 参考站里刻度尺在视口 92% 高度 —— 比常见的贴底再高一点 */
+  bottom: clamp(26px, 6vh, 88px);
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  /* 视差层：与信息块**反向**小幅位移（各走各的轨道），停手回位 */
+  transform: translate(calc(var(--speed, 0) * -12px), calc(var(--speed, 0) * -5px));
+  transition: opacity 0.4s ease, visibility 0.4s;
+}
+.mjp.is-playing .mjp__ticker {
+  opacity: 0;
+  visibility: hidden;
+  transition-delay: 0s;
+}
+.mjp__ticker__num {
+  font-variant-numeric: tabular-nums;
+}
+.mjp__ticker__num.is-current {
+  opacity: 1;
+}
+.mjp__ticker__num:not(.is-current) {
+  opacity: 0.5;
+}
+/* 中间那列刻度：参考站左下角是 `01 ⌇⌇⌇ 04` 的形态 ——
+   一排**竖着的小刻度线**，当前那条被点亮并拉长（不是进度条，也不是斜杠）。 */
+.mjp__ticker__ticks {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 12px;
+}
+.mjp__tick {
+  display: block;
+  width: 1px;
+  height: 9px;
+  background: var(--mjp-ink);
+  opacity: 0.26;
+  transform-origin: 50% 50%;
+  transition: opacity 0.35s ease, transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.mjp__tick.is-on {
+  opacity: 1;
+  /* 当前那条拉长 —— 一眼看出走到第几个了 */
+  transform: scaleY(1.55);
+}
+.mjp__empty {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  font-size: 14px;
+  letter-spacing: 0.06em;
+  opacity: 0.6;
+}
+
+/* ---- 全屏播放器 ---- */
+.mjp__player {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  background: #000;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.55s ease, visibility 0.55s;
+}
+.mjp.is-playing .mjp__player {
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0.12s;
+}
+.mjp__player-video {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+.mjp__player-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+/* 控件整行放在**画面中线上**（参考站就是贴中线，不是常见的贴底）：
+   左 标题 ／ 中 进度条 ／ 右 图标。默认半透明可见，鼠标进来变实。 */
+.mjp__player-row {
+  position: absolute;
+  left: clamp(24px, 5vw, 72px);
+  right: clamp(24px, 5vw, 72px);
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 3;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: clamp(16px, 3vw, 44px);
+  color: #fff;
+  opacity: 0.62;
+  transition: opacity 0.45s ease;
+}
+.mjp__player.is-hover .mjp__player-row,
+.mjp__player.is-credits .mjp__player-row {
+  opacity: 1;
+}
+.mjp__player-title {
+  margin: 0;
+  white-space: nowrap;
+  font-family: var(--wkp-display);
+  font-size: clamp(16px, 1.7vw, 24px);
+  font-weight: 400;
+}
+.mjp__player-icons {
+  display: flex;
+  align-items: center;
+  gap: clamp(12px, 1.6vw, 24px);
+}
+.mjp__player-close {
+  position: absolute;
+  /* 右上角（原本在正中，会被站内「作者模式」角标压住） */
+  top: clamp(20px, 3vh, 34px);
+  right: clamp(24px, 5vw, 72px);
+  z-index: 3;
+  padding: 8px 16px;
+  border: 0;
+  background: none;
+  font-family: var(--wkp-display);
+  font-size: 14px;
+  letter-spacing: 0.14em;
+  color: #fff;
+  cursor: pointer;
+  /* 播放器里是白字压黑底，同样别太淡（原来 0.72） */
+  opacity: 0.92;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.mjp__player-close:hover {
+  opacity: 1;
+  transform: translateX(-3px);
+}
+/* 左下角的 Credits（参考站它在最左下，不在中线那行控制条里） */
+.mjp__player-foot {
+  position: absolute;
+  left: clamp(24px, 5vw, 72px);
+  bottom: clamp(20px, 3vh, 34px);
+  z-index: 3;
+  opacity: 0.62;
+  transition: opacity 0.45s ease;
+}
+.mjp__player.is-hover .mjp__player-foot,
+.mjp__player.is-credits .mjp__player-foot {
+  opacity: 1;
+}
+.mjp__player-progress {
+  position: relative;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  height: 30px;
+  cursor: pointer;
+}
+.mjp__player-bar {
+  position: relative;
+  width: 100%;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.28);
+}
+.mjp__player-bar-fill {
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  transform: scaleX(var(--p, 0));
+  transform-origin: left center;
+  transition: transform 0.2s linear;
+}
+.mjp__player-time {
+  position: absolute;
+  bottom: 100%;
+  left: calc(var(--p, 0) * 100%);
+  transform: translateX(-50%);
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  transition: left 0.2s linear;
+}
+.mjp__player-btn {
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--wkp-display);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #fff;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.2s ease;
+}
+.mjp__player-btn:hover,
+.mjp__player-btn.is-on {
+  opacity: 1;
+}
+.mjp__player-credits {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 4;
+  max-width: min(560px, 84vw);
+  padding: 26px 30px;
+  background: rgba(0, 0, 0, 0.62);
+  text-align: center;
+}
+.mjp__player-blurb {
+  margin: 0 0 14px;
+  font-size: 13px;
+  line-height: 1.7;
+  opacity: 0.85;
+}
+.mjp__player-creditlist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.mjp__player-creditlist li {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  font-size: 12px;
+}
+.mjp__player-role {
+  opacity: 0.55;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.mjp__player-name {
+  opacity: 0.9;
+}
+
+@media (max-width: 768px) {
+  .mjp {
+    --mjp-h: 38vh;
+    --mjp-gap: 28px;
+  }
+  /* 窄屏播放器：标题挪走，只留进度条 + 图标，不然一行挤不下 */
+  .mjp__player-row {
+    grid-template-columns: 1fr auto;
+    gap: 12px;
+  }
+  .mjp__player-title {
+    display: none;
+  }
+  .mjp__info {
+    width: 88vw;
+    bottom: clamp(60px, 10vh, 100px);
+  }
+  /* 窄屏视频条也别顶那么高，给信息块让位 */
+  .mjp__wrapper {
+    top: 40%;
+  }
+}
+@media (prefers-reduced-motion: reduce) and (min-width: 100000px) {
+  /* 已停用（2026-09-16）：作者要求"系统关着动画也拿满效果" ——
+     把媒体条件加成永不成立。恢复无障碍降级：删掉 ` and (min-width: 100000px)`。
+     策略与开关见 src/lib/motion-pref.ts 的 FORCE_FULL_MOTION。 */
+  .mjp,
+  .mjp__nav {
+    transition: none;
+  }
+  .mjp {
+    transform: none;
+  }
+  .mjp__nav {
+    opacity: 1;
+    transform: none;
+  }
+  /* 关掉速度形变（此时组件也不会写 --speed，双保险）。
+     ⚠️ 但**斜着错位必须留下** —— 那是版式，不是动效；减动效的人同样该看到阶梯状的排布。
+     （--off 在 reduced 下仍由组件写：mount 时 apply() 一次 + 每次 go() 后 apply()。） */
+  .mjp__media {
+    transform: translate3d(0, calc(var(--off) * var(--mjp-stagger)), 0)
+      rotateY(calc(var(--off) * 3.5deg));
+  }
+}
+
+.cp-page {
+  /* 同 .mjp：--wkp-display 只定义在 .wkp 内部，这里必须自己声明一份 */
+  --wkp-display: 'NanoOldSongA', 'Noto Serif SC', 'Songti SC', serif;
+  --wkp-body: 'Inter', 'Noto Sans SC', system-ui, sans-serif;
+
+  position: fixed;
+  inset: 0;
+  z-index: 60;                 /* 高于报刊亭浮层，是它的下一层页面 */
+  display: flex;
+  flex-direction: column;
+  background: var(--wkp-paper, #e9e5dd);
+  color: var(--wkp-ink, #2a2118);
+  /* 推门而入（与 .wkp 同款）：轻微放大 + 全透明 → 落位 */
+  opacity: 0;
+  transform: scale(1.04);
+  transform-origin: 50% 50%;
+  transition: opacity 0.45s ease, transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.cp-page.is-in {
+  opacity: 1;
+  transform: scale(1);
+}
+.cp-topbar {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: end;
+  gap: 20px;
+  padding: clamp(22px, 3.4vh, 40px) clamp(24px, 5vw, 72px) clamp(14px, 2vh, 24px);
+}
+.cp-topbar-spacer {
+  min-width: 0;
+}
+.cp-back {
+  align-self: start;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--wkp-display);
+  font-size: 13px;
+  letter-spacing: 0.16em;
+  color: inherit;
+  opacity: 0.62;
+  cursor: pointer;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.cp-back:hover {
+  opacity: 1;
+  transform: translateX(-3px);
+}
+.cp-title {
+  margin: 0;
+  font-family: var(--wkp-display);
+  font-size: clamp(26px, 4.2vw, 62px);
+  font-weight: 400;
+  line-height: 1.06;
+  letter-spacing: 0.02em;
+}
+.cp-subtitle {
+  margin: 10px 0 0;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  opacity: 0.6;
+}
+/* ============================ 第二排：文案与 AI 项目 ============================ */
+.cp-filters {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 clamp(24px, 5vw, 72px) clamp(16px, 2.4vh, 28px);
+}
+.cp-filter {
+  padding: 5px 14px;
+  border: 1px solid rgba(58, 46, 35, 0.22);
+  border-radius: 999px;
+  background: none;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: inherit;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+.cp-filter:hover {
+  border-color: rgba(58, 46, 35, 0.5);
+}
+.cp-filter.is-on {
+  background: var(--wkp-accent, #33604e);
+  border-color: var(--wkp-accent, #33604e);
+  color: #fff;
+}
+.cp-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+}
+.cp-empty {
+  margin: 0;
+  padding: clamp(40px, 12vh, 120px) clamp(24px, 5vw, 72px);
+  font-size: 15px;
+  letter-spacing: 0.04em;
+  opacity: 0.55;
+}
+.cp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
+  gap: clamp(20px, 2.6vw, 34px);
+  padding: 0 clamp(24px, 5vw, 72px) clamp(48px, 9vh, 110px);
+}
+.cp-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(58, 46, 35, 0.16);
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.4);
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.25s ease;
+}
+a.cp-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(58, 46, 35, 0.34);
+}
+.cp-card-media {
+  /* 高度按封面比例走（aspect-ratio 在 img.onLoad 写进来），4/3、1.333、1.778 都能
+     边到边完整铺满；卡片栅格里各行自动对齐到最高的那一张。 */
+  aspect-ratio: 4 / 3; /* 兜底 */
+  background: rgba(58, 46, 35, 0.06);
+  overflow: hidden;
+}
+.cp-card-media img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* 卡片是 4/3，而封面是 1.33~1.78 的横构图：cover 会把两侧吃掉，改 contain 看全 */
+  object-fit: contain;
+}
+/* 没封面时：中间放一个分类标记，避免空块 */
+.cp-card-media.is-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cp-card-mark {
+  font-family: var(--wkp-display);
+  font-size: 13px;
+  letter-spacing: 0.22em;
+  color: rgba(58, 46, 35, 0.34);
+}
+.cp-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 18px 18px;
+}
+.cp-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.cp-card-title {
+  margin: 0;
+  font-family: var(--wkp-display);
+  font-size: 17px;
+  font-weight: 400;
+  line-height: 1.3;
+}
+.cp-card-year {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  opacity: 0.5;
+}
+.cp-card-blurb {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.72;
+  opacity: 0.8;
+}
+.cp-card-tags {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.cp-card-tag {
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: rgba(51, 96, 78, 0.1);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--wkp-accent-deep, #24503f);
+}
+
+/* 窄屏：文案页把字号与留白收一档（视频页的窄屏规则在 .mjp 段里单独写） */
+@media (max-width: 768px) {
+  .cp-topbar {
+    grid-template-columns: auto 1fr;
+    gap: 12px;
+  }
+  .cp-topbar-spacer {
+    display: none;
+  }
+  .cp-grid {
+    grid-template-columns: 1fr;
+  }
 }

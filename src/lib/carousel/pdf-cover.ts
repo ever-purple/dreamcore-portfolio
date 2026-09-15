@@ -46,7 +46,10 @@ async function renderPage(
     const pageNum = Math.min(Math.max(page, 1), doc.numPages);
     const pg = await doc.getPage(pageNum);
     const baseViewport = pg.getViewport({ scale: 1 });
-    const scale = Math.max(440 / baseViewport.width, 520 / baseViewport.height);
+    // 长边 1600：详情页首屏约 1065×792 CSS（2x 屏就是 2130×1584），
+    // 原先只渲 440×520，拉上去肉眼可见地糊。1600 是清晰度 / 体积的折中，
+    // 结果会进 cache（同一 cacheKey 不会重复解码）。
+    const scale = 1600 / Math.max(baseViewport.width, baseViewport.height);
     const viewport = pg.getViewport({ scale });
     const canvas = document.createElement('canvas');
     canvas.width = Math.ceil(viewport.width);

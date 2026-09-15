@@ -91,7 +91,8 @@ export function createMemoryProjections(scene: THREE.Scene, pixelRatio: number) 
     update(night: number, time: number, reduced: boolean, wind = 0, rotation = 0) {
       group.visible = night > 0.01;
       const level = THREE.MathUtils.smoothstep(night, 0.15, 0.9);
-      group.rotation.y = reduced ? 0 : Math.sin(time * 0.4) * wind * 0.015 + Math.sin(rotation) * 0.018;
+      // 阵风时地面光斑也跟着旋一点（原先 0.015 太小，夜灯下才看得出来）
+      group.rotation.y = reduced ? 0 : Math.sin(time * 0.4) * wind * 0.05 + Math.sin(rotation) * 0.018;
       layers.forEach((points, i) => {
         points.material.uniforms.strength.value = level * [0.9, 1.4, 0.8, 0.95][i];
         points.material.uniforms.time.value = reduced ? 0 : time;

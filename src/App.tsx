@@ -52,6 +52,9 @@ function App() {
       touchMultiplier: 1.6,
       // 首页播放到 100% 时拦截"继续向下"，向上仍然放行
       virtualScroll: (data) => {
+        // 详情页开着 → 滚轮让位给详情页自己的 Lenis（wkp-motion.ts），
+        // 不然主页 lenis 会在背后把工作室页面也滚走
+        if (document.querySelector('.wkp')) return false;
         if (downBlockedRef.current && data.deltaY > 0) return false;
         return true;
       },

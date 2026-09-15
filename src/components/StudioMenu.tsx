@@ -61,6 +61,17 @@ export function StudioMenu({ open, onClose, onSelect, onHoverChange }: Props) {
           >
             <span className="menu-en">{item.en}</span>
             <span className="menu-zh">{item.zh}</span>
+            {/* 悬停时的手写下划线：两笔弧线（来回描一遍），与光标 / 物件标签同一套笔触。
+                以前是 `::after` 一条 0.05em 高的**实心横杠** —— 也是用户要清掉的那种"硬色块"。 */}
+            <svg
+              className="menu-underline"
+              viewBox="0 0 300 14"
+              preserveAspectRatio="none"
+              aria-hidden="true"
+            >
+              <path className="hand__stroke" pathLength={100} d="M4 9 C60 3 142 12 296 6" />
+              <path className="hand__stroke" pathLength={100} d="M296 7 C238 11 122 3 16 9" />
+            </svg>
           </a>
         ))}
       </nav>

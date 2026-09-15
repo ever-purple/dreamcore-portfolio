@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { ProjectState, ProjectSection } from '@/data/works';
+import { coverAr } from '@/lib/cover-ar';
 
 export type ProjectSectionDraft = ProjectSection;
 
@@ -22,6 +23,13 @@ export type ProjectDraft = {
   removePdf: boolean;
 };
 
+/**
+ * 保存去向。必须让作者一眼分清这两种结果 ——
+ *  · `code`    = 已写回 `src/data/works.local.ts`，刷新 / 换端口 / 重新构建都还在；
+ *  · `browser` = 没有写入通道（看的是构建产物 / 线上），只存在本浏览器，换环境就没了。
+ */
+export type SaveOutcome = 'code' | 'browser';
+
 type Props = {
   project: ProjectState | null;
   /** 打开时直接进编辑态（"提交项目"按钮走这条路） */
@@ -33,8 +41,8 @@ type Props = {
   onClose: () => void;
   /** 切换到相邻槽位（mod = -1 / +1） */
   onSwitch?: (slot: number) => void;
-  onSave: (draft: ProjectDraft) => Promise<void>;
-  onClear: () => Promise<void>;
+  onSave: (draft: ProjectDraft) => Promise<SaveOutcome>;
+  onClear: () => Promise<SaveOutcome>;
 };
 
 /**
@@ -62,6 +70,10 @@ export function WorkDetail({ project, forceEdit, canEdit = false, totalSlots = 0
   const [pdf, setPdf] = useState<File | null>(null);
   const [removePdf, setRemovePdf] = useState(false);
   const [busy, setBusy] = useState(false);
+  /** 保存 / 清空失败的原因（以前失败是静默的，用户以为"存上了"其实什么都没发生）。 */
+  const [error, setError] = useState<string | null>(null);
+  /** 保存 / 清空成功后的去向说明。`warn` = 没写进代码，换环境就丢，得用另一种颜色说清楚。 */
+  const [notice, setNotice] = useState<{ text: string; tone: 'ok' | 'warn' } | null>(null);
 
   /* 换槽位就重置表单：先按当前内容填好，用户改哪算哪 */
   useEffect(() => {
@@ -76,6 +88,7 @@ export function WorkDetail({ project, forceEdit, canEdit = false, totalSlots = 0
     setRemoveImage(false);
     setPdf(null);
     setRemovePdf(false);
+    setError(null);
     const openEditor = canEdit && (Boolean(forceEdit) || !project.filled);
     setEditing(openEditor);
     closeRef.current?.focus();
@@ -119,12 +132,34 @@ export function WorkDetail({ project, forceEdit, canEdit = false, totalSlots = 0
     setImgPreview(null);
   }, [image]);
 
+  /**
+   * 换槽位就清掉上一次的提示。
+   * 只认 `slot`：保存 / 清空发生在同一个槽位内，会顺带更新 project
+   * （对象换了、slot 没换），用 project 当依赖会把刚设好的成功提示一起清掉。
+   *
+   * 提示**不设自动消失**：保存去向（写进代码 / 只在本浏览器）是要紧信息，
+   * 而且是贴在按钮上方的表单内联状态，不是浮出来的吐司，留在那儿直到
+   * 用户换槽位、再次保存或关掉面板为止，比"闪几秒就没"清楚得多。
+   */
+  const slotKey = project?.slot ?? -1;
+  useEffect(() => {
+    setError(null);
+    setNotice(null);
+  }, [slotKey]);
+
   if (!project) return null;
+
+  /** 保存去向 → 人话（`warn` 的语气要明确：没写进代码 = 换环境就没了）。 */
+  const noticeFor = (outcome: SaveOutcome, ok: string, warn: string) => ({
+    text: outcome === 'code' ? ok : warn,
+    tone: (outcome === 'code' ? 'ok' : 'warn') as 'ok' | 'warn',
+  });
 
   const submit = async () => {
     setBusy(true);
+    setError(null);
     try {
-      await onSave({
+      const outcome = await onSave({
         title,
         role,
         year,
@@ -141,6 +176,39 @@ export function WorkDetail({ project, forceEdit, canEdit = false, totalSlots = 0
       setPdf(null);
       setRemovePdf(false);
       setEditing(false);
+      setNotice(
+        noticeFor(
+          outcome,
+          '改动已写入 src/data/works.local.ts —— 刷新 / 换端口 / 重新构建都还在',
+          '改动只保存在本浏览器 —— 当前没有写入代码的通道（不是 vite dev），换端口或清缓存就没了',
+        ),
+      );
+    } catch (err) {
+      /* 保存失败一定要说出来：写代码文件的通道可能没开、上传可能被拒。
+         失败就留在编辑态，用户改过的内容不能丢。 */
+      setNotice(null);
+      setError(err instanceof Error ? err.message : '保存失败，请重试。');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const clearSlot = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const outcome = await onClear();
+      setNotice(
+        noticeFor(
+          outcome,
+          '已清空槽位，并同步删掉代码里的覆盖 —— 刷新后也不会回来',
+          '已清空本站的副本（当前没有写入通道，代码文件未改动）',
+        ),
+      );
+      /* 不主动收编辑态：清空后 project 变了，上面那个 effect 会把表单重填成种子内容 */
+    } catch (err) {
+      setNotice(null);
+      setError(err instanceof Error ? err.message : '清空失败，请重试。');
     } finally {
       setBusy(false);
     }
@@ -258,7 +326,13 @@ export function WorkDetail({ project, forceEdit, canEdit = false, totalSlots = 0
                 <input type="file" accept="image/*"
                   onChange={(e) => { setImage(e.target.files?.[0] ?? null); setRemoveImage(false); }} />
                 {highlightSrc ? (
-                  <img className="works-form-thumb" src={highlightSrc} alt="高光图预览" />
+                  <div className="works-form-thumb">
+                  <img
+                    src={highlightSrc}
+                    alt="高光图预览"
+                    onLoad={coverAr('.works-form-thumb')}
+                  />
+                </div>
                 ) : null}
                 {project.cover && image ? (
                   <button type="button" className="works-btn-danger" style={{ marginLeft: 0 }}
@@ -299,6 +373,22 @@ export function WorkDetail({ project, forceEdit, canEdit = false, totalSlots = 0
               </div>
             </div>
 
+            {notice ? (
+              <p
+                className={`works-form-notice${notice.tone === 'warn' ? ' is-warn' : ''}`}
+                role="status"
+              >
+                {notice.tone === 'warn' ? '⚠ ' : '✓ '}
+                {notice.text}
+              </p>
+            ) : null}
+
+            {error ? (
+              <p className="works-form-error" role="alert">
+                ⚠ {error}
+              </p>
+            ) : null}
+
             <div className="works-form-actions">
               <button type="button" className="works-btn-primary" disabled={busy} onClick={submit}>
                 {busy ? '保存中…' : '保存'}
@@ -309,9 +399,9 @@ export function WorkDetail({ project, forceEdit, canEdit = false, totalSlots = 0
                 </button>
               ) : null}
               {project.filled ? (
-                <button type="button" className="works-btn-danger" disabled={busy} onClick={async () => {
-                  setBusy(true); try { await onClear(); } finally { setBusy(false); }
-                }}>清空槽位</button>
+                <button type="button" className="works-btn-danger" disabled={busy} onClick={clearSlot}>
+                  清空槽位
+                </button>
               ) : null}
             </div>
           </div>
@@ -366,13 +456,8 @@ export function WorkDetail({ project, forceEdit, canEdit = false, totalSlots = 0
         )}
 
         <footer className="works-panel-foot">
-          {project.link ? (
-            <a className="works-link" href={project.link} target="_blank" rel="noreferrer noopener">
-              查看线上版本 ↗
-            </a>
-          ) : (
-            <span className="works-nolink">仅本机可见</span>
-          )}
+          {/* 「去线上」入口其三（作品详情面板页脚）2026-09-14 按用户要求删除：
+              原来这里是 查看线上版本 ↗ / 「仅本机可见」二选一，两个分支一并去掉。 */}
           {canEdit ? (
             <button type="button" className="works-btn-primary works-btn-sm" onClick={() => setEditing(true)}>
               编辑项目

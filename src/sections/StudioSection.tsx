@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { AboutOverlay } from '@/components/AboutOverlay';
 import { CrtOverlay } from '@/components/GreenOs';
+import { HandFrame } from '@/components/HandFrame';
 import { ObjectZone } from '@/components/ObjectZone';
 import { NotebookOverlay } from '@/components/NotebookOverlay';
 
@@ -11,10 +12,19 @@ import { NotebookOverlay } from '@/components/NotebookOverlay';
 const WorksCarousel = lazy(() => import('@/components/WorksCarousel'));
 /** 报刊亭 → 创作档案（Creative Lab）3D 展架场景，同样懒加载成独立分包 */
 const NewsstandScene = lazy(() => import('@/components/NewsstandScene'));
+/**
+ * 报刊亭两排物件的落地页（2026-09-15）：
+ *  · 第一排（顶层设备）→ 视频与音乐作品（MediaGalleryPage，参考 mattjinn.com/videos/）；
+ *  · 第二排（下层档案）→ 文案与 AI 项目（CopyProjectPage，文字卡片列表）。
+ * 同排任意一件都进同一个页面，所以只是两个开关。
+ */
+const MediaGalleryPage = lazy(() => import('@/components/MediaGalleryPage'));
+const CopyProjectPage = lazy(() => import('@/components/CopyProjectPage'));
 import { StudioMenu } from '@/components/StudioMenu';
 import { StudioLensBackground } from '@/components/StudioLensBackground';
 import { useMagnetic } from '@/hooks/useMagnetic';
 import { studioObjects, type StudioObject } from '@/data/studio';
+import { CHANNEL_BY_DEVICE, type MediaChannel } from '@/data/mediaWorks';
 import { playCrtOff, playCrtOn } from '@/lib/crtAudio';
 
 type Props = {
@@ -54,11 +64,32 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
   const [hoveredId, setHoveredId] = useState<StudioObject['id'] | null>(null);
   const [notebookOpen, setNotebookOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [worksOpen, setWorksOpen] = useState(false);
+  // ?works=1 可直接预览木马策划案浮层（与 ?newsstand=1 / ?about=1 同一套调试参数约定）
+  const [worksOpen, setWorksOpen] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.has('works');
+  });
   /** 报刊亭 → 创作档案 3D 展架场景开关（?newsstand=1 可直接预览） */
   const [newsstandOpen, setNewsstandOpen] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     return params.has('newsstand') || params.has('lab');
+  });
+  /** 第一排（顶层设备）落地页：视频与音乐（?media=1 可直接预览） */
+  const [mediaOpen, setMediaOpen] = useState(() => {
+    return new URLSearchParams(window.location.search).has('media');
+  });
+  /**
+   * 视频页的**片单频道** —— 由点的是第一排第几台设备决定（DVD→横屏 / DV→AI / MP3→竖屏）。
+   * 不传 = 列出全部作品（?media=1 直接预览时就是这个状态）。
+   * 调试可以写 `?media=1&channel=ai` 直接看某个频道，不用去点 3D 模型。
+   */
+  const [mediaChannel, setMediaChannel] = useState<MediaChannel | undefined>(() => {
+    const v = new URLSearchParams(window.location.search).get('channel');
+    return v === 'landscape' || v === 'ai' || v === 'portrait' ? v : undefined;
+  });
+  /** 第二排（下层档案）落地页：文案与 AI 项目（?copy=1 可直接预览） */
+  const [copyOpen, setCopyOpen] = useState(() => {
+    return new URLSearchParams(window.location.search).has('copy');
   });
   // ?about=1 / ?greenos=1 / #about 可直接预览。
   // greenos / crt 也顺带把页面打开 —— 否则想看 Green OS 外观还得写两个参数。
@@ -179,6 +210,15 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
   }, []);
 
   /**
+   * 木马策划案算"离开工作室画面"，背景音乐停下。
+   * 用 effect 而不是只在 handleSelect 里停，是为了连 `?works=1` 直接预览
+   * （没走点击流程）也能一致地静音；关闭时由 onClose 的 resumeMusic() 恢复。
+   */
+  useEffect(() => {
+    if (worksOpen) stopMusic();
+  }, [worksOpen, stopMusic]);
+
+  /**
    * 点电脑 → 镜头扎进 CRT 屏幕 → 过曝 → Green OS（三步走，总时长约 1.2s）
    *   0.00–0.70s  相机朝屏幕极速推进（见 CSS .studio-cam.is-in）
    *   0.70–0.81s  全屏荧光过曝，3D 房间被白光吃掉
@@ -259,10 +299,10 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
 
   const handleSelect = useCallback(
     (object: StudioObject) => {
-      // 进入 About Me（电脑物件）不再播放工作室背景音乐；子页导航同样停；
-      // 笔记本与木马都算"还在工作室里"，音乐继续放着。
+      // 进入 About Me（电脑）、木马策划案、报刊亭创作档案都算"离开工作室画面"，
+      // 背景音乐停下；只有笔记本算"还在工作室里"，音乐继续放着。
       // 回到工作室时由各自的 onClose → resumeMusic() 恢复。
-      if (object.id !== 'notebook' && object.id !== 'carousel') {
+      if (object.id !== 'notebook') {
         stopMusic();
       }
       if (object.id === 'notebook') setNotebookOpen(true);
@@ -273,6 +313,43 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
     },
     [onSelectObject, openCrt, stopMusic],
   );
+
+  /**
+   * 报刊亭里点开某排物件 → 进对应落地页（2026-09-15）。
+   * 按 row 分流：devices（顶层 DVD/DV/MP3）→ 视频与音乐；books（下层档案）→ 文案与 AI。
+   * 顶层三台设备还各自带一条**片单频道**（CHANNEL_BY_DEVICE）：
+   *   DVD → 横屏 / DV → AI / MP3 → 竖屏，落地页只列该频道的片子。
+   * 进落地页算"离开工作室画面"，背景音乐停下；关闭时由各自的 onClose 恢复。
+   */
+  const handleNewsstandPick = useCallback(
+    (row: 'devices' | 'books', index: number) => {
+      stopMusic();
+      // 进落地页就把 3D 报刊亭一并收掉 —— 不然模型还在落地页背后转着，
+      // 用户还得再手动关一次（2026-09-15 用户要求：点开即关，不用手动）。
+      setNewsstandOpen(false);
+      if (row === 'devices') {
+        setMediaChannel(CHANNEL_BY_DEVICE[index] ?? 'landscape');
+        setMediaOpen(true);
+      } else setCopyOpen(true);
+    },
+    [stopMusic],
+  );
+
+  /**
+   * 落地页与报刊亭**互斥**（2026-09-16 补的保险）。
+   *
+   * 背景：`handleNewsstandPick` 里已经 `setNewsstandOpen(false)` 了，正常路径没问题。
+   * 但只要**任何**一条路径漏掉这一步（旧 bundle、以后新加的入口、URL 直接带
+   * `?newsstand=1&media=1`），就会出现「关了落地页 → 后面还杵着 BOOK STORE 书架」，
+   * 用户看到的就是「点 Back 回到了书架，不是 My Studio 页」。
+   *
+   * 所以在这里加一条**状态层**的不变式：只要落地页开着，报刊亭就必须是关的。
+   * 这样「关掉落地页 ⇒ 一定露出工作室」是由状态保证的，不依赖每个入口记得手写关闭。
+   * （渲染层还有一道 `newsstandOpen && !mediaOpen && !copyOpen` 的兜底。）
+   */
+  useEffect(() => {
+    if (mediaOpen || copyOpen) setNewsstandOpen(false);
+  }, [mediaOpen, copyOpen]);
 
   // 悬停电脑感应区时预取 3D 小人分包，点开即用不等待
   useEffect(() => {
@@ -373,9 +450,11 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
             else stopMusic(); // 打开菜单 → 停音乐
             setMenuOpen((v) => !v);
           }}
-          className="rounded-full border border-cream/30 px-4 py-1.5 text-[11px] tracking-[0.15em] text-cream transition-colors hover:border-cream/70"
+          className="studio-pill"
         >
-          {menuOpen ? 'Close' : 'MENU'}
+          {/* 手绘圆圈 + 手写体 —— 原来是一条 `rounded-full border` 的胶囊（也是"硬边框"）。
+              常显（不靠悬停），所以 .studio-pill 在 CSS 里直接把 dashoffset 归零。 */}
+          <HandFrame shape="ring">{menuOpen ? 'Close' : 'MENU'}</HandFrame>
         </button>
       </header>
 
@@ -408,18 +487,52 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
       {/* 木马策划案（点旋转木马物件 → 原地展开 3D 木马，策划案挂在上面） */}
       {worksOpen ? (
         <Suspense fallback={null}>
-          <WorksCarousel open={worksOpen} onClose={() => setWorksOpen(false)} />
+          <WorksCarousel
+            open={worksOpen}
+            onClose={() => {
+              setWorksOpen(false);
+              resumeMusic(); // 关掉木马策划案 → 回到工作室，音乐继续
+            }}
+          />
         </Suspense>
       ) : null}
 
-      {/* 报刊亭 → 创作档案（点报刊亭物件 → 原地展开 3D 绿锈展架，镜头推近 + 房间模糊） */}
-      {newsstandOpen ? (
+      {/* 报刊亭 → 创作档案（点报刊亭物件 → 原地展开 3D 绿锈展架，镜头推近 + 房间模糊）
+          ⚠️ `!mediaOpen && !copyOpen` 是渲染层的兜底：落地页开着时绝不让书架挂在后面。
+          否则关掉落地页会「露出」书架，看起来就像"Back 把我送回了书架"（2026-09-16 用户报）。 */}
+      {newsstandOpen && !mediaOpen && !copyOpen ? (
         <Suspense fallback={null}>
           <NewsstandScene
             open={newsstandOpen}
             onClose={() => {
               setNewsstandOpen(false);
               resumeMusic(); // 关掉展架场景 → 回到工作室，音乐继续
+            }}
+            onPick={handleNewsstandPick}
+          />
+        </Suspense>
+      ) : null}
+
+      {/* 第一排落地页：视频与音乐作品（点报刊亭顶层设备 → 独立全屏页） */}
+      {mediaOpen ? (
+        <Suspense fallback={null}>
+          <MediaGalleryPage
+            channel={mediaChannel}
+            onClose={() => {
+              setMediaOpen(false);
+              resumeMusic(); // 关闭 → 回到工作室，音乐继续
+            }}
+          />
+        </Suspense>
+      ) : null}
+
+      {/* 第二排落地页：文案与 AI 项目（点报刊亭下层档案 → 独立全屏页） */}
+      {copyOpen ? (
+        <Suspense fallback={null}>
+          <CopyProjectPage
+            onClose={() => {
+              setCopyOpen(false);
+              resumeMusic(); // 关闭 → 回到工作室，音乐继续
             }}
           />
         </Suspense>

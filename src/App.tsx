@@ -48,6 +48,10 @@ function App() {
       duration: 1.15,
       easing: (t: number) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
       smoothWheel: true,
+      // 作者机器 Windows「动画效果」是关的 → Chromium 上报 reduce，Lenis 默认会据此
+      // 关闭平滑滚动（退回原生阶梯滚动＝卡顿）。与全站 FORCE_FULL_MOTION 策略一致，
+      // 这里强制开启平滑，关着动效也拿满丝滑。
+      respectReducedMotion: false,
       wheelMultiplier: 1,
       touchMultiplier: 1.6,
       // 首页播放到 100% 时拦截"继续向下"，向上仍然放行

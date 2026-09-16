@@ -541,21 +541,25 @@
   inset: 0;
   z-index: 999;
   pointer-events: none;
-  background: #ffffff;
+  /* 中心略带暖白渐变，绽放时不死白，更像"推门而出的光" */
+  background: radial-gradient(circle at 50% 50%, #ffffff 55%, #f4f4f2 100%);
   clip-path: circle(140% at 50% 50%);
   will-change: clip-path, opacity;
-  animation: iris-bloom 0.4s ease-out forwards;
+  /* 缓出减速：绽放收尾更"稳"，不抢拍 */
+  animation: iris-bloom 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 .flash-burst.is-fading {
-  animation: iris-fade 0.42s ease-out forwards;
+  /* 淡出同样缓出，露出工作室时不突兀 */
+  animation: iris-fade 0.42s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
 @keyframes iris-bloom {
-  from { clip-path: circle(0% at 50% 50%); }
-  to   { clip-path: circle(140% at 50% 50%); }
+  0%   { clip-path: circle(0% at 50% 50%); opacity: 0; }
+  25%  { opacity: 1; }
+  100% { clip-path: circle(150% at 50% 50%); opacity: 1; }
 }
 @keyframes iris-fade {
-  from { opacity: 1; }
-  to   { opacity: 0; }
+  0%   { clip-path: circle(150% at 50% 50%); opacity: 1; }
+  100% { opacity: 0; }
 }
 
 /* ===== 首页滚动文字遮罩揭示（Portfolio） ===== */

@@ -13,6 +13,10 @@ const TOTAL_FRAMES = 120;
 // OPEN / bell trigger at 90% scroll progress
 const THRESHOLD_FRAME = Math.floor(0.9 * (TOTAL_FRAMES - 1)); // 107
 
+// 帧过渡平滑系数：越大越跟手，越小越"滑"。14 ≈ 70ms 时间常数，
+// 配合下面的 1-exp(-k·dt) 做帧率无关的指数跟随，丝滑且不拖影。
+const SMOOTH_K = 14;
+
 // 站点级单例：铃声音频在整个会话内常驻，组件卸载后也能播完，保证用户一定听到
 let sharedBell: HTMLAudioElement | null = null;
 function getBell(): HTMLAudioElement {
@@ -27,8 +31,9 @@ export function HomeSection({ images, complete, entered, onOpen, setDownBlocked 
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number>(0);
-  const targetFrameRef = useRef(0);
-  const currentFrameRef = useRef(-1);
+  const targetProgressRef = useRef(0);
+  const displayedRef = useRef(0);
+  const lastTsRef = useRef(0);
   const dimsRef = useRef({ width: 0, height: 0, dpr: 1 });
   const atEndRef = useRef(false);
   const wasAtThresholdRef = useRef(false);
@@ -45,6 +50,26 @@ export function HomeSection({ images, complete, entered, onOpen, setDownBlocked 
   useEffect(() => {
     bellRef.current = getBell();
   }, []);
+
+  // cover-fit 矩形：基于画布尺寸与单帧宽高比
+  const getRect = (img: HTMLImageElement) => {
+    const { width, height } = dimsRef.current;
+    const canvasAspect = width / height;
+    const imgAspect = img.naturalWidth / img.naturalHeight;
+    let drawW: number, drawH: number, drawX: number, drawY: number;
+    if (imgAspect > canvasAspect) {
+      drawH = height;
+      drawW = height * imgAspect;
+      drawX = (width - drawW) / 2;
+      drawY = 0;
+    } else {
+      drawW = width;
+      drawH = width / imgAspect;
+      drawX = 0;
+      drawY = (height - drawH) / 2;
+    }
+    return { drawW, drawH, drawX, drawY };
+  };
 
   // Resize canvas to match viewport at device pixel ratio
   const resizeCanvas = () => {
@@ -63,47 +88,47 @@ export function HomeSection({ images, complete, entered, onOpen, setDownBlocked 
     canvas.style.height = `${height}px`;
     dimsRef.current = { width, height, dpr };
 
-    drawFrame(currentFrameRef.current);
+    drawCrossfade(displayedRef.current);
   };
 
-  // Draw a single frame to the canvas using cover-fit
-  const drawFrame = (frameIndex: number) => {
+  // 帧间溶解绘制：相邻两帧按小数权重叠加，消灭逐帧硬切的阶梯感
+  const drawCrossfade = (progress: number) => {
     const canvas = canvasRef.current;
-    if (!canvas || frameIndex < 0 || frameIndex >= images.length) return;
-
-    const img = images[frameIndex];
-    if (!img || img.naturalWidth === 0) return;
-
+    if (!canvas || images.length === 0) return;
     const ctx = canvas.getContext('2d', { alpha: false });
     if (!ctx) return;
 
-    const { width, height, dpr } = dimsRef.current;
+    const N = images.length - 1;
+    const f = Math.max(0, Math.min(N, progress * N));
+    const i0 = Math.floor(f);
+    const i1 = Math.min(N, i0 + 1);
+    const t = f - i0;
+    const img0 = images[i0];
+    if (!img0 || img0.naturalWidth === 0) return;
+
+    const { dpr } = dimsRef.current;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    const canvasAspect = width / height;
-    const imgAspect = img.naturalWidth / img.naturalHeight;
-
-    let drawW = width;
-    let drawH = height;
-    let drawX = 0;
-    let drawY = 0;
-
-    if (imgAspect > canvasAspect) {
-      drawH = height;
-      drawW = height * imgAspect;
-      drawX = (width - drawW) / 2;
-    } else {
-      drawW = width;
-      drawH = width / imgAspect;
-      drawY = (height - drawH) / 2;
+    if (t < 0.001) {
+      const r = getRect(img0);
+      ctx.globalAlpha = 1;
+      ctx.drawImage(img0, r.drawX, r.drawY, r.drawW, r.drawH);
+      return;
     }
 
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(img, drawX, drawY, drawW, drawH);
+    const img1 = images[i1];
+    const r0 = getRect(img0);
+    ctx.globalAlpha = 1;
+    ctx.drawImage(img0, r0.drawX, r0.drawY, r0.drawW, r0.drawH);
+    if (img1 && img1.naturalWidth > 0) {
+      const r1 = getRect(img1);
+      ctx.globalAlpha = t;
+      ctx.drawImage(img1, r1.drawX, r1.drawY, r1.drawW, r1.drawH);
+    }
+    ctx.globalAlpha = 1;
   };
 
-  // Scroll-driven frame mapping + 90% OPEN/bell + 100% end-lock
+  // 滚动驱动：逻辑用原始进度（响应即时），视觉用帧率无关指数平滑（丝滑）
   useEffect(() => {
     if (!entered || !complete || !containerRef.current) return;
 
@@ -135,49 +160,50 @@ export function HomeSection({ images, complete, entered, onOpen, setDownBlocked 
       if (line) line.classList.toggle('is-revealed', o > 0.02);
     };
 
-    const handleScroll = () => {
-      const clamped = computeProgress();
-      targetFrameRef.current = Math.floor(clamped * (TOTAL_FRAMES - 1));
-      updatePortfolio(clamped);
-      const atEnd = targetFrameRef.current >= TOTAL_FRAMES - 1;
+    const tick = (now: number) => {
+      const dt = lastTsRef.current ? Math.min((now - lastTsRef.current) / 1000, 0.05) : 0.016;
+      lastTsRef.current = now;
+      const raw = computeProgress();
+      targetProgressRef.current = raw;
+
+      updatePortfolio(raw);
+
+      const targetFrame = Math.floor(raw * (TOTAL_FRAMES - 1));
+      const atEnd = targetFrame >= TOTAL_FRAMES - 1;
       if (atEnd !== atEndRef.current) {
         atEndRef.current = atEnd;
         setDownBlocked(atEnd);
       }
 
       // OPEN button appears at 90% (the bell now rings on OPEN click, see handleOpen)
-      const atThreshold = targetFrameRef.current >= THRESHOLD_FRAME;
+      const atThreshold = targetFrame >= THRESHOLD_FRAME;
       if (atThreshold && !wasAtThresholdRef.current) {
         setShowOpen(true);
       } else if (!atThreshold && wasAtThresholdRef.current) {
         setShowOpen(false);
       }
       wasAtThresholdRef.current = atThreshold;
+
+      // 帧率无关指数平滑：displayed 跟随 raw，但每帧只走 1-exp(-k·dt) 的比例，
+      // 任何帧率下观感一致，且不会因掉帧而阶跃。
+      const prev = displayedRef.current;
+      displayedRef.current += (raw - prev) * (1 - Math.exp(-SMOOTH_K * dt));
+      if (Math.abs(displayedRef.current - prev) > 1e-4) {
+        drawCrossfade(displayedRef.current);
+      }
+
+      rafRef.current = requestAnimationFrame(tick);
     };
 
     // Blocking further DOWN scrolling at 100% is handled by Lenis (virtualScroll hook)
 
-    const tick = () => {
-      if (targetFrameRef.current !== currentFrameRef.current) {
-        currentFrameRef.current = targetFrameRef.current;
-        drawFrame(currentFrameRef.current);
-      }
-      rafRef.current = requestAnimationFrame(tick);
-    };
-
-    window.addEventListener('scroll', handleScroll, { passive: true });
     window.addEventListener('resize', resizeCanvas);
     resizeCanvas();
-    handleScroll();
-
-    if (images.length > 0 && images[0]?.complete) {
-      drawFrame(0);
-    }
-
+    displayedRef.current = computeProgress();
+    drawCrossfade(displayedRef.current);
     rafRef.current = requestAnimationFrame(tick);
 
     return () => {
-      window.removeEventListener('scroll', handleScroll);
       window.removeEventListener('resize', resizeCanvas);
       cancelAnimationFrame(rafRef.current);
     };
@@ -233,14 +259,6 @@ export function HomeSection({ images, complete, entered, onOpen, setDownBlocked 
       inner.removeEventListener('mouseleave', onLeave);
     };
   }, [showOpen]);
-
-  // Redraw whenever images array becomes fully populated
-  useEffect(() => {
-    if (complete && images.length === TOTAL_FRAMES) {
-      resizeCanvas();
-      drawFrame(currentFrameRef.current >= 0 ? currentFrameRef.current : 0);
-    }
-  }, [complete, images]);
 
   const handleOpen = () => {
     // 点击 OPEN 是用户手势，播放铃声一定被允许

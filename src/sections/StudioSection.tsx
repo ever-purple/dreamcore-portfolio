@@ -324,9 +324,9 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
   const handleNewsstandPick = useCallback(
     (row: 'devices' | 'books', index: number) => {
       stopMusic();
-      // 进落地页就把 3D 报刊亭一并收掉 —— 不然模型还在落地页背后转着，
-      // 用户还得再手动关一次（2026-09-15 用户要求：点开即关，不用手动）。
-      setNewsstandOpen(false);
+      // 2026-09-16 用户要求（行为反转）：点进落地页**不再关掉** 3D 书架 ——
+      // 书架模型留在落地页后面（covered，GL 暂停、不吃事件），
+      // 落地页按 Back → 先回到书架模型界面，再按一次才回 My Studio。
       if (row === 'devices') {
         setMediaChannel(CHANNEL_BY_DEVICE[index] ?? 'landscape');
         setMediaOpen(true);
@@ -336,20 +336,18 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
   );
 
   /**
-   * 落地页与报刊亭**互斥**（2026-09-16 补的保险）。
+   * 落地页与报刊亭的层级关系（2026-09-16 二次反转）。
    *
-   * 背景：`handleNewsstandPick` 里已经 `setNewsstandOpen(false)` 了，正常路径没问题。
-   * 但只要**任何**一条路径漏掉这一步（旧 bundle、以后新加的入口、URL 直接带
-   * `?newsstand=1&media=1`），就会出现「关了落地页 → 后面还杵着 BOOK STORE 书架」，
-   * 用户看到的就是「点 Back 回到了书架，不是 My Studio 页」。
+   * 旧规则（2026-09-15/16）：落地页开着时书架必须关掉 —— 当时「Back 回到了书架」
+   * 被当成 bug 修掉。今天用户明确要求反过来：书架第一排/第二排点进落地页后，
+   * Back 要**先回到书架模型界面**，再按一次才回 My Studio。
    *
-   * 所以在这里加一条**状态层**的不变式：只要落地页开着，报刊亭就必须是关的。
-   * 这样「关掉落地页 ⇒ 一定露出工作室」是由状态保证的，不依赖每个入口记得手写关闭。
-   * （渲染层还有一道 `newsstandOpen && !mediaOpen && !copyOpen` 的兜底。）
+   * 新规则：书架保持挂载，只是被落地页盖住（z-index 56 < 落地页 60）。
+   * `covered` 传给 NewsstandScene：盖住时暂停 GL 渲染循环、忽略 Esc
+   * （Esc 交给上层落地页自己处理，否则一按会把书架和落地页一起关掉）。
+   *
+   * 层级不变式：落地页(60) > 书架(56) > 笔记本弹层(50)。以后加新落地页记得 z ≥ 60。
    */
-  useEffect(() => {
-    if (mediaOpen || copyOpen) setNewsstandOpen(false);
-  }, [mediaOpen, copyOpen]);
 
   // 悬停电脑感应区时预取 3D 小人分包，点开即用不等待
   useEffect(() => {
@@ -368,6 +366,44 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
     if (hoveredId !== 'newsstand') return;
     void import('@/components/NewsstandScene');
   }, [hoveredId]);
+
+  // 进入工作室即并行预取两个重 3D 分包 + 书架 GLB（2026-09-16 合并自桌面副本）：
+  // 用户「直接点开」木马 / 报刊亭（没经过悬停预取）时，包和模型已经在下载，
+  // 不用在转场里干等。import 幂等（已加载直接 resolve），fetch 命中浏览器缓存后
+  // NewsstandScene 的 GLTFLoader 不再重新拉这 18MB。
+  useEffect(() => {
+    void import('@/components/WorksCarousel');
+    void import('@/components/NewsstandScene');
+    void fetch(`${import.meta.env.BASE_URL}newsstand/rack.glb`, { mode: 'cors' }).catch(
+      () => {},
+    );
+
+    /* 预取 About 页首屏资源：GreenOsBoot 会等这四张图 + 两个像素字体
+       全部 load 完才放行（9s 兜底）—— 实测开机黑屏比打字机多出约 1s 就是在等它们。
+       放到 requestIdleCallback 里：3D 场景首帧跑起来之后的空闲带宽再做，两不耽误。
+       img.src 命中缓存后，真正开机时的 new Image() 立即 resolve。 */
+    const idle =
+      'requestIdleCallback' in window
+        ? window.requestIdleCallback
+        : (cb: () => void) => window.setTimeout(cb, 1200);
+    idle(() => {
+      [
+        'about/banner-visual.jpeg',
+        'about/bg-pattern.webp',
+        'about/banner-sticker.png',
+        'about/avatar.webp',
+      ].forEach((p) => {
+        const img = new Image();
+        img.src = `${import.meta.env.BASE_URL}${p}`;
+      });
+      try {
+        void document.fonts.load('16px Zpix').catch(() => {});
+        void document.fonts.load('16px Cubic11').catch(() => {});
+      } catch {
+        /* 字体 API 不可用就跳过 —— 开机屏自己的预载还在兜底 */
+      }
+    });
+  }, []);
 
   // URL 同步：打开时 #about；Green OS 模式下同时写入 ?greenos=1，
   // 这样从 ?studio=1 点电脑钻进 CRT 后刷新，也能恢复 CRT 质感 + 开机流程。
@@ -498,12 +534,13 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
       ) : null}
 
       {/* 报刊亭 → 创作档案（点报刊亭物件 → 原地展开 3D 绿锈展架，镜头推近 + 房间模糊）
-          ⚠️ `!mediaOpen && !copyOpen` 是渲染层的兜底：落地页开着时绝不让书架挂在后面。
-          否则关掉落地页会「露出」书架，看起来就像"Back 把我送回了书架"（2026-09-16 用户报）。 */}
-      {newsstandOpen && !mediaOpen && !copyOpen ? (
+          2026-09-16：书架在落地页开着时**保持挂载**（盖住≠卸载），落地页 Back 先回到书架。
+          covered = 被落地页盖住 → NewsstandScene 暂停 GL 循环 + 忽略 Esc。 */}
+      {newsstandOpen ? (
         <Suspense fallback={null}>
           <NewsstandScene
             open={newsstandOpen}
+            covered={mediaOpen || copyOpen}
             onClose={() => {
               setNewsstandOpen(false);
               resumeMusic(); // 关掉展架场景 → 回到工作室，音乐继续
@@ -513,14 +550,14 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
         </Suspense>
       ) : null}
 
-      {/* 第一排落地页：视频与音乐作品（点报刊亭顶层设备 → 独立全屏页） */}
+      {/* 第一排落地页：视频与音乐作品（点报刊亭顶层设备 → 独立全屏页）
+          2026-09-16：Back 只关落地页露出书架，音乐保持停 —— 回到工作室（关书架）才 resume。 */}
       {mediaOpen ? (
         <Suspense fallback={null}>
           <MediaGalleryPage
             channel={mediaChannel}
             onClose={() => {
-              setMediaOpen(false);
-              resumeMusic(); // 关闭 → 回到工作室，音乐继续
+              setMediaOpen(false); // → 回到书架模型界面
             }}
           />
         </Suspense>
@@ -531,8 +568,7 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
         <Suspense fallback={null}>
           <CopyProjectPage
             onClose={() => {
-              setCopyOpen(false);
-              resumeMusic(); // 关闭 → 回到工作室，音乐继续
+              setCopyOpen(false); // → 回到书架模型界面（同第一排，2026-09-16）
             }}
           />
         </Suspense>

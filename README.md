@@ -17,7 +17,7 @@
    | 物件 | 按钮名 | 内容 |
    |---|---|---|
    | 电脑屏幕 | About Me | 个人信息 |
-   | 线圈本 | Thinking / Process | 实习与思考 |
+   | 线圈本 | Thinking / Process | 实习日记 |
    | 旋转木马 | Works | 策划项目 |
    | 报刊架 | Creative Lab | 视频与 AI 作品 |
 

@@ -28,7 +28,10 @@ export const studioObjects: StudioObject[] = [
   {
     id: 'notebook',
     name: 'Thinking / Process',
-    target: '实习与思考',
+    // 2026-09-16 用户要求：板块名「实习与思考」→「实习日记」。
+    // ⚠️ 改名后 **必须重跑 scripts/subset-nanooldsong.py** ——「日 / 记」若不在
+    // NanoOldSongA 子集里，tooltip 会静默回退 Noto Serif，字形跟另外三个板块不是一套。
+    target: '实习日记',
     point: { x: 61.5, y: 86 },
   },
   {

@@ -14,7 +14,7 @@
 import * as THREE from 'three';
 import { readSavedView, saveView, type SavedView } from './view-storage';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { getRoomEnv } from '../room-env';
 import { createCarouselMotion } from './carousel-motion';
 import { createMemoryProjections } from './memory-projections';
 import { createHorse, addGarden, addPole } from './carousel-ornaments';
@@ -74,6 +74,14 @@ export type CarouselAPI = {
 
 /** 贴图按 vite 的 base 走相对路径，部署到子目录也不会 404。 */
 const asset = (name: string) => `${import.meta.env.BASE_URL}carousel/${name}`;
+
+/**
+ * 木马相框只需 ~440–640px 宽，封面原图 2880px 太浪费带宽、拖慢相框上图。
+ * 把任意 works/*.jpg（含已带 -w1600 的）换成 -w640 变体；blob: 等用户上传地址保持原样。
+ */
+function toFrameSrc(src: string): string {
+  return src.replace(/(.*works\/[^?]+?)(-w\d+)?\.jpg(\?.*)?/i, '$1-w640.jpg$3');
+}
 
 function loadCover(src: string) {
   return new Promise<HTMLImageElement>((resolve, reject) => {
@@ -144,11 +152,8 @@ export function createCarousel(
   controls.maxDistance = 20;
   controls.minPolarAngle = Math.PI * 0.22;
   controls.maxPolarAngle = Math.PI * 0.445;
-  const pmrem = new THREE.PMREMGenerator(renderer),
-    room = new RoomEnvironment(),
-    env = pmrem.fromScene(room, 0.04);
-  scene.environment = env.texture;
-  room.dispose();
+  // 环境贴图 —— PMREM 按 renderer 缓存（lib/room-env），三个 3D 场景共用一份 RoomEnvironment 代码
+  scene.environment = getRoomEnv(renderer);
   const hemi = new THREE.HemisphereLight('#eef3ff', '#939dad', 1.1);
   scene.add(hemi);
   const sun = new THREE.DirectionalLight('#ffe0ae', 1.5);
@@ -1128,7 +1133,7 @@ export function createCarousel(
     }
     if (!img && face.cover) {
       try {
-        img = await loadCover(face.cover);
+        img = await loadCover(toFrameSrc(face.cover));
       } catch {
         img = undefined;
       }
@@ -1515,8 +1520,7 @@ export function createCarousel(
       knobGlowMat.dispose();
       haloMat.dispose();
       rimGlowMaterial.dispose();
-      env.dispose();
-      pmrem.dispose();
+      // 环境贴图归 room-env 的 WeakMap 缓存所有，不在这里 dispose
       renderer.dispose();
       renderer.domElement.remove();
     },

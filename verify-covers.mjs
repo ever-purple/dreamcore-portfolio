@@ -10,6 +10,8 @@
  * img 再用 object-fit: contain —— contain 在同比例盒子里就是 100% 填充。
  * 验证手段：读容器 inline style 的 aspect-ratio，跟图片 naturalWidth/naturalHeight 比；
  * 比例吻合即证明窗口与图同比例。
+ * ⚠️ 唯一例外（2026-09-16）：详情页首屏 .wkp-hero 用 coverAr('.wkp-hero', 16/9)
+ *    把容器钳到 16:9、img 用 cover 居中裁 —— 4:3 封面曾把首屏顶到一屏多高。
  *
  * 用法: node verify-covers.mjs
  * 前置: 本机 4180 上跑着 dev server（源码态，__wkp* 探针只在 dev 构建存在）
@@ -313,14 +315,17 @@ try {
   `);
   check('详情页首屏存在（.wkp-hero-img）', !!hero);
   if (hero) {
-    check('首屏大图是 contain', hero.fit === 'contain', `object-fit=${hero.fit}`);
+    /* 2026-09-16 契约更新：4:3 封面（1600×1200）把首屏顶到一屏多高，
+       coverAr('.wkp-hero', 16/9) 把容器钳到 16:9，图片交给 object-fit: cover
+       居中裁（裁的是天空/海面，标语在画面中部不受影响）。 */
+    check('首屏大图是 cover（容器钳 16:9 后由 cover 居中裁）', hero.fit === 'cover', `object-fit=${hero.fit}`);
     check('首屏没有模糊铺底 + img 自身没被虚化',
       hero.veil.startsWith('none|') && hero.imgFilter === 'none', `${hero.veil} | ${hero.imgFilter}`);
-    check('首屏容器 aspect-ratio = 图片自然宽高比（完整且铺满）',
+    check('首屏容器 aspect-ratio = max(自然比例, 16/9)（竖封面钳到 16:9）',
       hero.ar && hero.nat[0] > 0 &&
-        hero.ar && hero.nat[0] > 0 && Math.abs(hero.ar - hero.nat[0]/hero.nat[1]) < 0.005,
+        Math.abs(hero.ar - Math.max(hero.nat[0]/hero.nat[1], 16/9)) < 0.005,
       `${hero.arStr} ← ${hero.nat.join('×')}，hero=${hero.heroBox} img=${hero.imgBox}`);
-    /* contain + 比例吻合 → img 的 box 应该恰好等于 hero 的 box（边到边铺满） */
+    /* cover/contain 下 img 元素盒子都撑满容器（object-fit 只管绘制），盒子应相等 */
     check('首屏 img 盒子 = hero 盒子（零留白，零裁切）',
       hero.heroBox === hero.imgBox,
       `hero=${hero.heroBox} img=${hero.imgBox}`);
@@ -403,7 +408,7 @@ try {
     ['CopyProjectPage.tsx 调用了 coverAr(.cp-card-media)',
       copy.includes("coverAr('.cp-card-media')")],
     ['WorkProjectPage.tsx 首屏调用了 coverAr(.wkp-hero)',
-      wkp.includes("coverAr('.wkp-hero')")],
+      /coverAr\('\.wkp-hero'[^)]*\)/.test(wkp)],
     ['WorkProjectPage.tsx 媒体封面调用了 coverAr(.wkp-media-cover)',
       wkp.includes("coverAr('.wkp-media-cover')")],
     ['WorkDetail.tsx 后台高光缩略图调用了 coverAr(.works-form-thumb)',

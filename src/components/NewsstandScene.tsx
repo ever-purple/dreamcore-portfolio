@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { getRoomEnv } from '@/lib/room-env';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { BOOK_ROWS, createBook } from '@/lib/newsstandBooks';
 
@@ -17,6 +17,13 @@ type Props = {
    * 书架那边没有分流，固定传 0。
    */
   onPick?: (row: 'devices' | 'books', index: number) => void;
+  /**
+   * 被落地页盖住（2026-09-16）：书架第一/二排点进落地页后书架保持挂载，
+   * 此时要 ① 暂停 GL 渲染循环（省 GPU，画面反正看不见）② 忽略 Esc ——
+   * 否则用户在落地页按 Esc，书架的 window keydown 会把书架一起关掉，
+   * 「Back 先回书架」就跳级了。落地页自己的 Esc 由它自己处理。
+   */
+  covered?: boolean;
 };
 
 /** 展架适配后的目标高度（世界单位），相机距离都按它推导，避免依赖原始模型比例 */
@@ -165,7 +172,7 @@ const DEVICE_SCALE = 1.14;
  *    放倒的设备（MP3）同时**转正立起来**，移开平滑复位。
  *  · 右上角「关闭 ✕」/ Esc → 关闭浮层。
  */
-export default function NewsstandScene({ open, onClose, onPick }: Props) {
+export default function NewsstandScene({ open, covered = false, onClose, onPick }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const [mounted, setMounted] = useState(open);
@@ -181,6 +188,13 @@ export default function NewsstandScene({ open, onClose, onPick }: Props) {
   useEffect(() => {
     onPickRef.current = onPick;
   }, [onPick]);
+
+  /* covered 同样用 ref 镜像：GL 循环的闭包只在 mounted 变化时建一次，
+     直接捕获 props.covered 会永远是首次渲染的值（和上面 onPickRef 同一个坑）。 */
+  const coveredRef = useRef(covered);
+  useEffect(() => {
+    coveredRef.current = covered;
+  }, [covered]);
 
   /* 入场 / 退场（与 WorksCarousel 同款淡入淡出） */
   useEffect(() => {
@@ -247,10 +261,8 @@ export default function NewsstandScene({ open, onClose, onPick }: Props) {
     camera.position.set(0, camOv?.[0] ?? FIT_HEIGHT * 0.5, FIT_HEIGHT * 1.9);
     camera.lookAt(0, camOv?.[1] ?? FIT_HEIGHT * 0.5, 0);
 
-    // 环境反射（唯一照明来源）
-    const pmrem = new THREE.PMREMGenerator(renderer);
-    const envRT = pmrem.fromScene(new RoomEnvironment(), 0.04);
-    scene.environment = envRT.texture;
+    // 环境反射（唯一照明来源）—— PMREM 按 renderer 缓存，见 lib/room-env
+    scene.environment = getRoomEnv(renderer);
     scene.environmentIntensity = 1.0;
 
     // 展架组：整体下移贴合画面底部
@@ -874,6 +886,9 @@ export default function NewsstandScene({ open, onClose, onPick }: Props) {
     const loop = () => {
       raf = requestAnimationFrame(loop);
       const dt = Math.min(0.05, clock.getDelta());
+      // 被落地页盖住（covered）时：跳过 hover/转动/渲染，只留空转 rAF（2026-09-16）。
+      // getDelta 照常吃掉时间，恢复时不会因为大 dt 跳帧。
+      if (coveredRef.current) return;
       updateHover(dt);
       // 架子跟随鼠标的平滑转动（左右 + 上下）
       if (
@@ -900,8 +915,7 @@ export default function NewsstandScene({ open, onClose, onPick }: Props) {
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
       renderer.domElement.removeEventListener('click', onPointerClick);
       observer.disconnect();
-      envRT.dispose();
-      pmrem.dispose();
+      // 环境贴图归 room-env 的 WeakMap 缓存所有，不在这里 dispose
       scene.traverse((obj) => {
         const mesh = obj as THREE.Mesh;
         if (mesh.isMesh) {
@@ -922,7 +936,10 @@ export default function NewsstandScene({ open, onClose, onPick }: Props) {
   useEffect(() => {
     if (!mounted) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key !== 'Escape') return;
+      // 被落地页盖住时 Esc 归上层落地页管（否则一按把书架也关了，跳过「Back 回书架」）
+      if (coveredRef.current) return;
+      onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);

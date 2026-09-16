@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { prefersReduced } from '@/lib/motion-pref';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { getRoomEnv } from '@/lib/room-env';
 
 export type MascotHandle = {
   /** 挥手打招呼（整体摆动，非骨骼动作） */
@@ -97,9 +97,7 @@ export const MascotViewer = forwardRef<MascotHandle, Props>(function MascotViewe
     camera.position.set(0, cameraY, distance);
     camera.lookAt(0, cameraY, 0);
 
-    const pmrem = new THREE.PMREMGenerator(renderer);
-    const envRT = pmrem.fromScene(new RoomEnvironment(), 0.04);
-    scene.environment = envRT.texture;
+    scene.environment = getRoomEnv(renderer);
     scene.environmentIntensity = 0.45;
 
     const hemi = new THREE.HemisphereLight(0xffffff, 0xd2e4c6, 1.15);
@@ -282,8 +280,7 @@ export const MascotViewer = forwardRef<MascotHandle, Props>(function MascotViewe
           mat.dispose();
         });
       });
-      envRT.dispose();
-      pmrem.dispose();
+      // 环境贴图归 room-env 的 WeakMap 缓存所有，不在这里 dispose
       renderer.dispose();
       renderer.forceContextLoss();
       renderer.domElement.remove();

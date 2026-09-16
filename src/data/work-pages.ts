@@ -162,9 +162,9 @@ export const WORK_PAGES: Record<string, WorkPageCopy> = {
         title: '预热 · 寻隙',
         body: '6.25–7.5　话题 #我们的奥德赛时期、三行寻隙诗征集、「心事寄存处」线下快闪。',
         images: [
-          `${import.meta.env.BASE_URL}works/guanxia/p14-rainy-season.jpg`,
-          `${import.meta.env.BASE_URL}works/guanxia/p15-poem.jpg`,
-          `${import.meta.env.BASE_URL}works/guanxia/p16-letter.jpg`,
+          `${import.meta.env.BASE_URL}works/guanxia/p14-rainy-season-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/guanxia/p15-poem-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/guanxia/p16-letter-w1600.jpg`,
         ],
       },
       {
@@ -172,9 +172,9 @@ export const WORK_PAGES: Record<string, WorkPageCopy> = {
         title: '爆发 · 破隙',
         body: '7.6–7.20　苏州拙政园「隙月围谈」沙龙、播客《青年日记》、观夏 × 阿那亚联名主题套房。',
         images: [
-          `${import.meta.env.BASE_URL}works/guanxia/p17-roundtable.jpg`,
-          `${import.meta.env.BASE_URL}works/guanxia/p18-podcast.jpg`,
-          `${import.meta.env.BASE_URL}works/guanxia/p19-aranya.jpg`,
+          `${import.meta.env.BASE_URL}works/guanxia/p17-roundtable-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/guanxia/p18-podcast-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/guanxia/p19-aranya-w1600.jpg`,
         ],
       },
       {
@@ -182,8 +182,8 @@ export const WORK_PAGES: Record<string, WorkPageCopy> = {
         title: '长尾 · 归真',
         body: '7.21–8.25　上海观夏闲庭东方美学艺术展（四展区）、观夏 × naze naze「织月闻香」非遗联名。',
         images: [
-          `${import.meta.env.BASE_URL}works/guanxia/p20-exhibition.jpg`,
-          `${import.meta.env.BASE_URL}works/guanxia/p21-nazenaze.jpg`,
+          `${import.meta.env.BASE_URL}works/guanxia/p20-exhibition-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/guanxia/p21-nazenaze-w1600.jpg`,
         ],
       },
     ],
@@ -206,18 +206,18 @@ export const WORK_PAGES: Record<string, WorkPageCopy> = {
       // 项目背景：删掉旧的第一张图，换成 P7/P9/P15/P16，双排（2×2）摆放
       background: {
         images: [
-          `${import.meta.env.BASE_URL}works/shenzhou/p07.jpg`,
-          `${import.meta.env.BASE_URL}works/shenzhou/p09.jpg`,
-          `${import.meta.env.BASE_URL}works/shenzhou/p15.jpg`,
-          `${import.meta.env.BASE_URL}works/shenzhou/p16.jpg`,
+          `${import.meta.env.BASE_URL}works/shenzhou/p07-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/shenzhou/p09-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/shenzhou/p15-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/shenzhou/p16-w1600.jpg`,
         ],
         layout: 'grid2',
       },
       // 核心策略：旧图全删，换成 P19/P20，双排摆放
       insight: {
         images: [
-          `${import.meta.env.BASE_URL}works/shenzhou/p19.jpg`,
-          `${import.meta.env.BASE_URL}works/shenzhou/p20.jpg`,
+          `${import.meta.env.BASE_URL}works/shenzhou/p19-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/shenzhou/p20-w1600.jpg`,
         ],
         layout: 'grid2',
       },
@@ -228,36 +228,36 @@ export const WORK_PAGES: Record<string, WorkPageCopy> = {
           {
             title: '服务号',
             images: [
-              `${import.meta.env.BASE_URL}works/shenzhou/p27.jpg`,
-              `${import.meta.env.BASE_URL}works/shenzhou/p28.jpg`,
-              `${import.meta.env.BASE_URL}works/shenzhou/p29.jpg`,
+              `${import.meta.env.BASE_URL}works/shenzhou/p27-w1600.jpg`,
+              `${import.meta.env.BASE_URL}works/shenzhou/p28-w1600.jpg`,
+              `${import.meta.env.BASE_URL}works/shenzhou/p29-w1600.jpg`,
             ],
           },
           {
             title: '订阅号',
             images: [
-              `${import.meta.env.BASE_URL}works/shenzhou/p36.jpg`,
-              `${import.meta.env.BASE_URL}works/shenzhou/p38.jpg`,
-              `${import.meta.env.BASE_URL}works/shenzhou/p40.jpg`,
-              `${import.meta.env.BASE_URL}works/shenzhou/p41.jpg`,
+              `${import.meta.env.BASE_URL}works/shenzhou/p36-w1600.jpg`,
+              `${import.meta.env.BASE_URL}works/shenzhou/p38-w1600.jpg`,
+              `${import.meta.env.BASE_URL}works/shenzhou/p40-w1600.jpg`,
+              `${import.meta.env.BASE_URL}works/shenzhou/p41-w1600.jpg`,
             ],
           },
           {
             title: '微博',
             images: [
-              `${import.meta.env.BASE_URL}works/shenzhou/p51.jpg`,
-              `${import.meta.env.BASE_URL}works/shenzhou/p55.jpg`,
-              `${import.meta.env.BASE_URL}works/shenzhou/p56.jpg`,
-              `${import.meta.env.BASE_URL}works/shenzhou/p57.jpg`,
+              `${import.meta.env.BASE_URL}works/shenzhou/p51-w1600.jpg`,
+              `${import.meta.env.BASE_URL}works/shenzhou/p55-w1600.jpg`,
+              `${import.meta.env.BASE_URL}works/shenzhou/p56-w1600.jpg`,
+              `${import.meta.env.BASE_URL}works/shenzhou/p57-w1600.jpg`,
             ],
           },
           {
             title: '小红书 & 短视频',
             images: [
-              `${import.meta.env.BASE_URL}works/shenzhou/p59.jpg`,
-              `${import.meta.env.BASE_URL}works/shenzhou/p60.jpg`,
-              `${import.meta.env.BASE_URL}works/shenzhou/p62.jpg`,
-              `${import.meta.env.BASE_URL}works/shenzhou/p63.jpg`,
+              `${import.meta.env.BASE_URL}works/shenzhou/p59-w1600.jpg`,
+              `${import.meta.env.BASE_URL}works/shenzhou/p60-w1600.jpg`,
+              `${import.meta.env.BASE_URL}works/shenzhou/p62-w1600.jpg`,
+              `${import.meta.env.BASE_URL}works/shenzhou/p63-w1600.jpg`,
             ],
           },
         ],
@@ -272,16 +272,16 @@ export const WORK_PAGES: Record<string, WorkPageCopy> = {
         no: '01',
         title: '老乡车队',
         body: 'CNY「老乡车队」借春运返乡情绪，把品牌编进团圆叙事。',
-        images: [`${import.meta.env.BASE_URL}works/shenzhou/p70.jpg`],
+        images: [`${import.meta.env.BASE_URL}works/shenzhou/p70-w1600.jpg`],
       },
       {
         no: '02',
         title: '十一 · 伴手礼集市',
         body: '十一把线下场景变成可打卡的内容现场，伴手礼让用户把神州带回家。',
         images: [
-          `${import.meta.env.BASE_URL}works/shenzhou/p75.jpg`,
-          `${import.meta.env.BASE_URL}works/shenzhou/p76.jpg`,
-          `${import.meta.env.BASE_URL}works/shenzhou/p77.jpg`,
+          `${import.meta.env.BASE_URL}works/shenzhou/p75-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/shenzhou/p76-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/shenzhou/p77-w1600.jpg`,
         ],
       },
       {
@@ -289,10 +289,10 @@ export const WORK_PAGES: Record<string, WorkPageCopy> = {
         title: '苏超借势',
         body: '苏超爆火期间以「州」字玩梗借势，接住全民话题的流量。',
         images: [
-          `${import.meta.env.BASE_URL}works/shenzhou/p81.jpg`,
-          `${import.meta.env.BASE_URL}works/shenzhou/p82.jpg`,
-          `${import.meta.env.BASE_URL}works/shenzhou/p83.jpg`,
-          `${import.meta.env.BASE_URL}works/shenzhou/p84.jpg`,
+          `${import.meta.env.BASE_URL}works/shenzhou/p81-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/shenzhou/p82-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/shenzhou/p83-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/shenzhou/p84-w1600.jpg`,
         ],
       },
     ],
@@ -317,8 +317,8 @@ export const WORK_PAGES: Record<string, WorkPageCopy> = {
       // 2026-09-15 用户要求：双排摆放
       insight: {
         images: [
-          `${import.meta.env.BASE_URL}works/chiwei/p05-consumer.jpg`,
-          `${import.meta.env.BASE_URL}works/chiwei/p08-theme.jpg`,
+          `${import.meta.env.BASE_URL}works/chiwei/p05-consumer-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/chiwei/p08-theme-w1600.jpg`,
         ],
         layout: 'grid2',
       },
@@ -327,11 +327,11 @@ export const WORK_PAGES: Record<string, WorkPageCopy> = {
         images: [],
       },
       highlight: {
-        images: [`${import.meta.env.BASE_URL}works/chiwei/p10-roadmap.jpg`],
+        images: [`${import.meta.env.BASE_URL}works/chiwei/p10-roadmap-w1600.jpg`],
       },
       role: {
         images: [
-          `${import.meta.env.BASE_URL}works/chiwei/p19-tree.jpg`,
+          `${import.meta.env.BASE_URL}works/chiwei/p19-tree-w1600.jpg`,
         ],
       },
     },
@@ -343,8 +343,8 @@ export const WORK_PAGES: Record<string, WorkPageCopy> = {
         body: '立春 2.4–2.11：以相识为契机提供社交途径，认识懂生活懂你的人，一起约定过春天。',
         // 2026-09-15 用户要求：春有约换成 P11-12
         images: [
-          `${import.meta.env.BASE_URL}works/chiwei/p11-spring.jpg`,
-          `${import.meta.env.BASE_URL}works/chiwei/p12-dinglingling.jpg`,
+          `${import.meta.env.BASE_URL}works/chiwei/p11-spring-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/chiwei/p12-dinglingling-w1600.jpg`,
         ],
       },
       {
@@ -353,9 +353,9 @@ export const WORK_PAGES: Record<string, WorkPageCopy> = {
         body: '雨水 2.12–2.19：以相恋为情感输出点，通过情侣间默默无闻的爱，输出品牌默默陪伴与产品「润」的特点。',
         // 2026-09-15 用户要求：丝雨润换成 P13-15
         images: [
-          `${import.meta.env.BASE_URL}works/chiwei/p13-rain.jpg`,
-          `${import.meta.env.BASE_URL}works/chiwei/p14-gorun.jpg`,
-          `${import.meta.env.BASE_URL}works/chiwei/p15-kol.jpg`,
+          `${import.meta.env.BASE_URL}works/chiwei/p13-rain-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/chiwei/p14-gorun-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/chiwei/p15-kol-w1600.jpg`,
         ],
       },
       {
@@ -364,8 +364,8 @@ export const WORK_PAGES: Record<string, WorkPageCopy> = {
         body: '春分 3.1–3.16：以相伴为情感依托，通过系列活动促进情侣感情，把「润」与爱情密切联系。',
         // 2026-09-15 用户要求：万物生换成 P16-17
         images: [
-          `${import.meta.env.BASE_URL}works/chiwei/p16-grow.jpg`,
-          `${import.meta.env.BASE_URL}works/chiwei/p17-rainstill.jpg`,
+          `${import.meta.env.BASE_URL}works/chiwei/p16-grow-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/chiwei/p17-rainstill-w1600.jpg`,
         ],
       },
     ],
@@ -389,22 +389,22 @@ export const WORK_PAGES: Record<string, WorkPageCopy> = {
       // 产品与受众洞察：双排
       insight: {
         images: [
-          `${import.meta.env.BASE_URL}works/kuaike/p03-insight.jpg`,
-          `${import.meta.env.BASE_URL}works/kuaike/p04-audience.jpg`,
+          `${import.meta.env.BASE_URL}works/kuaike/p03-insight-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/kuaike/p04-audience-w1600.jpg`,
         ],
         layout: 'grid2',
       },
       message: {
-        images: [`${import.meta.env.BASE_URL}works/kuaike/p05-keymsg.jpg`],
+        images: [`${import.meta.env.BASE_URL}works/kuaike/p05-keymsg-w1600.jpg`],
       },
       // 2026-09-15 用户要求：创意脚本 → 影片调性，删原脚本图，换 P14，内嵌新片场视频
       highlight: {
-        images: [`${import.meta.env.BASE_URL}works/kuaike/p14-tone.jpg`],
+        images: [`${import.meta.env.BASE_URL}works/kuaike/p14-tone-w1600.jpg`],
         video: 'https://www.xinpianchang.com/a13167165?from=ArticleList',
       },
       // 2026-09-15 用户要求：新增音乐参考（P18 背景图 + 两段音乐播放器）
       music: {
-        images: [`${import.meta.env.BASE_URL}works/kuaike/p18-music.jpg`],
+        images: [`${import.meta.env.BASE_URL}works/kuaike/p18-music-w1600.jpg`],
         audio: [
           { title: '前半段 · 蓝调', src: `${import.meta.env.BASE_URL}works/kuaike/media4.mp3` },
           { title: '后半段 · 灵魂乐', src: `${import.meta.env.BASE_URL}works/kuaike/media5.mp3` },
@@ -412,9 +412,9 @@ export const WORK_PAGES: Record<string, WorkPageCopy> = {
       },
       role: {
         images: [
-          `${import.meta.env.BASE_URL}works/kuaike/p16-color.jpg`,
-          `${import.meta.env.BASE_URL}works/kuaike/p19-style.jpg`,
-          `${import.meta.env.BASE_URL}works/kuaike/p28-storyboard.jpg`,
+          `${import.meta.env.BASE_URL}works/kuaike/p16-color-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/kuaike/p19-style-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/kuaike/p28-storyboard-w1600.jpg`,
         ],
       },
     },
@@ -427,9 +427,9 @@ export const WORK_PAGES: Record<string, WorkPageCopy> = {
         body: '失恋就像得了一场重感冒，让人头痛欲裂、无法呼吸。SUPER：这个不行就下一个。',
         // 2026-09-15 用户要求：图换成 P6-8
         images: [
-          `${import.meta.env.BASE_URL}works/kuaike/p06-script1a.jpg`,
-          `${import.meta.env.BASE_URL}works/kuaike/p07-script1b.jpg`,
-          `${import.meta.env.BASE_URL}works/kuaike/p08-script1c.jpg`,
+          `${import.meta.env.BASE_URL}works/kuaike/p06-script1a-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/kuaike/p07-script1b-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/kuaike/p08-script1c-w1600.jpg`,
         ],
       },
       {
@@ -438,9 +438,9 @@ export const WORK_PAGES: Record<string, WorkPageCopy> = {
         body: '不想去的酒局，偏偏撞上重感冒。SUPER：爱你所爱拒你所恶，锅我背了你放肆去 high。',
         // 2026-09-15 用户要求：图换成 P9-11
         images: [
-          `${import.meta.env.BASE_URL}works/kuaike/p09-script2a.jpg`,
-          `${import.meta.env.BASE_URL}works/kuaike/p10-script2b.jpg`,
-          `${import.meta.env.BASE_URL}works/kuaike/p11-script2c.jpg`,
+          `${import.meta.env.BASE_URL}works/kuaike/p09-script2a-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/kuaike/p10-script2b-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/kuaike/p11-script2c-w1600.jpg`,
         ],
       },
       {
@@ -449,8 +449,8 @@ export const WORK_PAGES: Record<string, WorkPageCopy> = {
         body: '面试前一晚突然重感冒。SUPER：事到如今先睡一觉，明天才能活力满满。',
         // 2026-09-15 用户要求：图换成 P12-13
         images: [
-          `${import.meta.env.BASE_URL}works/kuaike/p12-script3a.jpg`,
-          `${import.meta.env.BASE_URL}works/kuaike/p13-script3b.jpg`,
+          `${import.meta.env.BASE_URL}works/kuaike/p12-script3a-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/kuaike/p13-script3b-w1600.jpg`,
         ],
       },
     ],

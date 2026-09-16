@@ -304,7 +304,7 @@
   padding: 8px 15px;
   transform: translateX(-50%);
   rotate: -2.5deg;
-  /* 中文批注走 display 宋体（子集里已收「个人信息/实习与思考/策划项目/创作档案」）——
+  /* 中文批注走 display 宋体（子集里已收「个人信息/实习日记/策划项目/创作档案」）——
      ⚠️ 声明在 .hand__txt 上（变量下发），写在这层会被子节点覆盖掉。 */
   --hand-font: 'NanoOldSongA', 'Noto Serif SC', 'Songti SC', serif;
   font-size: 15px;
@@ -455,17 +455,8 @@
     0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
-/* 页面横线（内容后续填充） */
-.notebook-lines {
-  position: absolute;
-  inset: 0;
-  background: repeating-linear-gradient(
-    to bottom,
-    transparent 0 35px,
-    rgba(140, 160, 190, 0.32) 35px 36px
-  );
-  background-position: 0 72px;
-}
+/* .notebook-lines（页面横线）2026-09-16 随日记重写移除：
+   参考示例的纸面是「牛皮纸 + 淡手写字水印」，没有蓝色横线。 */
 
 /* 关闭按钮：白色圆角方块 X，纸张就位后淡入 */
 .notebook-close {
@@ -6810,7 +6801,11 @@ img {
 .newsstand-overlay {
   position: fixed;
   inset: 0;
-  z-index: 270;
+  /* 2026-09-16 从 270 降到 56：书架要被落地页（.mjp/.cp-page，z 60）盖住 ——
+     「落地页 Back 先回书架模型界面」要求书架保持挂载在落地页**下面**。
+     层级带：工作室场景 ≤9 < 笔记本弹层 50 < 书架 56 < 落地页 60 < CRT/开机 272+。
+     （57~265 区间没有别的元素，266+ 是 works/CRT 等互斥流程，不会同屏。） */
+  z-index: 56;
   overflow: hidden;
   background: transparent;
   opacity: 0;
@@ -7225,9 +7220,11 @@ img {
 /* ---- 首屏 ---- */
 .wkp-hero {
   position: relative;
-  /* 不用固定 min-height：高度跟着 aspect-ratio 走。aspect-ratio 在 img.onLoad 时
-     按图片自然比例写到 inline style，封面就能边到边完整铺满整块首屏（用户要求
-     「完整且铺满」）—— 16:9 封面在 1000 宽的右栏里就是 562 高，1.333 就是 750 高。 */
+  /* 高度策略（2026-09-16 二次调整）：统一钳到 16:9 —— coverAr('.wkp-hero', 16/9)
+     把 inline aspect-ratio 钳到上限，观夏 4:3 封面不再把首屏顶到一屏多高，
+     所有项目封面同高；比 16:9 更「高」的图交给 object-fit: cover 居中裁
+     （标语都落在画面中部，裁掉的是天空/海面）。
+     aspect-ratio 在 img.onLoad 时按图片比例（≤16/9）写到 inline style。 */
   aspect-ratio: 16 / 9; /* JS 加载完会立刻被覆盖，先给个兜底 */
   display: flex;
   align-items: flex-end;
@@ -7239,7 +7236,7 @@ img {
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  object-fit: cover; /* 16:9 恰好满铺；4:3 居中裁上下 —— 封面标语（画面中部）完整可见 */
   display: block;
 }
 .wkp-hero-empty {
@@ -9240,4 +9237,533 @@ a.cp-card:hover {
   .cp-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* ============================================================
+   内页「手账本 / 翻页」样式（2026-09-16）
+   内页做成可翻页的本子：纸面点阵 + 左侧书脊装订 + 右下角折角翻页键 + 底部中间页码。
+   纯增量，不破坏既有版式与满宽配图。
+   ============================================================ */
+
+/* —— 纸面点阵（手账本格纹）：贴在 .wkp-scroll 上，随纸滚动，
+       比原 .wkp-par-grid 的 2D 线网更有"本子"质感。 */
+.wkp-scroll {
+  background-color: var(--wkp-paper);
+  background-image: radial-gradient(rgba(58, 46, 35, 0.10) 1px, transparent 1.4px);
+  background-size: 26px 26px;
+  background-position: 0 0;
+}
+/* 原环境层线网压到极淡，避免和上面的点阵叠出噪点 */
+.wkp-par-grid {
+  opacity: 0.3;
+}
+
+/* —— 左侧书脊：装订阴影 + 一条薄荷绑带，让内页像被钉在左侧的一沓纸。
+       钉在 .wkp-inner 左缘，不随内容滚动偏移；z-index:0 压在正文之下。 */
+.wkp-inner::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 14px;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    to right,
+    rgba(58, 46, 35, 0.18),
+    rgba(58, 46, 35, 0.05) 55%,
+    transparent
+  );
+}
+.wkp-inner::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent, var(--wkp-accent), transparent);
+  opacity: 0.5;
+}
+
+/* 项目内页不再有翻页效果/页码/翻页键（2026-09-16 用户要求：翻页只属于实习日记），
+   原 .wkp-pager-* / .wkp-inner.is-flipping 一段已删；项目切换回到直接 onSwitch。 */
+
+/* ============================================================
+   实习日记（diary）—— 2026-09-16
+   工作室笔记本物件 → 手账翻页本（重写原空线圈本弹层）。
+   设计参考用户示例录屏：牛皮纸面 + 淡手写字水印 + 纸带标签 +
+   手写编号标题 + 拍立得相框（纸胶带、微旋转）+ 纸片 chips + 手绘涂鸦。
+   交互 = 绕左书脊 rotateY 翻页（GSAP），底部中间页码 + 圆圈箭头翻页键。
+   配色沿用站点（薄荷 / 巧克力棕 / 沙色），纸面取示例的暖米黄牛皮纸。
+   ============================================================ */
+
+.diary-overlay {
+  /* --wkp-* 变量只定义在 .wkp 上，这里照 .mjp / .cp-page 的做法本地声明一份
+     （日记自己的页码/文字要用 --wkp-display 等变量）。 */
+  --wkp-display: 'NanoOldSongA', 'Noto Serif SC', 'Songti SC', serif;
+  --wkp-body: 'Inter', 'Noto Sans SC', system-ui, sans-serif;
+  --wkp-dim: rgba(58, 46, 35, 0.6);
+  --wkp-line: rgba(58, 46, 35, 0.15);
+  --wkp-accent: #98cab8;
+  --wkp-accent-deep: #33604e;
+
+  --di-paper: #ece7d4;
+  --di-paper-2: #f2eee0;
+  --di-ink: #3a2e23;
+  --di-dim: rgba(58, 46, 35, 0.62);
+  --di-mint: #98cab8;
+  --di-blue: #6f86c9;
+  --di-yellow: #d9c94a;
+}
+
+/* 纸张本体：沿用 .notebook-page 的滑入动画，底色换牛皮纸 + 极淡点阵 */
+.diary-book {
+  background:
+    radial-gradient(rgba(58, 46, 35, 0.045) 1px, transparent 1.3px) 0 0 / 22px 22px,
+    linear-gradient(160deg, var(--di-paper-2), var(--di-paper));
+  border: 1px solid rgba(58, 46, 35, 0.12);
+  /* 圆圈翻页键要半出页面外（.diary-nav 负偏移），本子不能裁 —— 裁切交给 .diary-flip */
+  overflow: visible;
+}
+
+/* —— 淡手写字水印（参考示例纸面底纹）：只挂一份，不随翻页重建 —— */
+.diary-watermarks {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.diary-wm {
+  position: absolute;
+  font-family: 'Caveat', cursive;
+  font-size: 64px;
+  color: rgba(58, 46, 35, 0.07);
+  white-space: nowrap;
+}
+.diary-wm.is-1 { left: 6%; top: 10%; transform: rotate(-8deg); }
+.diary-wm.is-2 { right: 8%; top: 32%; transform: rotate(5deg); font-size: 92px; }
+.diary-wm.is-3 { left: 15%; bottom: 16%; transform: rotate(-4deg); }
+.diary-wm.is-4 { right: 11%; bottom: 6%; transform: rotate(7deg); font-size: 54px; }
+
+/* —— 翻页层 —— */
+.diary-flip {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  /* 本子 overflow:visible（让圆圈翻页键伸出页面外），纸面内容的裁切在这里做 */
+  overflow: hidden;
+  border-radius: inherit;
+}
+.diary-flip.is-flipping {
+  will-change: transform;
+}
+.diary-sheet {
+  position: absolute;
+  inset: 0;
+  /* 左 padding 要让开金属线圈（ring 伸进纸内约 17px）；底部让开翻页底栏 */
+  padding: clamp(20px, 4.5vh, 44px) clamp(24px, 4vw, 60px) clamp(60px, 9vh, 88px)
+    clamp(46px, 6vw, 88px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(58, 46, 35, 0.25) transparent;
+}
+/* 翻页时的动态阴影：翻出加深（贴书脊一侧最重）、翻入淡出 */
+.diary-shade {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(
+    to right,
+    rgba(28, 19, 12, 0.4),
+    rgba(28, 19, 12, 0.1) 45%,
+    transparent
+  );
+}
+
+/* —— 封面 —— */
+.diary-cover {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  text-align: center;
+}
+.diary-cover-tape {
+  position: absolute;
+  top: 9%;
+  left: 50%;
+  width: 122px;
+  height: 30px;
+  transform: translateX(-50%) rotate(-3deg);
+  background: linear-gradient(180deg, rgba(241, 239, 233, 0.68), rgba(241, 239, 233, 0.5));
+  box-shadow: 0 2px 6px rgba(28, 19, 12, 0.12);
+}
+.diary-cover-titlewrap {
+  position: relative;
+  padding: 24px 46px;
+}
+.diary-cover-title {
+  margin: 0;
+  font-family: var(--wkp-display);
+  font-size: clamp(44px, 6.4vw, 84px);
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  color: var(--di-ink);
+}
+/* 两笔手绘椭圆（同光标标签 ring 的画法）：pathLength=100 + dashoffset 入场描画 */
+.diary-cover-ring {
+  position: absolute;
+  left: -6%;
+  top: -9%;
+  width: 112%;
+  height: 118%;
+  overflow: visible;
+}
+.diary-ring-stroke {
+  fill: none;
+  stroke: var(--di-ink);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 100;
+  animation: diary-draw 0.9s cubic-bezier(0.4, 0, 0.2, 1) 0.25s both;
+}
+.diary-ring-stroke.is-2 {
+  animation-delay: 0.55s;
+}
+@keyframes diary-draw {
+  from { stroke-dashoffset: 100; }
+  to { stroke-dashoffset: 0; }
+}
+.diary-cover-en {
+  margin: 6px 0 0;
+  font-family: 'Caveat', cursive;
+  font-size: clamp(26px, 2.6vw, 38px);
+  color: var(--di-dim);
+  transform: rotate(-2deg);
+}
+.diary-cover-sub {
+  margin: 0;
+  font-family: var(--wkp-display);
+  font-size: 13px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--di-dim);
+}
+
+/* —— 纸片 chips（通用） —— */
+.diary-chip {
+  display: inline-block;
+  padding: 5px 14px;
+  background: rgba(251, 249, 243, 0.9);
+  border: 1px solid rgba(58, 46, 35, 0.16);
+  border-radius: 3px;
+  box-shadow: 0 2px 6px rgba(28, 19, 12, 0.12);
+  font-family: var(--wkp-display);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  color: var(--di-ink);
+}
+.diary-chip.is-role {
+  background: var(--di-mint);
+  border-color: transparent;
+  color: #24473a;
+}
+.diary-chip.is-hint {
+  margin-top: 14px;
+  transform: rotate(-1deg);
+}
+.diary-chip.is-todo {
+  display: table;
+  margin-top: 18px;
+  border-style: dashed;
+  color: var(--di-dim);
+  transform: rotate(0.8deg);
+}
+
+/* —— 日记页 —— */
+.diary-entry {
+  position: relative;
+  min-height: 100%;
+}
+/* 纸带标签：时间 + 公司 */
+.diary-tape-label {
+  position: relative;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 26px;
+  padding: 8px 18px 7px;
+  background: rgba(251, 249, 243, 0.85);
+  box-shadow: 0 3px 10px rgba(28, 19, 12, 0.14);
+  transform: rotate(-1.2deg);
+}
+.diary-tape {
+  position: absolute;
+  top: -12px;
+  left: 22px;
+  width: 74px;
+  height: 22px;
+  transform: rotate(-4deg);
+  background: linear-gradient(180deg, rgba(241, 239, 233, 0.72), rgba(241, 239, 233, 0.55));
+  box-shadow: 0 1px 4px rgba(28, 19, 12, 0.1);
+}
+.diary-tape-date {
+  font-family: 'Caveat', cursive;
+  font-size: 20px;
+  color: var(--wkp-accent-deep);
+}
+.diary-tape-org {
+  font-family: var(--wkp-display);
+  font-size: 15px;
+  color: var(--di-ink);
+}
+
+/* 手写编号标题 + 手绘下划线 + 英文手写注 */
+.diary-note-head {
+  position: relative;
+  margin-bottom: 16px;
+}
+.diary-note-no {
+  margin: 0;
+  font-family: 'Caveat', cursive;
+  font-size: 22px;
+  color: var(--di-dim);
+}
+.diary-note-title {
+  display: inline-block;
+  margin: 2px 0 0;
+  font-family: var(--wkp-display);
+  font-size: clamp(30px, 3.4vw, 48px);
+  font-weight: 400;
+  line-height: 1.2;
+  color: var(--di-ink);
+}
+.diary-note-underline {
+  display: block;
+  width: min(320px, 72%);
+  height: 14px;
+  margin-top: 2px;
+  overflow: visible;
+}
+.diary-note-en {
+  margin: 6px 0 0;
+  font-family: 'Caveat', cursive;
+  font-size: 22px;
+  color: var(--di-dim);
+  transform: rotate(-1.5deg);
+}
+
+/* 正文（正文字体，防孤字口径与内页一致） */
+.diary-entry-body {
+  max-width: 640px;
+}
+.diary-p {
+  margin: 0 0 12px;
+  font-size: 15px;
+  line-height: 1.9;
+  color: var(--di-ink);
+  text-align: left;
+  text-wrap: balance;
+  line-break: strict;
+}
+
+/* —— 拍立得相框（纸胶带 + 微旋转，悬停回正） —— */
+.diary-figs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  margin: 22px 0 4px;
+}
+.diary-polaroid {
+  position: relative;
+  margin: 0;
+  width: clamp(150px, 17vw, 216px);
+  padding: 9px 9px 26px;
+  background: #fbf9f3;
+  box-shadow: 0 10px 26px rgba(28, 19, 12, 0.22);
+  transform: rotate(var(--rot, -2deg));
+  transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.diary-polaroid:hover {
+  transform: rotate(0deg) translateY(-4px);
+}
+.diary-polaroid img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  object-fit: cover;
+  background: rgba(58, 46, 35, 0.08);
+}
+.diary-polaroid figcaption {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 4px;
+  font-family: 'Caveat', cursive;
+  font-size: 17px;
+  line-height: 1.2;
+  color: var(--di-dim);
+}
+.diary-polaroid-tape {
+  position: absolute;
+  top: -10px;
+  left: 50%;
+  width: 64px;
+  height: 20px;
+  transform: translateX(-50%) rotate(-3deg);
+  background: linear-gradient(180deg, rgba(241, 239, 233, 0.75), rgba(241, 239, 233, 0.55));
+  box-shadow: 0 1px 3px rgba(28, 19, 12, 0.12);
+}
+.diary-polaroid:nth-child(even) .diary-polaroid-tape {
+  transform: translateX(-50%) rotate(4deg);
+}
+
+.diary-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* —— 手绘涂鸦 —— */
+.diary-doodle {
+  position: absolute;
+  width: clamp(120px, 14vw, 200px);
+  pointer-events: none;
+  opacity: 0.6;
+}
+.diary-doodle path {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+.diary-doodle.is-black path,
+.diary-doodle.is-loop path {
+  stroke: var(--di-ink);
+}
+.diary-doodle.is-blue path {
+  stroke: var(--di-blue);
+}
+.diary-doodle.is-yellow path {
+  stroke: var(--di-yellow);
+  stroke-width: 7;
+  opacity: 0.8;
+}
+.diary-doodle.is-yellow { right: 6%; top: 16%; }
+.diary-doodle.is-loop { right: 7%; top: 30%; }
+.diary-doodle.is-blue { right: 5%; bottom: 22%; }
+.diary-doodle.is-black { left: 5%; bottom: 10%; }
+
+/* —— 左上进度胶囊（参考示例 3/5 Notes 的位置） —— */
+.diary-progress {
+  position: absolute;
+  top: 26px;
+  left: 30px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 7px 15px;
+  background: rgba(251, 249, 243, 0.92);
+  border: 1px solid rgba(58, 46, 35, 0.14);
+  border-radius: 8px;
+  box-shadow: 0 3px 10px rgba(28, 19, 12, 0.16);
+  transform: rotate(-1deg);
+}
+.diary-progress-num {
+  font-family: 'Caveat', cursive;
+  font-size: 19px;
+  color: var(--di-ink);
+}
+.diary-progress-unit {
+  font-family: var(--wkp-display);
+  font-size: 12px;
+  color: var(--di-dim);
+}
+
+/* —— 底部中间页码 —— */
+.diary-pager {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 18px;
+  z-index: 3;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+.diary-pager-num {
+  font-family: var(--wkp-display);
+  font-size: 13px;
+  letter-spacing: 0.22em;
+  color: var(--di-dim);
+  background: rgba(251, 249, 243, 0.72);
+  border: 1px solid rgba(58, 46, 35, 0.15);
+  border-radius: 999px;
+  padding: 5px 16px;
+  user-select: none;
+}
+
+/* —— 圆圈箭头翻页键（2026-09-16 用户指定形态）——
+   下一页 = 圆圈右箭头，钉在本子右下角、半出页面外（用户参考图的位置）；
+   上一页 = 圆圈左箭头，第 2 页起出现在左下角对称位置。
+   是 .diary-book 的直接子级，绝对定位相对本子本身。 */
+.diary-nav {
+  position: absolute;
+  bottom: -18px;
+  z-index: 4;
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.diary-nav.is-next { right: -18px; }
+.diary-nav.is-prev { left: -18px; }
+.diary-nav-circle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 999px;
+  background: #fbf9f3;
+  border: 1px solid rgba(58, 46, 35, 0.2);
+  color: var(--di-ink);
+  font-size: 19px;
+  line-height: 1;
+  box-shadow: 0 4px 14px rgba(28, 19, 12, 0.18);
+  transition:
+    transform 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.22s ease,
+    background 0.22s ease;
+}
+.diary-nav:hover .diary-nav-circle {
+  background: #ffffff;
+  box-shadow: 0 7px 20px rgba(28, 19, 12, 0.24);
+}
+.diary-nav.is-next:hover .diary-nav-circle { transform: translateX(3px); }
+.diary-nav.is-prev:hover .diary-nav-circle { transform: translateX(-3px); }
+.diary-nav:active .diary-nav-circle { transform: none; }
+
+/* 窄屏：拍立得收窄、水印字缩小，翻页键贴边 */
+@media (max-width: 768px) {
+  .diary-polaroid {
+    width: clamp(120px, 38vw, 160px);
+  }
+  .diary-wm { font-size: 44px; }
+  .diary-wm.is-2 { font-size: 60px; }
+  .diary-doodle { width: 110px; opacity: 0.4; }
+  .diary-progress { top: 16px; left: 16px; }
 }

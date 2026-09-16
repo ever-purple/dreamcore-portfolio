@@ -73,7 +73,7 @@ export const WORKS: PlanCase[] = [
     // 封面：deck 的 P1，用 pymupdf 按 4 倍导出成 2880×2160 的实体图。
     // 原先 cover 为 null，靠 pdf-cover.ts 现场渲染 —— 那边只渲 440×520，
     // 拉到详情页首屏（约 1065×792 CSS）自然糊。有了实体图就不再走现场渲染。
-    cover: `${import.meta.env.BASE_URL}works/guanxia/p01-cover.jpg`,
+    cover: `${import.meta.env.BASE_URL}works/guanxia/p01-cover-w1600.jpg`,
     // 不再对外提供完整 PDF（2026-09-14 按用户要求）：
     // 详情页的下载入口已移除，public/ 里也不再放这个文件，避免被直接抓 URL。
     // 置 null 而不是删掉字段，是为了让「有 PDF 时用 PDF 首页兜底封面」那条逻辑
@@ -130,7 +130,7 @@ export const WORKS: PlanCase[] = [
     role: 'Research / 创意协作 / PPT 美化',
     client: '神州租车',
     year: '2025',
-    cover: `${import.meta.env.BASE_URL}works/shenzhou/p01-cover.jpg`,
+    cover: `${import.meta.env.BASE_URL}works/shenzhou/p01-cover-w1600.jpg`,
     pdf: null,
     highlightPage: 1,
     summary:
@@ -164,7 +164,7 @@ export const WORKS: PlanCase[] = [
     role: '主题创意推导 / 活动策划 / PPT 美化',
     client: '赤尾',
     year: '2025',
-    cover: `${import.meta.env.BASE_URL}works/chiwei/p01-cover.jpg`,
+    cover: `${import.meta.env.BASE_URL}works/chiwei/p01-cover-w1600.jpg`,
     pdf: null,
     highlightPage: 1,
     summary:
@@ -210,7 +210,7 @@ export const WORKS: PlanCase[] = [
     role: '影片调性把控 / 音乐参考 / 剪辑参考',
     client: '快克',
     year: '2025',
-    cover: `${import.meta.env.BASE_URL}works/kuaike/p01-cover.jpg`,
+    cover: `${import.meta.env.BASE_URL}works/kuaike/p01-cover-w1600.jpg`,
     pdf: null,
     highlightPage: 1,
     summary:

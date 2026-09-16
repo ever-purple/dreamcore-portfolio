@@ -147,6 +147,8 @@ export function WorkProjectPage({
 
   const heroImgRef = useRef<HTMLImageElement>(null);
   const flightRef = useRef<HTMLImageElement>(null);
+  /** 首屏大图的解码 Promise：起飞时预解码，落点交接前确保已解完，消除"空白→弹出" */
+  const heroDecodeRef = useRef<Promise<void>>(Promise.resolve());
   const enterOriginRef = useRef<DOMRect | null>(originRect ?? null);
   const originElRef = useRef<HTMLElement | null>(origin ?? null);
   const flipTlRef = useRef<ReturnType<typeof gsap.timeline> | null>(null);
@@ -298,52 +300,78 @@ export function WorkProjectPage({
     const hero = heroImgRef.current;
     if (!flight || !hero) return;
 
-    const to = hero.getBoundingClientRect();
-    if (to.width < 2 || to.height < 2) return;
+    /* 先把首屏大图的解码踢起来：转场约 0.62s，落点前基本解完，
+       消除"落点先空白再啪一下弹出" */
+    heroDecodeRef.current = hero.decode().catch(() => {});
 
-    /* ⚠️ 先 **paused**，等"飞行层压在缩略图上"这一帧真正绘制出来再 play。
-       否则：挂载这一大坨（Lenis / ScrollTrigger / SplitText / portal）会把主线程占住，
-       GSAP 的补间却按真实时间在跑 —— 实测第一帧画出来时进度已经到 50%，
-       用户看到的不是"从缩略图长开"，而是"凭空冒出一张半大的图"。
-       暂停到首帧之后，等于把动画的第 0 帧真正交到眼睛里。 */
-    const tl = gsap.timeline({
-      paused: true,
-      onComplete: () => {
-        /* 交接：先亮真图、同一帧收掉飞行层 —— 两者位置尺寸完全一致，看不出换人 */
-        gsap.set(hero, { autoAlpha: 1 });
-        gsap.set(flight, { autoAlpha: 0 });
-        setFlipClass(false);
-      },
-    });
-    flipTlRef.current = tl;
-    tl.to(
-      flight,
-      {
-        x: to.left,
-        y: to.top,
-        width: to.width,
-        height: to.height,
-        borderRadius: 0,
-        duration: 0.62,
-        ease: 'power3.inOut',
-      },
-      0,
-    );
-    /* 暴露给回归脚本（仅 dev，同 __wkpLenis / __wkpCarousel 的约定）：
-       暂停 + progress(n) 可以把转场定格在任意进度上截图，
-       比对着录屏猜帧可靠得多。 */
-    if (import.meta.env.DEV) (window as unknown as { __wkpFlip?: unknown }).__wkpFlip = tl;
+    let cancelled = false;
+    let tl: gsap.core.Timeline | null = null;
+    let raf1 = 0;
+    let safety = 0;
 
-    let raf1 = requestAnimationFrame(() => {
-      raf1 = requestAnimationFrame(() => tl.play());
-    });
-    /* 兜底：万一 rAF 被掐（标签页不可见），也别让首屏大图永远藏着 */
-    const safety = window.setTimeout(() => tl.play(), 600);
+    /* ⚠️ 先等首屏大图 decode 完，**再量终点** —— 量早了会拿到错的盒子：
+       .wkp-hero 的高度由 aspect-ratio 决定，CSS 兜底是 16/9（654px 高），
+       图片 onLoad 后 coverAr 才把真实比例（4/3 → 872px 高）写上 inline。
+       -w1600 瘦身 + decoding="async" 之后，onLoad 晚于本 effect 同步执行，
+       同步量终点 = 拿兜底比例当落点 —— 飞行层落地还差 217px，交接那一帧明显一跳。
+       decode() 必然晚于 onLoad，等它就是等 coverAr 写完。
+       race 800ms：decode 万一悬挂也不让起飞卡死（飞行层已停在缩略图上，最多晚点出发）。 */
+    void Promise.race([heroDecodeRef.current, new Promise((r) => setTimeout(r, 800))])
+      .then(() => {
+        if (cancelled) return;
+        const to = hero.getBoundingClientRect();
+        if (to.width < 2 || to.height < 2) return;
+
+        /* ⚠️ 先 **paused**，等"飞行层压在缩略图上"这一帧真正绘制出来再 play。
+           否则：挂载这一大坨（Lenis / ScrollTrigger / SplitText / portal）会把主线程占住，
+           GSAP 的补间却按真实时间在跑 —— 实测第一帧画出来时进度已经到 50%，
+           用户看到的不是"从缩略图长开"，而是"凭空冒出一张半大的图"。
+           暂停到首帧之后，等于把动画的第 0 帧真正交到眼睛里。 */
+        tl = gsap.timeline({
+          paused: true,
+          onComplete: () => {
+            /* 交接：先亮真图、同一帧收掉飞行层 —— 两者位置尺寸完全一致，看不出换人。
+               等首屏大图解码完再交接，否则落点会先空白、再"啪"地弹出（尤其首屏 -w1600 大图） */
+            const reveal = () => {
+              gsap.set(hero, { autoAlpha: 1 });
+              gsap.set(flight, { autoAlpha: 0 });
+              setFlipClass(false);
+            };
+            void heroDecodeRef.current.then(reveal).catch(reveal);
+          },
+        });
+        flipTlRef.current = tl;
+        tl.to(
+          flight,
+          {
+            x: to.left,
+            y: to.top,
+            width: to.width,
+            height: to.height,
+            borderRadius: 0,
+            duration: 0.62,
+            ease: 'power3.inOut',
+          },
+          0,
+        );
+        /* 暴露给回归脚本（仅 dev，同 __wkpLenis / __wkpCarousel 的约定）：
+           暂停 + progress(n) 可以把转场定格在任意进度上截图，
+           比对着录屏猜帧可靠得多。 */
+        if (import.meta.env.DEV) (window as unknown as { __wkpFlip?: unknown }).__wkpFlip = tl;
+
+        raf1 = requestAnimationFrame(() => {
+          raf1 = requestAnimationFrame(() => tl?.play());
+        });
+        /* 兜底：万一 rAF 被掐（标签页不可见），也别让首屏大图永远藏着 */
+        safety = window.setTimeout(() => tl?.play(), 600);
+      })
+      .catch(() => {});
 
     return () => {
+      cancelled = true;
       cancelAnimationFrame(raf1);
       window.clearTimeout(safety);
-      tl.kill();
+      tl?.kill();
       flipTlRef.current = null;
       if (import.meta.env.DEV) delete (window as unknown as { __wkpFlip?: unknown }).__wkpFlip;
     };
@@ -640,7 +668,8 @@ export function WorkProjectPage({
                 src={project.cover}
                 alt=""
                 draggable={false}
-                onLoad={coverAr('.wkp-hero')}
+                decoding="async"
+                onLoad={coverAr('.wkp-hero', 16 / 9)}
                 data-cursor="Focus"
                 data-cursor-tone="dark"
                 role="button"
@@ -748,6 +777,7 @@ export function WorkProjectPage({
                             className="wkp-media-cover-img"
                             src={b.images[0]}
                             alt=""
+                            decoding="async"
                             loading="lazy"
                             onLoad={coverAr('.wkp-media-cover')}
                           />
@@ -786,6 +816,7 @@ export function WorkProjectPage({
                             key={src}
                             src={src}
                             alt=""
+                            decoding="async"
                             loading="lazy"
                             data-cursor="Focus"
                             data-cursor-tone="light"
@@ -807,6 +838,7 @@ export function WorkProjectPage({
                       key={src}
                       src={src}
                       alt=""
+                      decoding="async"
                       loading="lazy"
                       data-cursor="Focus"
                       data-cursor-tone="light"
@@ -845,6 +877,7 @@ export function WorkProjectPage({
                             key={src}
                             src={src}
                             alt=""
+                            decoding="async"
                             loading="lazy"
                             data-cursor="Focus"
                             data-cursor-tone="light"
@@ -871,7 +904,7 @@ export function WorkProjectPage({
                 {team.map((m, i) => (
                   <article className="wkp-person wkp-rise" key={`${m.name}-${i}`}>
                     <span className="wkp-avatar">
-                      {m.avatar ? <img src={m.avatar} alt="" loading="lazy" /> : null}
+                      {m.avatar ? <img src={m.avatar} alt="" loading="lazy" decoding="async" /> : null}
                     </span>
                     <p className="wkp-person-name">{m.name}</p>
                     <p className="wkp-person-role">{m.role}</p>
@@ -980,6 +1013,7 @@ export function WorkProjectPage({
         src={project.cover ?? ''}
         alt=""
         aria-hidden="true"
+        decoding="async"
         draggable={false}
       />
     ) : null}

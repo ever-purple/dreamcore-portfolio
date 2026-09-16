@@ -15,15 +15,19 @@ import type { SyntheticEvent } from 'react';
  * 注意：写入的是 `aspect-ratio` 这一个 CSS 属性；容器原本的 `width` 不动，
  * `height` 由 `aspect-ratio` 重新派生。所以 CSS 里不能再写死 height（除了 fallback）。
  */
-export function coverAr(target: string | 'self') {
+export function coverAr(target: string | 'self', maxRatio?: number) {
   return (e: SyntheticEvent<HTMLImageElement>) => {
     const { naturalWidth: w, naturalHeight: h } = e.currentTarget;
     if (!(w > 0 && h > 0)) return;
+    // maxRatio：把容器比例钳到上限（如 16/9）。比 16:9 更「竖」的封面（观夏 4:3，
+    // w/h=1.33 < 1.78）曾把首屏顶到一屏多高 —— 统一钳到 16:9 同高，
+    // 图片交给 object-fit: cover 居中裁（裁的是天空/海面，标语在画面中部不受影响）。
+    const arW = maxRatio && w / h < maxRatio ? maxRatio * h : w;
     const t = target === 'self'
       ? (e.currentTarget as HTMLElement)
       : e.currentTarget.closest(target);
     if (t instanceof HTMLElement) {
-      t.style.setProperty('aspect-ratio', `${w} / ${h}`);
+      t.style.setProperty('aspect-ratio', `${arW} / ${h}`);
     }
   };
 }

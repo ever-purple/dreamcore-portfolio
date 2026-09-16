@@ -64,6 +64,16 @@ add_file(os.path.join(ROOT, "src/data/studio.ts"), [
     r"name:\s*'([^']*)'",
     r"target:\s*'([^']*)'",
 ])
+# 实习日记（2026-09-16）：纸带标签 date/org、手写标题 title、岗位/标签 chips
+# 都走 NanoOldSongA（display 宋体）——不收就静默回退 Noto Serif，字形不成套。
+# 注意：body 正文走站点正文字体（Noto Sans SC），故意不收，控制子集体积。
+add_file(os.path.join(ROOT, "src/data/diary.ts"), [
+    r"title:\s*'([^']*)'",
+    r"org:\s*'([^']*)'",
+    r"role:\s*'([^']*)'",
+    r"date:\s*'([^']*)'",
+    r"chips:\s*\[([^\]]*)\]",
+])
 
 # 组件里写死的 display 文本（新加写死标题记得在这里补）
 chars.update("三步 · 从文化符号到情绪价值")

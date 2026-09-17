@@ -34,6 +34,8 @@ import {
   saveProjectLocally,
   type SavedProject,
 } from '@/lib/carousel/project-storage';
+import { StudioChrome } from '@/components/StudioChrome';
+import { useEscape } from '@/lib/escape-stack';
 
 type Props = {
   open: boolean;
@@ -67,7 +69,20 @@ export function WorksCarousel({ open, onClose }: Props) {
   const [projects, setProjects] = useState<ProjectState[]>(() =>
     seedProjects(diskOverridesRef.current),
   );
-  const [active, setActive] = useState<number | null>(null);
+  const [active, setActive] = useState<number | null>(() => {
+    /**
+     * ?wkp=N —— 无头/调试参数，直接预览第 N 个项目的整屏详情页。
+     * 跟 ?about / ?greenos / ?diary / ?works / ?media / ?copy 一脉相承：省下起 3D 木马 +
+     * 走到正中央 + 点那一格的交互，专给回归脚本和无头截图用。
+     */
+    const params = new URLSearchParams(window.location.search);
+    const v = params.get('wkp');
+    if (v !== null) {
+      const n = Number.parseInt(v, 10);
+      if (Number.isFinite(n) && n >= 0) return n;
+    }
+    return null;
+  });
   /**
    * 正在编辑 / 提交的槽位（仅作者模式）。
    * 阅读这件事已经交给 WorkProjectPage（整屏详情页），
@@ -294,24 +309,19 @@ export function WorksCarousel({ open, onClose }: Props) {
     setActive(null);
   }, []);
 
-  /* Esc：详情开着时由 WorkDetail 捕获并吃掉；这里只处理"聚焦中"和"直接关" */
-  useEffect(() => {
-    if (!mounted) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      if (active !== null) {
-        setActive(null);
-        return;
-      }
-      if (focused !== null) {
-        resetView();
-        return;
-      }
-      onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [mounted, active, focused, onClose, resetView]);
+  /* Esc：详情页 / 编辑表单开着时由它们自己吃（它们后挂 = 在栈顶，见 @/lib/escape-stack）；
+     这里只管"聚焦中"和"直接关"两种态。 */
+  useEscape(() => {
+    if (active !== null) {
+      setActive(null);
+      return;
+    }
+    if (focused !== null) {
+      resetView();
+      return;
+    }
+    onClose();
+  }, mounted);
 
   /**
    * 保存一个槽位。两条路线，按"有没有写入代码的通道"分：
@@ -547,10 +557,16 @@ export function WorksCarousel({ open, onClose }: Props) {
     >
       <div className="works-canvas-host" ref={hostRef} />
 
-      <header className="works-topbar">
-        <div />
-        <div className="works-actions">
-          {isAdmin ? (
+      {/* 统一外壳（第一档改造 ①）：左上「RETURN TO STUDIO」+ 右上「MENU」。
+          原来是**右上角**一颗 `关闭 ✕` 胶囊 —— 位置、字族、措辞和别的板块全不一样，
+          是"每页像两个站"里最明显的一处。
+          「提交项目」是这页独有的作者功能，交给外壳的 extra 槽、排在 MENU 左边。 */}
+      <StudioChrome
+        label="Return to Studio"
+        onBack={onClose}
+        tone="light"
+        extra={
+          isAdmin ? (
             <button
               type="button"
               className={`works-btn${submitMode ? ' is-on' : ''}`}
@@ -562,12 +578,9 @@ export function WorksCarousel({ open, onClose }: Props) {
             >
               {submitMode ? '取消提交' : '＋ 提交项目'}
             </button>
-          ) : null}
-          <button type="button" className="works-btn works-btn-close" onClick={onClose}>
-            关闭 ✕
-          </button>
-        </div>
-      </header>
+          ) : null
+        }
+      />
 
       <p className="works-hint">拉动木马上的灯绳 · 开灯 / 关灯</p>
 

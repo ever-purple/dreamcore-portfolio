@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { EASE } from '@/lib/ease';
 import gsap from 'gsap';
 
 interface HomeSectionProps {
@@ -215,7 +216,7 @@ export function HomeSection({ images, complete, entered, onOpen, setDownBlocked 
     const tween = gsap.to(canvasRef.current, {
       scale: 1.02,
       duration: 6,
-      ease: 'sine.inOut',
+      ease: EASE.io,
       yoyo: true,
       repeat: -1,
       transformOrigin: 'center center',
@@ -235,7 +236,7 @@ export function HomeSection({ images, complete, entered, onOpen, setDownBlocked 
     const enter = gsap.fromTo(
       btn,
       { opacity: 0, scale: 0.85 },
-      { opacity: 1, scale: 1, duration: 0.6, ease: 'back.out(1.6)' },
+      { opacity: 1, scale: 1, duration: 0.6, ease: EASE.pop },
     );
 
     const onMove = (e: MouseEvent) => {
@@ -244,12 +245,12 @@ export function HomeSection({ images, complete, entered, onOpen, setDownBlocked 
       const dy = e.clientY - (r.top + r.height / 2);
       const dist = Math.hypot(dx, dy);
       if (dist < 180) {
-        gsap.to(btn, { x: dx * 0.3, y: dy * 0.3, duration: 0.4, ease: 'power2.out' });
+        gsap.to(btn, { x: dx * 0.3, y: dy * 0.3, duration: 0.4, ease: EASE.world });
       } else {
-        gsap.to(btn, { x: 0, y: 0, duration: 0.5, ease: 'power2.out' });
+        gsap.to(btn, { x: 0, y: 0, duration: 0.5, ease: EASE.world });
       }
     };
-    const onLeave = () => gsap.to(btn, { x: 0, y: 0, duration: 0.5, ease: 'power2.out' });
+    const onLeave = () => gsap.to(btn, { x: 0, y: 0, duration: 0.5, ease: EASE.world });
 
     inner.addEventListener('mousemove', onMove);
     inner.addEventListener('mouseleave', onLeave);
@@ -280,9 +281,14 @@ export function HomeSection({ images, complete, entered, onOpen, setDownBlocked 
           leaving ? 'opacity-0' : 'opacity-100'
         }`}
       >
+        {/* 画面层 = 这只 canvas（120 帧门厅推镜）。2026-09-16：
+            ① `world-grade` 是"日剧调色滤镜"的挂点 —— 只作用于**画面**，
+               不碰纸面（见 index.css 的 .world-grade）；
+            ② 这套 120 帧 jpg 本身的色彩已经很重（实测那扇门 #540808，
+               饱和度 82%），滤镜要把它们统一压到日剧那种低饱和暖调里。 */}
         <canvas
           ref={canvasRef}
-          className="absolute inset-0 w-full h-full"
+          className="world-grade absolute inset-0 w-full h-full"
           style={{ willChange: 'transform', transform: 'translateZ(0)' }}
           aria-label="Scroll-driven room animation"
         />
@@ -296,31 +302,50 @@ export function HomeSection({ images, complete, entered, onOpen, setDownBlocked 
           className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center"
           style={{ opacity: 0 }}
         >
+          {/* 配色沿革（三轮，结论见第三轮）：
+              ① 初版霓虹青 #76F0CA
+              ② 换 --pal-mint（当时那支鼠尾草绿，2026-09-17 已校正为 #b5e3d6）→ 用户"不好看"
+              ③ 换 --pal-paper #e8e6e0 奶油白 + 暗投影（怕 16vw 饱和色变成"海报贴纸"）
+              ④ **2026-09-16 晚（现行）：用户指定「换成原来的薄荷绿」**，
+                 并在两种薄荷里明确选了**原版霓虹薄荷 #7ee8c7**
+                 —— 于是 ③ 的判断被推翻，回到荧光绿。
+              ⑤ **2026-09-16 深夜：投影整个去掉**（用户指截图原话：「字周围有矩形阴影，
+                 而且字好像也有阴影，去掉」）。
+                 根因是 .reveal-mask 带 `overflow: hidden`（那是给遮罩上滑揭示用的），
+                 它按 **padding box 裁剪** —— 44px 模糊的投影铺得比盒子宽，被裁出**直角边**，
+                 于是"字形的柔和投影"看起来成了"一圈矩形阴影"。字本身的投影是同一个值。
+                 去掉后两个症状一起消失：投影是唯一来源，不需要分别处理。
+                 代价：薄荷字压在亮奶油墙上对比度变低。用户明确要纯净字形，就这样。 */}
           <span className="reveal-mask" style={{ fontSize: '16vw' }}>
             <span
               ref={portfolioLineRef}
-              className="reveal-line font-jheri text-[#76F0CA] leading-[1.15] select-none whitespace-nowrap"
+              className="reveal-line font-jheri text-[color:var(--pal-mint-neon)] leading-[1.15] select-none whitespace-nowrap"
             >
               Portfolio
             </span>
           </span>
         </div>
 
-        {/* OPEN button at the center of the door (appears at 90%) */}
+        {/* OPEN button at the center of the door (appears at 90%)
+            2026-09-16 字体统一：原来是 `font-body`（Inter/Noto 无衬线）+ 0.5em 大字距的
+            **全大写 ON/OFF 式按钮**，和全站"屏幕外英文 = Caveat 手写体"的规则不符 ——
+            进门前后一个是无衬线全大写、一个是手写体，像两个网站。
+            改成 Caveat + Title Case「Open」（规则 ②：屏幕外一律 Title Case），
+            字号/字距的分寸见 index.css 的 .home-open。 */}
         {showOpen && (
           <button
             ref={openBtnRef}
             onClick={handleOpen}
-            className="absolute left-1/2 top-1/2 z-20 flex items-center justify-center px-10 py-4 border border-cream/70 bg-black/30 backdrop-blur-sm text-cream font-body text-base tracking-[0.5em] uppercase transition-colors duration-500 hover:bg-cream hover:text-wine"
+            className="home-open absolute left-1/2 top-1/2 z-20 flex items-center justify-center px-10 py-3 border border-cream/70 bg-black/30 backdrop-blur-sm text-cream transition-colors duration-500 hover:bg-cream hover:text-wine"
           >
-            OPEN
+            Open
           </button>
         )}
 
-        {/* Scroll indicator (hidden once OPEN appears) */}
+        {/* Scroll indicator (hidden once OPEN appears) —— 同 OPEN，归 Caveat */}
         {!showOpen && (
           <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-3 text-cream/60">
-            <span className="text-[9px] tracking-[0.35em] uppercase font-body">Scroll</span>
+            <span className="home-scroll">Scroll</span>
             <span className="w-px h-10 bg-cream/40 animate-pulse" />
           </div>
         )}

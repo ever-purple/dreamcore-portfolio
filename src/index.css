@@ -14,6 +14,68 @@
    要恢复无障碍合规：把 FORCE_FULL_MOTION 改回 false，并删掉那 13 处媒体条件后缀。
    ============================================================================ */
 
+/* ============================================================================
+   英文大小写规则（2026-09-16）—— **唯一真源，改文案前先读这段**
+   ----------------------------------------------------------------------------
+   问题：改造前全站英文同时存在三种写法，而且是**随机**混的 ——
+     全大写  MY STUDIO / RETURN TO STUDIO / NOW PLAYING / DUNGEON LOG
+     首字母  About Me / Works / Creative Lab / Close / Team
+     全小写  career vision / inspiration / webmaster / exit / keep going
+   更麻烦的是**同一处视觉处理有两种来源**：Green OS 里有 8 个标签靠源码手写全大写，
+   而内容页里有 9 个标签靠 CSS `text-transform: uppercase` 强制全大写 ——
+   于是源码写的是 Title Case、渲染出来却是大写，跟真正 Title Case 的地方混在一起。
+   （2026-09-16 已删掉那 9 处 CSS 强制，只保留 letter-spacing。）
+
+   ⚠️ 规则：**屏幕里说一种话，屏幕外说另一种。边界 = 是不是在 CRT/Green OS 屏幕内。**
+
+     ① 屏幕**内**（Green OS 桌面及其窗口，像素字 Zpix/Cubic11）
+        → 一律 **全大写**。这是"1970 年代终端界面"的语言，大写是刻意的时代感。
+        例：NOW PLAYING / DUNGEON LOG / SKILL TREE / DAILY LOOP / CAREER VISION /
+            INSPIRATION / WEBMASTER / EXIT
+        实现：`.about-*` 系列用 CSS `text-transform: uppercase`；源码怎么写都行，
+              但**建议源码直接写全大写**，免得 grep 时看不见真实渲染结果。
+
+     ② 屏幕**外**（工作室、木屋、内容页、书架、日记、导航、按钮）
+        → 一律 **Title Case**（首字母大写）。
+        例：My Studio / Return to Studio / Return to Archive / About Me / Works /
+            Creative Lab / Thinking / Process / Videos & Music / Copywriting & AI
+        实现：源码直接写 Title Case，**不要**再用 `text-transform` 改大小写。
+
+     ③ 只有两类**刻意**例外，不算违反规则：
+        · 手写体里的完整小句（Caveat 字体、纸面水印）：`keep going` / `to be continued`
+          —— 那是"人随手写的一句话"，不是标签，句子本来就不大写。
+        · 文件名 / 终端回显：`render me.txt` —— 文件名不大写。
+
+   新增英文文案时：先问"它在屏幕里吗"，再按 ①② 选一种；两类例外只在确实需要时用。
+
+   ----------------------------------------------------------------------------
+   字族规则（同样唯一真源，2026-09-16 收口成「三族制」）
+   ----------------------------------------------------------------------------
+     屏幕**内**（Green OS / CRT）→ Zpix / Cubic11 像素字，见上面 ①
+     屏幕**外**的英文 → **Caveat**（手写钢笔体，即光标标签那一支笔）。
+       不分字号 —— 标签、按钮、菜单大标题都走它：
+       Menu / Close / My Studio / Return to Studio / 物件名 / 光标标签 /
+       Open / Scroll / About Me / Works / Creative Lab
+     屏幕**外**的中文 display（标题级，不是正文）→ **NanoOldSongA**
+       菜单中文 / 内页大标题 / 宣言带 / 日记标题 / 物件批注
+
+     ⚠️ 2026-09-16 连踩的四个坑（都是"声明了却没用上"，肉眼能看出但极易归因错）：
+       · `.studio-chrome__back` 原落 **Cinzel**（罗马碑体，只有大写字形）——
+         `My Studio` 被渲染成 `MY STUDIO`，在一圈手写体里格外突兀（用户截图抓到）。
+       · `.studio-pill` 虽然写了 Caveat，但真正显示文字的 `.hand__txt`
+         有自己的 font-family —— **字族必须声明在真正渲染文字的那一层**。
+       · `.menu-en` 写的是 'Juice ITC'，本机与网上都没有这个字体 → 实际回退
+         **Cinzel**：于是菜单里 About Me / Works / Creative Lab 全是罗马碑体，
+         而同一屏的 Menu / Close 是 Caveat —— 这就是用户说的"字体不统一"。
+       · NanoOldSongA 是 **472 字子集**：菜单中文（于/我/联/系/式/简/历）原先
+         **不在子集里**，换过去会静默回退 Noto Serif（一行里两种宋体）。
+         已补进 scripts/subset-nanooldsong.py 的 HARDCODED_DISPLAY 并重新生成子集；
+         **以后改菜单/工具提示文案，要重跑那个脚本**，否则同样静默回退。
+
+     全站唯一仍用 JheriCurls 的是 `.font-jheri`（首页 16vw 的 Portfolio 大字）——
+     它不算"标签"，是花体招牌；字号大到笔触本身就是图形，故保留。
+   ============================================================================ */
+
 @font-face {
   font-family: 'JheriCurls';
   src: url('/fonts/JheriCurls.ttf') format('truetype');
@@ -65,6 +127,387 @@
   font-weight: 400;
   font-style: normal;
   font-display: swap;
+}
+
+/* ============================================================================
+   主色四职（2026-09-16，用户说「颜色可以试一下」）—— 从参考图**实测**取色
+   ----------------------------------------------------------------------------
+   实测结论（Python + PIL 采样，不是眼估）：
+     · 参考图里占面积最大的其实是**低饱和**色 —— 暖褐 23%、薄荷 32%、奶油 9%；
+       另有一组日剧色调的平均色全部 ≤15% 饱和（#ccd2c2 / #8aa38b / #65745d /
+       #4a5740 / #211d19）。
+     · 全站真正"跳"的只有两个：酒红 #550507（饱和 81%）、
+       霓虹薄荷 #7ee8c7 / #76F0CA（68–70%）。
+     · 所以毛病不是"颜色太多"，是**这两个高饱和色占了大面积**。
+
+   按面积分职 —— 面积从大到小，越往下越少用：
+     --pal-choc   #3b2b21  巧克力 全站底色：body / 加载页 / 工作室地面（原酒红）
+     --pal-base   #534334  暖褐   世界的底：结构条、木、墙
+     --pal-paper  #e8e6e0  奶油   纸面 / 主字
+     --pal-green  #65745d  灰橄榄 页面上的"绿"（非屏幕环境）
+     --pal-mint   #b5e3d6  薄荷   **可作大色块**（宣言带底）也可作小点缀（脉冲点 / 左栏编号）
+     --pal-mint-soft #defeec 浅薄荷 "薄荷纸"的底（实测占图1 58%）
+     --pal-mint-deep #8ec6b4 深一档薄荷：浅薄荷面上的圆点 / 图案
+     --pal-veil   #4a2e23  巧克力 全屏覆盖层（菜单 / 联系方式）
+
+   ⚠️ 2026-09-16 晚更正一条**我自己推错的规矩**：
+     我原先写「薄荷只允许出现在屏幕里」，并据此把策划案的宣言带从薄荷改成了灰橄榄。
+     用户随后明确表态：「我也喜欢**薄荷巧克力**的搭配」—— 于是改回薄荷实底 + 巧克力字。
+     结论：薄荷在这个站里是**主色**（参考图实测占 32%），不是"只能小面积的点缀"；
+     真正需要克制的是**酒红**，不是薄荷。下面这条注释已经按这个结论重写。
+
+   已落地的改动（四轮）：
+     第一轮 ① 首页大字 Portfolio：霓虹青 #76F0CA → --pal-mint
+           ② .pulse-dot：#7ee8c7 → --pal-mint
+           ③ .mode-switch.is-author：#7ee8c7 → --pal-mint
+     第二轮 ④ 首页大字 Portfolio：--pal-mint → **--pal-paper**（它压在一张照片上、
+              16vw，面积太大，任何饱和色都会被放大成"海报贴纸"；奶油才是"字"的身份）
+           ⑤ 全屏菜单底 rgba(85,5,7,.98)（实测 #540808 / 饱和 82%）→ --pal-veil
+           ⑥ .works-panel-code #7d8f72 → --pal-green
+     第三轮 ⑦ **全站底色：酒红 #550507 → 巧克力 #3b2b21**（tailwind 的 wine 色阶，
+              改值不改名）。这是全站最大面积的高饱和色，也是用户说"底色换一下"的那一层。
+           ⑧ 策划案宣言带：灰橄榄 → **薄荷（--pal-mint，现 #b5e3d6）+ 巧克力字 #6b4423**（薄荷巧克力）
+     第四轮 ⑨ 首页大字 Portfolio：--pal-paper → **--pal-mint-neon #7ee8c7**
+              （2026-09-16 晚用户改主意，原话「换成原来的薄荷绿」；随后在
+               「--pal-mint（当时的鼠尾草绿）」与「原版霓虹薄荷 #7ee8c7」之间明确选了后者。）
+              所以上面 ④ 的判断被用户推翻了：16vw 的"海报贴纸感"顾虑，
+              让位给了用户对**原版荧光绿**的偏好 —— 记录在此，别再拿 ④ 当结论去改回来。
+              投影**保留**：薄荷 #7ee8c7 是很浅的色（L≈86%），而它压在那扇火红门厅的
+              **亮奶油墙**上，不加深投影笔画边缘会糊进背景 —— 这跟"选哪种薄荷"无关。
+              顺带留个定位：想回到最初的霓虹青，把 --pal-mint-neon 换成 #76F0CA 即可。
+     没动的（都是**刻意**保留）：
+       · CRT / Green OS 屏幕里的 #7ee8c7 —— 那是荧光屏的正当发亮，就是该亮；
+       · 木马场景的 --wk-mint（#7ee8c7）—— 木色里的一点冷光，是重音不是大面积。
+   ============================================================================ */
+:root {
+  --pal-choc: #3b2b21;
+  --pal-base: #534334;
+  --pal-paper: #e8e6e0;
+  --pal-green: #65745d;
+  /* —— 薄荷巧克力（2026-09-17 第五轮：按用户三张参考图**实测**校正）——
+     实测（`ref-image-palette` 技能的 sample_palette.py）：
+       图1（薄荷底圆点）  #DEFEEC 58.1% / #B5E3D6 6.8%（圆点）/ #612615 9.1% / #6B3C2C 6.9% / #855241 6.3%
+       图2（巧克力底星星）#604740 76.3% / #D4F8EC 6.9%
+       图3（Angel Girl）  #C5FCEA 4.4% / #B4E4D6 3.8% / #A9D8C9 5.0% / #FBE6F8 2.9%（粉）
+     ⚠️ **#B5E3D6（图1 圆点）与 #B4E4D6（图3）是两张独立图里几乎同一个值** ——
+        这条互相印证说明它才是"正宗的那支薄荷"。
+     旧值 --pal-mint 的问题就在这：H 相同（≈161°）但 **S 只有 32%、L 69%**，
+     是一支**灰绿的鼠尾草**；参考图的薄荷是 **S 45%、L 80% 的粉彩薄荷**。
+     这就是用户说的"有点不正宗"的根源 —— 不是色相错了，是**饱和度/明度差了一档**。 */
+  --pal-mint: #b5e3d6;      /* 主薄荷：实测 #B5E3D6 / #B4E4D6（两图印证）。文字、强调、薄荷面 */
+  --pal-mint-soft: #defeec; /* 浅薄荷面：实测图1 底色 #DEFEEC（占 58%）。做"薄荷纸"的底 */
+  --pal-mint-deep: #8ec6b4; /* 深一档薄荷：由 #b5e3d6 原色相 ×0.78 推导。浅薄荷上的圆点/图案 */
+  /* 原版霓虹薄荷（饱和 70%）：只在**用户点名**的地方用 —— 目前唯一落点是
+     首页那行 16vw 的「Portfolio」大字（见上面第四轮 ⑨）。
+     ⚠️ 不要拿它去大面积铺底：它是高饱和荧光色，铺开会重演"海报贴纸"那件事。 */
+  --pal-mint-neon: #7ee8c7;
+  /* 巧克力覆盖层（菜单 / 联系方式那张纸）：实测图1 的巧克力族是 #612615 / #6B3C2C，
+     比旧值更暖、更能读出"巧克力"而不是"糊掉的黑"。
+     这里取**同色相、L 提到 29%** 的推导值 —— 全屏盖在暗房间上仍要压得住，
+     但配上粉彩薄荷之后对比度实测 8.7:1，比原来（7.97:1）还好。 */
+  --pal-veil: #4a2e23;
+}
+
+/* ============================================================================
+   薄荷巧克力的「图案」（2026-09-17 第六轮）—— 三张参考图各自的元素语法
+   ----------------------------------------------------------------------------
+   图1（薄荷底 + 圆点）  底 #DEFEEC 58% / 圆点 #B5E3D6 6.8% —— 圆点比底**深一档**，
+        而且只占不到 7% 面积：**稀疏 + 低调**，不是满铺的圆点布。
+   图2 / 图3 + 用户另外给的两张参考图 —— **牵牛花字符画**（见下面的 .ascii-flower）。
+
+   ⚠️ 三个坑，都是用户当场纠的，记在这别再犯：
+     1. **四角星是我自己造的，不是图上的东西** —— 整条撤掉了。
+        规矩：图案只能从参考图里"抄"，不许自己编形状。
+     2. **像素方块也不对**。用户给的参考图是 `#%*+=-:.` 这一档字符**按密度堆出轮廓**
+        （他在图上批注"转字符""加颜色"）—— 一旦转成 SVG 遮罩就只剩实心块，
+        字感的颗粒全丢。所以牵牛花走**真字符**，不走 mask。
+     3. **宁缺毋滥**：用户原话"不要太多 太密了"。砖要大、浓度要低，别让图案抢了字。
+   ============================================================================ */
+
+/* ---------------------------------------------------------------------------
+   牵牛花字符画（ASCII art）
+   ---------------------------------------------------------------------------
+   字符内容在 src/components/flowerAsciiArt.ts（42×28；生成参数写在那份文件的注释里）。
+   这里只管**怎么摆**：等宽 + `white-space: pre` 保住字符网格，颜色吃 --pal-mint，
+   浓度压到 0.1x —— 它是纸的肌理，不是主体，绝不跟正文抢。
+   ⚠️ 字号只能用 px/clamp，**不能用 em**：字符格是 1:2 的瘦高比，
+      字号一变"花"的纵横比就跟着变。同理不要写 letter-spacing。
+   ⚠️ `z-index: -1` 是**必须的**：负值子级画在父级背景之上、正常流内容之下 ——
+      于是花压在巧克力底上、又不盖住菜单字。前提是父级得是层叠上下文：
+      .studio-menu-overlay（z-index:400）与 .studio-contact__sheet（transform）都满足。
+      换成 0 或正数，花就会糊到字上面去。
+   --------------------------------------------------------------------------- */
+.ascii-flower {
+  position: absolute;
+  z-index: -1;
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Courier New', monospace;
+  font-size: clamp(4px, 0.72vw, 10px);
+  line-height: 1;
+  letter-spacing: 0;
+  white-space: pre;
+  color: var(--pal-mint);
+  opacity: var(--flower-op, 0.15);
+  pointer-events: none;
+  user-select: none;
+}
+
+/* 全屏菜单：右下角，**整朵留在界内** —— fixed 层里越界，个别浏览器会把文档撑出滚动条 */
+.ascii-flower--menu {
+  right: clamp(16px, 4vw, 72px);
+  bottom: clamp(16px, 5vh, 56px);
+}
+
+/* 联系面板那张巧克力纸：右上角，**故意往右越界**只露大半朵，像印在纸上被裁了边。
+   敢越界是因为 .studio-contact__sheet 自己就是 overflow: hidden。 */
+.ascii-flower--sheet {
+  top: clamp(6px, 4vh, 44px);
+  right: clamp(-64px, -3vw, -10px);
+}
+
+/* ============================================================================
+   子页面背景装饰层（2026-09-17 / 用户第 1 条需求）
+   ----------------------------------------------------------------------------
+   用户：**"美化子页面"** —— 沿用当前视觉风格，在页眉 / 内容区边缘 / 留白 / 页脚
+   自然分布**字母、花朵（不要牵牛花）、星星**，构图平衡、疏密有致，
+   不遮挡主体内容与文字，颜色与透明度与现有配色协调（"不一定只用白色"），
+   桌面端与移动端自适应；并"参考提供的图片提取主色调、质感与氛围"。
+
+   ## 材质只有两种，都来自参考图
+     ① **点阵面**：形状当 `mask-image`，点阵当 `background`
+        （图1 白点堆的花 / 图2 点阵放射花 / 图4 网眼蕾丝 / 图6 散点）
+     ② 同一套做法，点更密、形状更小 → 就是**实心星**与**花体字母**
+        （图3 实心白星 / 图5 星星拼的字母）
+     形状（只有 alpha）在 src/components/decorShapes.ts，
+     由 scripts/gen-decor-shapes.mjs 参数化生成；**颜色一律走 --pdecor-color**。
+     ⚠️ 这正是"数据 URI 里的 SVG 读不到 CSS 变量"那条结论的解法（见本文件顶部图案注释）：
+        形状烤死成黑剪影无所谓，因为遮罩只看 alpha —— 换配色不用碰那份文件。
+
+   ## 为什么它绝对盖不住字
+     整层 `z-index: -1`：负值子级画在**父级背景之上、正常流内容之下**
+     （同 .studio-menu-overlay::before / .ascii-flower 那套，是同一门手艺）。
+     所以"不遮挡主体内容"不是靠调透明度换来的，是**层级上就不可能**。
+     另外散点层自己再做一道"中间挖空"的遮罩 → 越靠页面中心点越少，中间永远是干净的。
+
+   ## 每个页面的挂点（都要父级是**层叠上下文**，否则 -1 会掉到父级的背景下面去）
+     .mjp        （fixed + z 60）→ 白底，装饰用深色档
+     .cp-page    （fixed + z 60）→ 暖米纸
+     .wkp        （fixed + z 300）→ 左栏深棕，装饰只落右栏纸面（--pdecor-inset-left）
+     .diary-book （.diary-watermarks 里，z 0；内容层 .diary-flip 是 z 1）→ 牛皮纸
+     .studio-contact__sheet（巧克力纸）→ 深底，装饰用薄荷当墨
+
+   ## 浓度基准（2026-09-17 第二轮：用户说"对比度不高，可能拉了透明度"）
+     旧基准（大形状 9%~14%）太保守 —— 白底上薄荷深在 14% 几乎不可见，整体发灰。
+     新基准照参考图1/图4/图5 量：**花要"有颜色"就要给到半实色**——
+     大花 40%~60% · 花体字母 40%~50% · 星星 55%~85% · 平铺层 10%~16%（深底 24%~30%）。
+     规矩不变：**深底（巧克力纸）给薄荷亮色 + 高浓度；浅底给深色档 + 中浓度**。
+   ============================================================================ */
+.pdecor {
+  --pdecor-color: var(--pal-mint);
+  position: absolute;
+  inset: 0;
+  /* 见上：负值子级 = 压在父背景上、内容之下。这就是"不遮挡"的全部机制。 */
+  z-index: -1;
+  overflow: hidden;
+  /* 本子/纸有圆角时装饰跟着裁，不露出方角 */
+  border-radius: inherit;
+  pointer-events: none;
+}
+/* 装饰可用的横向范围。详情页左栏是深棕实底，装饰只该落在纸面上。 */
+.pdecor__stage {
+  position: absolute;
+  inset: 0 0 0 var(--pdecor-inset-left, 0px);
+}
+.pdecor--wkp {
+  --pdecor-inset-left: clamp(272px, 25vw, 396px);
+}
+/* 窄屏左栏翻到顶部（见 8933 行那段 @media），此时横向没有左栏可避 */
+@media (max-width: 1024px) {
+  .pdecor--wkp {
+    --pdecor-inset-left: 0px;
+  }
+}
+
+/* ---- 色档：只用已有令牌，所以"不一定只用白色"是自动满足的 ---- */
+.pdecor--mint { --pdecor-color: var(--pal-mint); }
+.pdecor--mintdeep { --pdecor-color: var(--pal-mint-deep); }
+.pdecor--base { --pdecor-color: var(--pal-base); }
+.pdecor--green { --pdecor-color: var(--pal-green); }
+.pdecor--paper { --pdecor-color: var(--pal-paper); }
+.pdecor--choc { --pdecor-color: var(--pal-choc); }
+
+/* ---- 一个形状：**纯色实块** + 形状遮罩 ----
+   2026-09-17 用户第三轮反馈：「现在颜色一点也不纯，还是有透明度」——
+   之前的"点阵 background + 剪影遮罩"天生发虚（花由点构成、点之间露底），
+   对照参考图1/图3 也该是"成片的色面"。所以 background 直接给纯色，
+   虚实全交 opacity：0.5 的纯色块 = 明确的"有颜色的花"，不再有颗粒感。 */
+.pdecor__orn {
+  position: absolute;
+  /* 形状的 viewBox 是 200×200；遮罩按 100%×100% 拉伸，元素不等宽高就会把花拉扁 */
+  aspect-ratio: 1;
+  /* x/y 给的是**中心点**，所以越界值（-6 / 106）会自然切成"只露半朵、像印上去被裁了边" */
+  transform: translate(-50%, -50%) rotate(calc(var(--rot, 0) * 1deg));
+  background: var(--pdecor-color);
+  -webkit-mask-image: var(--pdecor-shape);
+  mask-image: var(--pdecor-shape);
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  opacity: var(--pdecor-op, 0.5);
+}
+/* 图6 那几颗失焦的星：虚焦比降透明度更像"镜头没对准"，也更不抢字 */
+.pdecor__orn--soft {
+  filter: blur(var(--pdecor-blur, 9px));
+}
+
+/* ---- 花体字母（图6/7/8：卷曲花体的英文字）----
+   用**真字体** JheriCurls（首页 Portfolio 大字同款花体）+ `background-clip: text`
+   把点阵灌进字里 —— 图7 "The Art of Loving"（星星拼成的花体）的落法：
+   **文字当遮罩、点阵当墨**。
+   ⚠️ 正文不敢用它（注释见 75 行：小字号下 o/c/s 全靠猜），但装饰字母都在
+      clamp(52px…) 以上，卷曲感正是用户点名要的"这样的英文字"。
+   ⚠️ 不能在数据 URI 里写 SVG `<text>`：SVG 当图片渲染时是独立文档，
+      页面加载的 web font 用不上，会退回系统字体（那时形状已经烤死了）。
+   ⚠️ `color: transparent` 必须包在 @supports 里：万一不支持 background-clip:text，
+      字会直接消失。兜底是"实心淡字"，丑但看得见。 */
+/* 复古点 + 闪亮的花体字母（参考图 8「Sweet Thing」式点阵花体）：
+   文字当遮罩、点阵当墨 → 字由一颗颗亮点拼成，天然"复古点"。
+   点给实色、不降透明度，所以是"有颜色的点字"而非"发灰的虚字"。
+   「闪亮」= 点阵整体叠一层同色柔光（drop-shadow），近看是点、远看在发光。
+   ⚠️ 必须把 background-color 置 transparent，否则会继承 .pdecor__orn 的
+      `background: var(--pdecor-color)` 变成一整块色板盖住字。 */
+.pdecor__orn--letter {
+  width: auto;
+  height: auto;
+  aspect-ratio: auto;
+  font-family: 'JheriCurls', 'Caveat', cursive;
+  font-weight: 400;
+  line-height: 0.9;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  color: transparent;
+  background-color: transparent;
+  background-image: radial-gradient(
+    circle at 50% 50%,
+    var(--pdecor-color) 0 var(--pdecor-r, 1.7px),
+    transparent calc(var(--pdecor-r, 1.7px) + 0.6px)
+  );
+  background-size: var(--pdecor-dot, 3.2px) var(--pdecor-dot, 3.2px);
+  background-position: 0 0;
+  /* 闪亮：点阵发一层同色柔光 */
+  filter: drop-shadow(0 0 2.5px var(--pdecor-color));
+  /* 显式清掉形状遮罩：`letter` 不带 --pdecor-shape，留个 undefined 的 var 太脆 */
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .pdecor__orn--letter {
+    -webkit-background-clip: text;
+    background-clip: text;
+  }
+}
+
+/* ---- 平铺层（图4/图5：波点 / 星星 / 格子，均匀铺满整页）----
+   2026-09-17 用户反馈：之前这层是"四角有、中间挖空"的散点，加上形状分散，
+   整体读起来"很分散、没有 ins 风美感"。参考图4（波点布）/ 图5（巧克力底
+   薄荷星均匀铺满）的答案很简单：**布纹就该铺满，不该挖空**。
+   不抢字的保险换成了"细 + 淡"：线只有 1px、点只有 1~2px，
+   浅底 0.10~0.15 / 深底（巧克力）0.24~0.3 —— 铺满也压不住正文。
+   三种纹理：polka（波点布）· stars（星星阵，SVG tile 走 TS 传入的 mask）·
+   grid（方格蕾丝，双向 1px 线交叉）。 */
+/* 2026-09-17 用户：「不要全部铺满，只要上下两个长条」——
+   平铺层从「铺满整页」收窄成「顶部 + 底部两条横向饰带」。
+   一个元素占不了上下两条，所以 TSX 里渲染两个 span（--top / --bottom）。 */
+.pdecor__tiled {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: var(--pdecor-band, 14%);
+  opacity: var(--pdecor-top, 0.14);
+}
+.pdecor__tiled--top { top: 0; }
+.pdecor__tiled--bottom { bottom: 0; }
+.pdecor__tiled--polka {
+  background-image:
+    radial-gradient(circle at 50% 50%, var(--pdecor-color) 0 2.1px, transparent 2.7px),
+    radial-gradient(circle at 50% 50%, var(--pdecor-color) 0 1px, transparent 1.5px);
+  background-size: 46px 46px, 30px 30px;
+  background-position: 8px 6px, 19px 17px;
+}
+.pdecor__tiled--grid {
+  background-image:
+    repeating-linear-gradient(0deg, var(--pdecor-color) 0 1px, transparent 1px 54px),
+    repeating-linear-gradient(90deg, var(--pdecor-color) 0 1px, transparent 1px 54px);
+  background-position: 6px 0, 0 11px;
+}
+/* 星星阵的图案部分（SVG tile 遮罩）由 PageDecor 内联传入 —— 遮罩不烤色，
+   颜色吃 --pdecor-color，跟形状装饰同一套手法。 */
+.pdecor__tiled--stars {
+  background-color: var(--pdecor-color);
+  background-image: none;
+}
+
+/* ---- 窄屏：尺寸已经由 clamp() 跟着 vw 缩了，这里只收掉"纯气氛"的那几个 ----
+   不整层隐藏：用户要的是"移动端也要自适应显示"，不是"移动端就没了"。 */
+@media (max-width: 720px) {
+  .pdecor__orn--sm-hide {
+    display: none;
+  }
+}
+
+/* ============================================================================
+   日剧调色滤镜（2026-09-16）—— 只作用于「画面」，绝不碰「纸」
+   ----------------------------------------------------------------------------
+   用户诉求：“可以通过加日剧同款调色滤镜来让页面有感觉”。
+
+   为什么只能挂在画面层：实测用户给的截图，最"跳"的颜色**不在 CSS 里**，
+   而在图片帧本身 —— 首页那扇门 #540808 / #640404（饱和 82%~100%），
+   而 CSS 侧占面积最大的几个都已经是低饱和色。给整页套滤镜会把纸面
+   （策划案内页 / 实习日记 / 报刊亭海报）一起染绿染红，
+   那正是用户明确否掉的那件事（“别把纸张颜色弄成绿色红色的”）。
+   因此只挂两个挂点，两者都是「世界 / 照片」而不是「纸」：
+     · .world-grade —— 首页那只能滚动的 canvas（120 帧门厅推镜）
+     · .studio-lens-root —— 工作室房间的视频层（含镜头畸变与清晰两片）
+
+   配方为什么是这几项（**不用 SVG feColorMatrix**：全屏 feColorMatrix 会把图层
+   踢出合成器的快车道，在 60fps 的推镜动画里得不偿失；纯 CSS filter 是 GPU 加速的）：
+     contrast(1.14)     日剧/胶片的第一来源是**反差**，不是低饱和。原来的画面偏灰、
+                        层次糊在一起，先把它拉开。
+     saturate(1.08)     饱和**不降反升**。见下面那条踩坑记录。
+     brightness(1.05)   高调（high-key）—— 日剧（岩井俊二 / 是枝裕和）的室内是亮的、
+                        "黑不死"的；纯黑会显廉价。
+     hue-rotate(-4deg)  4° 的冷偏移，把被暖光泡糊的暗部往青绿（Fuji 系负片的标志性
+                        暗部偏色）拉一点回来，红不会被推成洋红。
+
+   ⚠️ 踩坑记录（2026-09-16，**被用户当场否掉的方向**）：
+     第一版按"参考图实测平均色全都 ≤15% 饱和"去做，配了
+       saturate(0.66) sepia(0.16) contrast(1.1)
+     —— 用户原话：「你现在全是发灰的颜色」。
+     教训：**"日剧感" ≠ 全局降饱和**。日剧/经典负片真正在做的是
+       「反差 ↑ + 高调 + 暗部一点冷偏色 + 饱和基本保住」，
+     于是同一画面里"鲜亮"和"低饱和"是**并存**的（鲜的是红门、绿草地，
+     低饱和的是木、墙、纸）—— 用户要的正是这个并存。
+     全局降饱和会把两者一起抹平，只剩灰。
+     新配方是照 Fujifilm Superia / Classic Neg. 的方向写的（硬调性、暗部偏色、
+     饱和"低但厚"），数值是看图定的：无头 Edge 同一帧渲了 7 档
+     （ClassicNeg / Superia / Portra400 / CineStill800T / 纯饱和 / 旧灰版 / 原图）
+     逐张对比后选中的这一档。
+   ============================================================================ */
+:root {
+  --grade-world: contrast(1.14) saturate(1.08) brightness(1.05) hue-rotate(-4deg);
+}
+.world-grade {
+  filter: var(--grade-world);
+}
+/* 工作室房间的视频层。⚠️ 刻意挂 .studio-lens-root 而**不是** .studio-cam：
+   .studio-cam 的推镜 keyframe（cam-dive-* / cam-focus-*）自己会动画 filter，
+   而且都带 `forwards` —— 转场一结束，最后那一帧的
+   `brightness(1) contrast(1) saturate(1) blur(0)` 会**永久覆盖**这里写死的滤镜，
+   于是"进过一次板块之后世界就变回原色"这种极难查的 bug 就来了。
+   挂在子层就不会被父层的动画吃掉。 */
+.studio-lens-root {
+  filter: var(--grade-world);
 }
 
 @layer base {
@@ -194,7 +637,7 @@
   transform: translate(-50%, -50%) scale(0.6);
   opacity: 0;
   transition:
-    transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
+    transform 0.35s var(--ease-pop),
     opacity 0.25s ease;
   pointer-events: none;
 }
@@ -223,7 +666,7 @@
   line-height: 1.05;
   white-space: nowrap;
   cursor: pointer;
-  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: transform 0.25s var(--ease-pop);
 }
 .studio-btn:hover {
   transform: scale(1.04);
@@ -262,7 +705,7 @@
      已单独改用 clip-path 揭示。**别再往长路径上套这里的隐藏逻辑。** */
   stroke-dasharray: 100;
   stroke-dashoffset: 100;
-  transition: stroke-dashoffset 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.04s;
+  transition: stroke-dashoffset 0.55s var(--ease-world) 0.04s;
 }
 /* 第二笔晚 0.16s 起笔 —— 与光标那一圈同一个节奏（一次画完像描边，错开才像随手圈的） */
 .hand__stroke:last-child {
@@ -311,14 +754,14 @@
   letter-spacing: 0.08em;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.3s ease, transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: opacity 0.3s ease, transform 0.5s var(--ease-world);
 }
 .studio-zone:hover .studio-tooltip,
 .studio-zone:focus-within .studio-tooltip {
   opacity: 0.94;
   transform: translateX(-50%) translateY(-3px);
   /* 贴着写上去的：落笔时轻微晃一下，落定在 -2.5° */
-  animation: hand-note-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: hand-note-in 0.6s var(--ease-world) both;
 }
 @keyframes hand-note-in {
   0% {
@@ -352,11 +795,108 @@
   letter-spacing: 0.03em;
   cursor: pointer;
   opacity: 0.9;
-  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s ease;
+  transition: transform 0.25s var(--ease-pop), opacity 0.2s ease;
 }
 .studio-pill:hover {
   opacity: 1;
   transform: scale(1.05);
+}
+
+/* ===== 统一外壳（2026-09-16 第一档改造 ①）=====
+   工作室自己 + 四个内容页共用同一条顶栏：左上「返回」、右上「手绘圈 MENU」。
+   位置/字族/字距/悬停手感全部对齐工作室原来的 My Studio + MENU ——
+   于是从 3D 房间钻进任何板块，头顶这两样东西在原地不动，只有文案跟着层级变。
+
+   组件在 src/components/StudioChrome.tsx，这里只管长相。 */
+.studio-chrome {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  /* 原来工作室那条是 Tailwind 的 p-6 md:p-8（24/32px）。
+     这里用同一量级但更贴边一点，给内容页多留一点呼吸。
+     左右内缩可以按页调：纸页 / 视频页那边留白更大（clamp(24px,5vw,72px)），
+     让"返回"和页面标题左对齐，靠 --chrome-inset 传进来。 */
+  padding: 22px var(--chrome-inset, clamp(22px, 3.2vw, 40px));
+  /* 整层不吃事件，只有两枚按钮吃 —— 否则会挡住页面顶部的可点内容 */
+  pointer-events: none;
+  transition: opacity 0.4s ease, visibility 0.4s;
+}
+/* 播放态之类"整页沉浸"的时刻把外壳收掉（视频页原来就是这么做的：
+   一播起来顶栏整体淡出，别挡着画面）。 */
+.studio-chrome.is-faded {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.studio-chrome > * {
+  pointer-events: auto;
+}
+.studio-chrome__right {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.studio-chrome__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  /* ⚠️ 2026-09-16 晚，用户第三张截图抓到的：这里原来落 'Cinzel'（罗马碑体，
+     只有大写字形 —— 小写会被画成小号大写），于是 `My Studio` 被渲染成 `MY STUDIO`，
+     混在一圈 Caveat 手写体（Menu / Close / 物体名 / 光标标签）里像换了个人写的。
+     英文一律走 Caveat；中文回退 NanoOldSongA（万一以后 label 传「返回工作室」）。 */
+  font-family: 'Caveat', 'NanoOldSongA', 'Noto Serif SC', serif;
+  font-weight: 500;
+  /* Cinzel 是全大写窄体，13–16px 就够；Caveat 字腔小、x-height 低，同字号会显得发虚 */
+  font-size: clamp(17px, 1.5vw, 23px);
+  /* 0.2em 是给碑体大写撑字距用的；手写体再加宽就散架了 —— 对齐 .studio-pill 的 0.03em */
+  letter-spacing: 0.03em;
+  line-height: 1.2;
+  color: #f3e9d2;
+  opacity: 0.84;
+  transition: opacity 0.22s ease, transform 0.3s var(--ease-pop);
+}
+.studio-chrome__back:hover {
+  opacity: 1;
+  transform: translateX(-3px);
+}
+/* 细箭头。刻意不跟手绘笔触混：那是"随手圈的",这是"路标"。 */
+.studio-chrome__arrow {
+  width: 0.95em;
+  height: 0.95em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.studio-chrome__label {
+  white-space: nowrap;
+}
+
+/* 深底（3D 房间 / 绿锈书架 / 木马）→ 奶白字压在花背景上，给一点投影才不糊进去。
+   （原来工作室那条 `text-cream` 是裸的，压在亮部会飘。） */
+.studio-chrome--light .studio-chrome__back,
+.studio-chrome--light .studio-pill {
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.6), 0 0 2px rgba(0, 0, 0, 0.4);
+}
+/* 浅底（纸页 / 线圈本）→ 统一换成墨色，别拿奶白字怼在白纸上。
+   ⚠️ 不要用 `var(--wkp-accent)` 那类页面主题色：实测线圈本那一页
+   --wkp-accent 是粉彩薄荷 #b5e3d6，压在奶油纸上几乎读不出来
+   （所以纸面上的小字一律走 --wkp-accent-deep，别拿 accent 当纸面字色）。
+   统一外壳就该颜色恒定 —— 变的是页面，不是它。 */
+.studio-chrome--dark .studio-chrome__back,
+.studio-chrome--dark .studio-pill {
+  color: #2a2118;
 }
 
 /* ===== 线圈本弹层（复刻参考站：背景模糊 + 纸张右侧滑入） ===== */
@@ -411,10 +951,10 @@
     0 40px 120px rgba(0, 0, 0, 0.45),
     0 4px 18px rgba(0, 0, 0, 0.3);
   overflow: hidden;
-  animation: nb-page-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.06s both;
+  animation: nb-page-in 0.6s var(--ease-world) 0.06s both;
 }
 .notebook-overlay.is-closing .notebook-page {
-  animation: nb-page-out 0.38s cubic-bezier(0.5, 0, 0.75, 0) both;
+  animation: nb-page-out 0.38s var(--ease-in) both;
 }
 @keyframes nb-page-in {
   from {
@@ -502,9 +1042,9 @@
   height: 9px;
   transform: translate(-50%, -50%);
   border-radius: 50%;
-  background: #7ee8c7;
-  opacity: 0.6;
-  box-shadow: 0 0 10px rgba(126, 232, 199, 0.7);
+  background: var(--pal-mint);
+  opacity: 0.72;
+  box-shadow: 0 0 10px color-mix(in srgb, var(--pal-mint) 75%, transparent);
   pointer-events: none;
   transition: opacity 0.25s ease;
 }
@@ -514,8 +1054,8 @@
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  border: 2px solid rgba(126, 232, 199, 0.9);
-  animation: pulse-ring 2.1s cubic-bezier(0.2, 0.6, 0.36, 1) infinite;
+  border: 2px solid color-mix(in srgb, var(--pal-mint) 90%, transparent);
+  animation: pulse-ring 2.1s var(--ease-world) infinite;
 }
 .pulse-dot::after {
   animation-delay: 1.05s;
@@ -546,11 +1086,11 @@
   clip-path: circle(140% at 50% 50%);
   will-change: clip-path, opacity;
   /* 缓出减速：绽放收尾更"稳"，不抢拍 */
-  animation: iris-bloom 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: iris-bloom 0.4s var(--ease-world) forwards;
 }
 .flash-burst.is-fading {
   /* 淡出同样缓出，露出工作室时不突兀 */
-  animation: iris-fade 0.42s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  animation: iris-fade 0.42s var(--ease-io) forwards;
 }
 @keyframes iris-bloom {
   0%   { clip-path: circle(0% at 50% 50%); opacity: 0; }
@@ -569,21 +1109,65 @@
 .reveal-line {
   display: block;
   transform: translateY(110%);
-  transition: transform 0.7s cubic-bezier(0.2, 0.7, 0.2, 1);
+  transition: transform 0.7s var(--ease-world);
 }
 .reveal-line.is-revealed { transform: translateY(0); }
+
+/* 首页那两枚"屏幕外英文"标签（2026-09-16 字体统一）。
+   它们原来都是 `font-body`（Inter / Noto 无衬线）+ `uppercase` + 超大 letter-spacing，
+   读起来是"命令行按钮"，而进工作室后同一批动作（Menu / Close / My Studio）
+   全是 Caveat 手写体 —— 前后像两个网站。
+   ⚠️ 尺寸这两条数字不是审美微调，是**补偿 Caveat 的度量**：
+     Caveat 的 x-height 只有 ~0.42em（Inter 是 ~0.52em），同样字号看着小一圈；
+     所以 16px → 22px、9px → 19px 各补一档才和原来的视觉重量对齐。
+     letter-spacing 也从 0.5em / 0.35em 收到 0.14em / 0.1em：
+     Caveat 是连笔体，字距拉开会把"一笔写完"的感觉剪碎。 */
+.home-open {
+  font-family: 'Caveat', 'NanoOldSongA', 'Noto Serif SC', serif;
+  font-size: 22px;
+  letter-spacing: 0.14em;
+}
+.home-scroll {
+  font-family: 'Caveat', 'NanoOldSongA', 'Noto Serif SC', serif;
+  font-size: 19px;
+  letter-spacing: 0.1em;
+}
 
 .studio-menu-overlay {
   position: fixed;
   inset: 0;
-  z-index: 40;
+  /* 2026-09-16 从 40 抬到 400：MENU 现在是**全局**导航（每个内容页右上角都有，
+     见 StudioChrome），而内容页层级在 56（书架）/60（落地页）/266（木马）——
+     留在 40 的话从内容页点 MENU 会"点了个寂寞"，菜单被页面盖在下面。
+     400 压过全部内容页 + crt-flash(320)，又低于加载页与作者角标那些 9xx/999x。 */
+  z-index: 400;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(85, 5, 7, 0.98);
+  /* 底色 2026-09-16 从 rgba(85,5,7,.98)（实测 #540808，饱和 82%）换成 --pal-veil。
+     这是全站**铺满整屏**的第二大面积色块（仅次于首页 Portfolio 大字），
+     82% 饱和铺满屏 = 一片荧光红压在所有内容之上。
+     --pal-veil #4a2e23 是同一支酒红往暖褐里压过饱和度（30%）的版本：
+     仍是"深酒红"的家族，但不再跳。 */
+  background: var(--pal-veil, #4a2e23);
+  background: color-mix(in srgb, var(--pal-veil, #4a2e23) 98%, transparent);
+  /* ---- 薄荷巧克力（2026-09-16 第五轮）----
+     来源：用户贴了一张**全屏 MENU** 的截图说「薄荷巧克力配色」，确认后 = **给 MENU 加薄荷**。
+     这一页的底本来就已是巧克力（--pal-veil），所以"加薄荷"不动底、只动**文字层**：
+     奶油 #f3e9d2 → 薄荷 --pal-mint（#b5e3d6）。巧克力底 + 薄荷字，正是"薄荷巧克力"的本体。
+     ⚠️ 用页面级变量收口（而不是把 3 处 hex 各改一遍）：
+        落点 = .studio-menu-link / .menu-underline / .menu-crosshair-*，
+        以后整页调色只改这一个值。
+     ⚠️ 这里**不能**用 --pal-mint-neon #7ee8c7 —— 那支霓虹薄荷是用户点名留给
+        首页那行 16vw「Portfolio」大字的；菜单是全屏字，再上霓虹会过曝。 */
+  --menu-ink: var(--pal-mint, #b5e3d6);
   opacity: 0;
   animation: menu-fade-in 0.35s ease forwards;
 }
+/* 这里曾经有一层「薄荷星」的 ::before 遮罩 —— 2026-09-17 整条撤掉：
+   星是我自己编的形状（用户：图案只能从参考图上抄），而参考图真正给的是
+   **字符密度**堆出来的牵牛花。现在这件装饰是 JSX 里那个 <AsciiFlower />，
+   摆位规则见顶部 .ascii-flower--menu。 */
 @keyframes menu-fade-in {
   from {
     opacity: 0;
@@ -593,11 +1177,15 @@
   }
 }
 
-/* 居中十字辅助线 */
+/* 居中十字辅助线 —— 第五轮跟着文字一起转到薄荷（原来是与文字同款的奶油 0.15）。
+   它是一条**辅助线**、不是内容，所以只取一点点薄荷色：
+   远看仍是"极淡的网格感"，近看才认得出是薄荷，不至于和菜单字抢。
+   ⚠️ 透明度从 0.15 提到 0.20 是对薄荷的补偿 —— 薄荷是中调色，压在巧克力上
+      天生比奶油（近白）暗一档，同样 alpha 会显得比原来更弱。 */
 .menu-crosshair-h,
 .menu-crosshair-v {
   position: absolute;
-  background: rgba(243, 233, 210, 0.15);
+  background: color-mix(in srgb, var(--menu-ink, #b5e3d6) 20%, transparent);
   pointer-events: none;
 }
 .menu-crosshair-h {
@@ -611,6 +1199,15 @@
   bottom: 0;
   left: 50%;
   width: 1px;
+}
+
+/* 菜单自己的关闭键：位置与 StudioChrome 那枚 MENU 对齐（同一个 top/right），
+   这样开菜单时读起来像"同一颗按钮变成了 Close"，而不是多冒出来一个。 */
+.studio-menu-close {
+  position: absolute;
+  top: 22px;
+  right: var(--chrome-inset, clamp(22px, 3.2vw, 40px));
+  z-index: 2;
 }
 
 .studio-menu-items {
@@ -628,7 +1225,10 @@
   align-items: baseline;
   gap: 0.35em;
   font-size: clamp(3rem, 7vw, 5.5rem);
-  color: #f3e9d2;
+  /* 薄荷巧克力：文字层从奶油 #f3e9d2 换成薄荷（见 .studio-menu-overlay 的 --menu-ink）。
+     巧克力底 --pal-veil（#4a2e23）上，粉彩薄荷 --pal-mint（#b5e3d6）实测对比 8.7:1
+     （旧组合只有 6.9:1）—— 浅了反而更清楚，因为薄荷变亮、巧克力变暖。 */
+  color: var(--menu-ink, #b5e3d6);
   transition: opacity 0.2s ease;
 }
 .studio-menu-link:hover {
@@ -644,7 +1244,9 @@
   width: 104%;
   height: 0.13em;
   overflow: visible;
-  color: #f3e9d2;
+  /* 手写下划线跟着菜单字一起转薄荷 —— 与文字同色，hover 时读起来像"同一支笔
+     把这一行又描了一遍"，而不是叠一条另一种颜色的杠。 */
+  color: var(--menu-ink, #b5e3d6);
   pointer-events: none;
 }
 /* ⚠️ 2026-09-15 第七轮修 bug：这里**不能**再借 `.hand__stroke` 的 dash 藏笔法。
@@ -659,7 +1261,7 @@
   stroke-dasharray: none;
   stroke-dashoffset: 0;
   clip-path: inset(-100% 100% -100% 0);
-  transition: clip-path 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.04s;
+  transition: clip-path 0.55s var(--ease-world) 0.04s;
 }
 .menu-underline .hand__stroke:last-child {
   /* 第二笔反向：右端先显影、往左收 —— 手写"回描"的方向 */
@@ -671,18 +1273,30 @@
   clip-path: inset(-100% -3% -100% -3%);
 }
 
-/* 英文：大字号，Juice ITC（如本地/网络可用），否则 Cinzel 回退 */
+/* 英文：**Caveat**（2026-09-16 统一字族）。
+   原来写 'Juice ITC', 'Cinzel' —— Juice ITC 本机/网上都没有，实际一直回退到
+   Cinzel（罗马碑体、只有大写），于是"About Me / Works / Creative Lab"在一圈
+   Caveat 手写体（Menu / Close / 物件名）里像是另一个人的字。这就是用户说的
+   "字体不统一"。改回 Caveat 后中英一致 —— 中文那半行见 .menu-zh。
+   Caveat 的 x-height 低、字腔小，同字号会比 Cinzel 显小，所以：
+     · 字号 7vw → 7.6vw，字重 400 → 500（可变字重 400~700 支持）；
+     · letter-spacing 0.02em → 0.04em，手写体贴太紧会糊成一团；
+     · line-height 1.15 → 1.22 给 Caveat 夸张的下摆留位（否则和中文挤在一起）。 */
 .menu-en {
-  font-family: 'Juice ITC', 'Cinzel', serif;
-  font-size: clamp(3rem, 7vw, 5.5rem);
-  font-weight: 400;
-  letter-spacing: 0.02em;
-  line-height: 1.15;
+  font-family: 'Caveat', 'NanoOldSongA', 'Noto Serif SC', serif;
+  font-size: clamp(3.2rem, 7.6vw, 6rem);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  line-height: 1.22;
 }
 
-/* 中文：高度为英文的一半，PF频凡胡涂体（如本地/网络可用），否则思源宋体回退 */
+/* 中文：高度为英文的一半，走 **NanoOldSongA**（与全站 display 宋体同族）。
+   原来是 'PF频凡胡涂体' —— 本机没有这个字体，实际回退 Noto Serif SC，
+   于是菜单中文和别的页面（内页大标题/日记标题）不是同一支宋体。
+   ⚠️ 换过来之前必须先跑 scripts/subset-nanooldsong.py 把菜单用字收进子集
+   （于/我/联/系/式/简/历 原先不在 472 字子集里，会静默回退成 Noto Serif）。 */
 .menu-zh {
-  font-family: 'PF频凡胡涂体', 'Noto Serif SC', serif;
+  font-family: 'NanoOldSongA', 'Noto Serif SC', 'Songti SC', serif;
   font-size: 0.5em;
   font-weight: 400;
   letter-spacing: 0.08em;
@@ -701,6 +1315,38 @@
   --ab-mint-ink: #3f9c7f;
 }
 
+/* ============================================================================
+   全站缓动曲线（2026-09-16 第二档 ⑥）—— **唯一真源**
+   ----------------------------------------------------------------------------
+   改造前：index.css 里散着 13 种不同的 cubic-bezier，其中 7 种是同一个意图
+   被反复手抄之后**漂移**出来的近重复：
+       0.22, 0.61 / 0.2, 0.9 / 0.2, 0.7 / 0.2, 0.6 / 0.22, 0.7   ← 都是"落定"曲线
+       0.5, 0.02, 0.86, 0.4 / 0.62, 0.02, 0.86, 0.4              ← 都是"冲出去"曲线
+   最典型的代价：同样是"镜头推入"，`.studio-cam.is-in`（0.7s，0.55,0.02,0.9,0.42）
+   和 `.studio-cam.is-focus-in`（0.6s，0.5,0.02,0.86,0.4）走的是两条不同的曲线 ——
+   点电脑和点木马"推镜头的感觉"其实不一样。这正是用户说的"每个板块很分离"。
+
+   现在收成 5 个**语义** token（55 处在用），全站只许用这 5 个，别再写新的字面量：
+
+     --ease-world     落定 / 出场。全站主力（42 处）。
+                      等价于 GSAP 的 `power4.out` —— 见 src/lib/ease.ts。
+     --ease-world-in  冲出去 / 离场加速。镜头推入、白光炸开都用它，与 --ease-world
+                      配成"进/出"一对，是同一个动作的正反两面。
+     --ease-pop       弹跳 / overshoot。只在"东西蹦出来"时用（宠物、贴纸、按钮回弹）。
+     --ease-io        对称进出。淡入淡出、描边扫描这类"两头都慢"的动作。
+     --ease-in        纯加速离场。元素要"被抽走"时用（翻页翻出去、面板收起）。
+
+   ⚠️ 改这里等于改全站节奏。要整体"变快/变慢"改各处时长；要整体"变干脆/变绵"改 --ease-world。
+   ============================================================================ */
+:root {
+  --ease-world: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-world-in: cubic-bezier(0.55, 0.02, 0.9, 0.42);
+  --ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-io: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-in: cubic-bezier(0.5, 0, 0.75, 0);
+}
+
+
 .about-overlay {
   position: fixed;
   inset: 0;
@@ -710,7 +1356,7 @@
   overscroll-behavior: contain;
   background: #e8f1df;
   opacity: 0;
-  transition: opacity 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: opacity 0.42s var(--ease-world);
 }
 /* 整页滚动兜底（矮视口 / 窄屏）时的滚动条：同样常显 */
 .about-overlay::-webkit-scrollbar {
@@ -789,8 +1435,8 @@
   opacity: 0;
   transform: scale(1.014);
   transition:
-    opacity 0.46s cubic-bezier(0.22, 1, 0.36, 1),
-    transform 0.46s cubic-bezier(0.22, 1, 0.36, 1);
+    opacity 0.46s var(--ease-world),
+    transform 0.46s var(--ease-world);
 }
 .about-overlay.is-visible .about-shell {
   opacity: 1;
@@ -815,7 +1461,7 @@
   border: 1.5px dashed var(--ab-line);
   color: var(--ab-green);
   transition:
-    transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.28s var(--ease-world),
     background 0.24s ease;
 }
 .about-close svg {
@@ -933,7 +1579,7 @@
   transform-origin: 50% 100%;
 }
 .about-pet-inner.do-squash {
-  animation: pet-squash 0.74s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation: pet-squash 0.74s var(--ease-pop) both;
 }
 .about-pet-inner.do-wiggle {
   animation: pet-wiggle 0.68s ease-in-out both;
@@ -997,7 +1643,7 @@
   opacity: 0;
   transition:
     opacity 0.22s ease,
-    transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+    transform 0.22s var(--ease-pop);
   pointer-events: none;
   z-index: 6;
 }
@@ -1102,7 +1748,7 @@
   transition:
     background 0.22s ease,
     border-color 0.22s ease,
-    transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+    transform 0.24s var(--ease-world);
 }
 .about-nav-item:hover {
   background: #eafaf1;
@@ -1194,7 +1840,7 @@
   top: -14%;
   background: linear-gradient(180deg, transparent, rgba(126, 232, 199, 0.3), rgba(126, 232, 199, 0.6));
   pointer-events: none;
-  animation: about-scan 1.8s cubic-bezier(0.4, 0, 0.6, 1) forwards;
+  animation: about-scan 1.8s var(--ease-io) forwards;
 }
 @keyframes about-scan {
   0% {
@@ -3406,7 +4052,7 @@
   /* 高度比例来自数据的 ratio，靠它让瀑布流错落 */
   aspect-ratio: var(--v-ratio, 4 / 5);
   object-fit: cover;
-  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 0.45s var(--ease-world);
 }
 .about-insp-vcard:hover .about-insp-vimg {
   transform: scale(1.07);
@@ -3505,7 +4151,7 @@
   width: 100%;
   aspect-ratio: 16 / 10;
   object-fit: cover;
-  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 0.45s var(--ease-world);
 }
 .about-insp-pcard:hover .about-insp-pcover img {
   transform: scale(1.06);
@@ -3692,7 +4338,7 @@
   max-width: 100%;
   max-height: 100%;
   margin: 0;
-  animation: insp-lb-pop 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: insp-lb-pop 0.26s var(--ease-world) both;
 }
 @keyframes insp-lb-pop {
   from {
@@ -4023,7 +4669,7 @@
   line-height: 1.4;
   color: var(--ab-mint-ink);
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.8);
-  animation: ab-foot-pop 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: ab-foot-pop 0.5s var(--ease-world) both;
 }
 @keyframes ab-foot-pop {
   from {
@@ -4133,7 +4779,7 @@
   height: auto;
   aspect-ratio: auto;
   object-fit: contain;
-  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 0.45s var(--ease-world);
 }
 .about-insp-vcode {
   font-size: 10px;
@@ -4190,7 +4836,7 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 0.5s var(--ease-world);
 }
 .about-insp-mcard:hover .about-insp-mcover img {
   transform: scale(1.05);
@@ -4460,7 +5106,7 @@
   height: 100%;
   aspect-ratio: auto;
   object-fit: cover;
-  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 0.45s var(--ease-world);
 }
 .about-insp-pcard:hover .about-insp-pcover img {
   transform: scale(1.06);
@@ -4581,7 +5227,7 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 0.45s var(--ease-world);
 }
 .about-insp-lcard:hover .about-insp-lcover img {
   transform: scale(1.06);
@@ -4812,10 +5458,10 @@
   backface-visibility: hidden;
 }
 .studio-cam.is-in {
-  animation: cam-dive-in 0.7s cubic-bezier(0.55, 0.02, 0.9, 0.42) forwards;
+  animation: cam-dive-in 0.7s var(--ease-world-in) forwards;
 }
 .studio-cam.is-out {
-  animation: cam-dive-out 0.7s cubic-bezier(0.22, 0.7, 0.3, 1) forwards;
+  animation: cam-dive-out 0.7s var(--ease-world) forwards;
 }
 /* 越靠近屏幕越亮、越糊 —— 模拟镜头贴到玻璃上那一瞬间的过曝与失焦。
    位移量不是随便写的：屏幕在画面里的位置是 (14.5%, 46.5%)，而 translate 的百分比
@@ -4861,6 +5507,54 @@
   .studio-cam.is-in,
   .studio-cam.is-out {
     animation-duration: 0.28s;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* 物件对焦：把「镜头推近物件」从电脑专属，变成四个物件的通用语汇        */
+/*         （2026-09-16 第一档改造 ②）                                 */
+/* ------------------------------------------------------------------ */
+
+/* 电脑那条 cam-dive-in 是**极端版**（scale 16 + 糊满全屏 + 过曝白光），
+   因为它的语义是"钻进显像管里"。其余三个物件（木马 / 报刊亭 / 线圈本）
+   用的是这条**温和版**：镜头朝物件推近到 1.9 倍、带一点失焦。
+
+   为什么不再补 translate：transform-origin 由 JS 写成该物件在 studio.ts 里的
+   point，所以纯 scale 就已经是"朝它推过去"（电脑那条要 translate 是因为它最后
+   还要把屏幕"摆正"，普通物件不需要）。
+
+   数值的分寸：blur 只给到 1.4px。三个物件的浮层自己都带磨砂玻璃/暗背板，
+   推近的那点失焦只在转场那 0.6s 里被看见 —— 给多了纯烧 GPU，还给不出更多收益。
+   （也因此**不做**"页面铺满后把 cam 藏起来"的省电优化：书架/木马两个浮层是
+     transparent + 磨砂玻璃，底下那层房间本来就是画面的一部分，藏了就露黑底。） */
+.studio-cam.is-focus-in {
+  animation: cam-focus-in 0.6s var(--ease-world-in) forwards;
+}
+.studio-cam.is-focus-out {
+  animation: cam-focus-out 0.6s var(--ease-world) forwards;
+}
+@keyframes cam-focus-in {
+  0% {
+    transform: scale(1);
+    filter: brightness(1) contrast(1) saturate(1) blur(0);
+  }
+  55% {
+    transform: scale(1.38);
+    filter: brightness(1.05) contrast(1.03) saturate(1.02) blur(0.3px);
+  }
+  100% {
+    transform: scale(1.9);
+    filter: brightness(1.12) contrast(1.06) saturate(1.05) blur(1.4px);
+  }
+}
+@keyframes cam-focus-out {
+  0% {
+    transform: scale(1.9);
+    filter: brightness(1.12) contrast(1.06) saturate(1.05) blur(1.4px);
+  }
+  100% {
+    transform: scale(1);
+    filter: brightness(1) contrast(1) saturate(1) blur(0);
   }
 }
 
@@ -5033,7 +5727,7 @@
   opacity: 0;
   transition:
     opacity 380ms ease,
-    --lens-r 560ms cubic-bezier(0.22, 0.61, 0.36, 1);
+    --lens-r 560ms var(--ease-world);
   /* 四瓣各自漂移：周期互质 → 轮廓组合一直在缓慢变形，不会周期性"复位" */
   animation: lens-drift 9.1s ease-in-out infinite alternate;
 }
@@ -5084,7 +5778,7 @@
   );
 }
 .studio-dive-core.is-on {
-  animation: dive-core 0.7s cubic-bezier(0.62, 0.02, 0.86, 0.4) forwards;
+  animation: dive-core 0.7s var(--ease-world-in) forwards;
 }
 /* 关键帧百分比故意和 cam-dive-in 对齐（38 / 72 / 100），位移量也照抄同一组
    （4.4 / 14.9 / 35.5 vw）—— 那团光必须一直黏在屏幕中心，差一点就看得出"光在飘"。
@@ -5121,6 +5815,18 @@
   transition: opacity 0.14s linear;
 }
 
+/* 有板块（木马 / 书架 / 本子 / 落地页 / About）盖在工作室上 → 把工作室自己那条顶栏收掉。
+   为什么不能只靠 .is-transitioning：用调试参数直接进内容页（`?works=1` 这种）
+   **没有转场**，于是两头都显示 —— 而两边的坐标完全一致（现在就是同一个 StudioChrome），
+   「MY STUDIO」和「RETURN TO STUDIO」会在同一像素上叠成双影。
+   ⚠️ 菜单不算在这条里：菜单开着时 MENU 变成 Close，是鼠标关闭菜单的唯一入口。 */
+.studio-scope.is-covered .studio-topbar {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.18s linear, visibility 0.18s;
+}
+
 /* Green OS 真正盖住屏幕的那段时间（crtOn=true），把底下的 3D 房间整组收起来：
    ① 半透明的 CRT 扫描线 / 暗角不会把房间"透"出来（旧版叠影的另一半来源）；
    ② 顺带关掉那个被放大到 16 倍 + blur 3.2px 的视频层，省 GPU。
@@ -5143,6 +5849,349 @@
   visibility: hidden;
   opacity: 0;
   pointer-events: none;
+}
+
+/* ==================================================================
+   工作室房间 ①：鼠标景深视差（2026-09-16 第六轮 / 用户第 1 条需求）
+   ------------------------------------------------------------------
+   用户：「给这个页面添加一个鼠标动、背景也动的效果」，参考片 232934.mp4。
+   参考片的做法是**分层**：远景（地平线）几乎不动、中景（气泡）动一些、
+   前景（鱼）动得最多 —— 所以读起来是"镜头在空间里转"，不是"一整张照片在平移"。
+
+   只有两层参与视差（**脉冲圈不参与**，见下面的 ⚠️）：
+
+     ① .studio-lens-root  画面板      最远   ∓10px / ∓7px    + 3.5% 余量放大
+     ② .studio-vignette   氛围暗角    "空气" ∓16px / ∓11px   + 5% 余量放大
+
+   主量 --px / --py（-1..1，画面正中 = 0）由 src/lib/useRoomParallax.ts 每帧写入，
+   落在 .studio-scope 上，靠自定义属性继承下发给两层。
+
+   ⚠️ 只需要记住一条：**倍率越大 = 离镜头越近**。想加深纵深就拉开最大/最小的比值，
+      而不是把两层一起调大 —— 一起调大等于整体平移，视差反而没了。
+   ⚠️ ① ② 的方向都是**负**的（画面整体朝鼠标反方向走，像"人往右看，景往左退"）。
+   ⚠️ **脉冲圈（.pulse-dot）故意不参与视差**（2026-09-17 用户第 1 条要求：
+      「my studio 鼠标视差晃动时，那四个脉冲圈不要跟着动」）。
+      它原本是"最近的前景"（±22px，倍率最大），但它是**交互提示**、不是景物 ——
+      跟着晃会让人以为它是可以点的物体在飘，而且四枚圈圈一起飘也脏。
+      想让它重新参与的话，在 .pulse-dot 上补
+      `transform: translate(-50%,-50%) translate3d(calc(var(--px)*22px), calc(var(--py)*15px), 0);`
+      但要先把这条要求跟用户确认 —— 是被明确否掉过的。
+   ⚠️ 两处余量放大不是审美，是必须的：整层 translate 之后不放大，
+      就会在屏幕某一边露出底下的 bg-wine-dark，是一条很显眼的缝。
+   ⚠️ 画面板带 scale **不会**让"水波揭示"跑偏：StudioLensBackground 里
+      `(clientX - rect.left) / rect.width` 用的是**变换后**的 rect，
+      归一化出来仍是元素本地坐标，mask 依旧贴着鼠标。
+   ================================================================== */
+.studio-scope {
+  /* 兜底：JS 还没跑（或调试钉值前的那一帧）三层都静止在正中 */
+  --px: 0;
+  --py: 0;
+}
+.studio-lens-root {
+  transform: translate3d(calc(var(--px) * -10px), calc(var(--py) * -7px), 0) scale(1.035);
+  will-change: transform;
+}
+.studio-vignette {
+  transform: translate3d(calc(var(--px) * -16px), calc(var(--py) * -11px), 0) scale(1.05);
+  will-change: transform;
+}
+/* ⚠️ .pulse-dot **不在**这里 —— 用户明确要求它不要跟着鼠标视差动
+   （2026-09-17 第 1 条："那四个脉冲圈不要跟着动"）。
+   它自己那条规则（770 行）里的 translate(-50%,-50%) 就是最终形态，别再覆盖。 */
+
+/* ==================================================================
+   工作室房间 ②：向下滚动露出「联系方式」（2026-09-16 第六轮 / 用户第 2 条需求）
+   ------------------------------------------------------------------
+   参考片（屏幕录制 173605 / 174451）确认过的露出方式：
+   **面板从下方推上来、有视差地向上出来**；用户又补了一句
+   **「要有阻尼感和滚动视差」** —— 这两件事分别落在"弹簧"和"三层不同进度"上：
+
+     变量           层            弹簧到位(t99)  过冲    角色
+     --contact-pi   正文 / 逐字    0.28s          11.6%   最轻 → **抢在纸前面**
+     --contact-p    巧克力纸       0.50s           6.8%   主体位移（也是"是否展开"的判据）
+     --contact-pg   幽灵大字       0.87s           无     最重/过阻尼 → **落在纸后面**
+
+   （到位与过冲都是**无头逐帧实测**值，不是估算 —— 幽灵那层 k 小周期长、每帧掉 8.5% 速度，
+     其实振荡不起来，是纯粹的"慢"而不是"弹"。）
+
+   回到 CSS：每层的位移就是"该层自己的进度 × 倍率"：
+
+     .studio-contact__sheet        (1 - p)  * 100%              整块纸从屏幕下方升上来
+     .studio-contact__ghost        (1 - pg) * 30vh + 5vw 横移   滞后 + 从右侧滑进来
+     .studio-contact__inner        (1 - pi) * 14vh              领先
+     .studio-contact__roll > i     再叠 (1 - pi) * (40% + k%)   每个字错峰上浮（见下）
+
+   ## 版式取自参考站（ilcapoproduction.com/project/notes-on-gucci 的页脚）
+   用户：「学习这个网站的联系方式」，并定死**滚轮一共 10 格**才完全出来。照抄了三点形态：
+     ① **成对排版**：小标签在上、全大写衬线大字在下，两组并排（`.studio-contact__pairs`）；
+     ② **大字才是主角**：值比标签大 2~3 倍（clamp(32px,4.5vw,45px) vs clamp(15px,1.6vw,21px)）；
+     ③ **逐字上浮**：每个字母包在 overflow:hidden 的小盒子里、内层往上移 ——
+        参考站是 hover 触发，这里改成**滚轮进度驱动**（`.studio-contact__roll`）。
+     "10 格"是 JS 那边的 NOTCHES（按**滚轮事件数**数，不按 deltaY 累积），CSS 不参与；
+     面板上 `.studio-contact__roll` 那层逐字位移是唯一跟"格数"无关的部分 —— 它认进度条。
+
+   ## 惯性（用户："快速划过去后有惯性在的感觉"）
+   每层还多带一份 `--contact-*v`（**额外位移**，目标恒为 0、每帧往回收）：
+   滚得越猛，被踢得越远、滑得越久。快速滚过去时会看到
+   **纸先稳住、大字还在飘**。它静止时恒为 0，所以不影响落位。
+
+   ⚠️ 三层进度由**同一份滚轮 target** 驱动，最终必定一起归到 1 →
+      所有额外偏移（含惯性）归零 → **最终落位就是静态排版本身**，
+      不需要另写一套"停止态"样式；调这里的平移量不会影响落位。
+   ⚠️ 只有**纸**那一层的进度要用 `min(1, …)` 夹住（纸高 = 一个视口，> 1 就露底）；
+      幽灵大字与正文**不夹** —— 它们就是要飘出一点才看得出惯性。
+   ⚠️ 显影（opacity）一律认 --contact-p（主体），不认各层自己的进度：
+      否则"还没升上来但已经亮着"的鬼影会出现。位移和显影分开取，是有意的。
+   ⚠️ opacity 用 `clamp(0, calc(...), 1)`：数值型 clamp 是合法的，
+      比"在 JS 里算好再下发一个变量"少一次每帧写入，也少一个变量。
+   ================================================================== */
+.studio-contact {
+  /* 三层的兜底值：JS 还没跑（或钉值前的那一帧）都静止在收起态 */
+  --contact-p: 0;
+  --contact-pg: 0;
+  --contact-pi: 0;
+  /* 三层的**惯性额外位移**（"快速划过去后还在滑"的那一份）。
+     它每帧都往 0 收 → 静止时下面所有 calc 里的它都等于 0 →
+     **排版与加惯性之前一模一样**（"静态排版就是设计稿本身"这条不变量还在）。
+     ⚠️ 与位置分开取，是因为它可能**负**（快速上滚时把东西往回拽一点）。 */
+  --contact-pv: 0;
+  --contact-pgv: 0;
+  --contact-piv: 0;
+  /* 薄荷巧克力：与 .studio-menu-overlay 的 --menu-ink 同源（都是 --pal-mint）。
+     收口成变量，之后整页调色只改这一处。 */
+  --contact-ink: var(--pal-mint, #b5e3d6);
+  position: absolute;
+  inset: 0;
+  /* z 高于房间与暗角、**低于 StudioChrome(50)** —— 纸升起来之后，
+     左上角那枚返回、右上角那枚 MENU 必须仍然看得见、点得到（这是退出的唯一路径）。 */
+  z-index: 45;
+  /* 收起时整块不参与命中：鼠标该给房间就给房间 */
+  pointer-events: none;
+}
+.studio-contact.is-open {
+  pointer-events: auto;
+}
+/* Green OS（钻进显像管）时连面板一起藏掉 —— 巧克力纸压在浅色 OS 上很脏。
+   正常情况下 blocked 已经把它收回去了，这条只是兜底。 */
+.studio-scope.is-os .studio-contact {
+  visibility: hidden;
+}
+
+/* ---- 那块从下方推上来的巧克力纸 ---- */
+.studio-contact__sheet {
+  position: absolute;
+  inset: 0;
+  /* 幽灵大字要超出这张纸，靠它裁掉 —— 裁切在这里、不在根节点，
+     保证根节点始终等于视口、不会外溢成可滚动区域。 */
+  overflow: hidden;
+  background: var(--pal-veil, #4a2e23);
+  /* 98% 与菜单完全一致（用户："配色与 menu 一样"）——留下 2% 让房间透一点气 */
+  background: color-mix(in srgb, var(--pal-veil, #4a2e23) 98%, transparent);
+  /* ⚠️ `min(1, …)` 这道夹子是**必须的**，别省：
+     纸的 `inset: 0` 正好 = 一个视口高，而弹簧过冲 + 惯性都会把进度顶到 1 以上 ——
+     一旦 > 1，纸就整体升过头，**屏幕底部会露出一条房间的缝**。
+     夹在 1 之后纸永远"刚好铺满"；惯性那份观感交给正文与幽灵大字（它们不受这条约束）。 */
+  transform: translate3d(0, calc((1 - min(1, var(--contact-p) + var(--contact-pv))) * 100%), 0);
+  will-change: transform;
+}
+/* 这张纸上曾经有一层「薄荷星 + 像素花」的 ::before 遮罩 —— 同上，2026-09-17 撤掉。
+   现在的装饰是同那朵牵牛花字符画（JSX 里的 <AsciiFlower />，
+   摆位规则见顶部 .ascii-flower--sheet），浓度比菜单更低：
+   这屏的主角是联系方式那几行字。 */
+
+/* ---- 幽灵大字：全页最大的那块"薄荷"，但只有 10% 不透明度 ---- */
+.studio-contact__ghost {
+  position: absolute;
+  right: -2vw;
+  bottom: -3vh;
+  z-index: 0;
+  /* 视差里的**最远层**：走 --contact-pg（比纸慢一倍的一组弹簧）+
+     30vh 的迟到量，并且横向再滑 5vw 进来 ——
+     所以"纸已经停了，这行大字还在往上、往右走"是能看见的。 */
+  transform: translate3d(
+    calc((1 - var(--contact-pg) - var(--contact-pgv)) * 5vw),
+    calc((1 - var(--contact-pg) - var(--contact-pgv)) * 30vh),
+    0
+  );
+  /* 衬线斜体大字 = 全站水印的通用写法（同 .mjp__bgword）。
+     ⚠️ 这里**不能**用 var(--wkp-display) —— 那个变量定义在 .wkp 里（见 7471 行），
+        工作室不在它的作用域内，会静默回退成 body 字体。字面量写死才是对的。 */
+  font-family: 'NanoOldSongA', 'Noto Serif SC', 'Songti SC', serif;
+  font-style: italic;
+  /* 字号必须大到横跨大半屏才有意义；改字号会破坏它与正文的"远景/近景"关系 */
+  font-size: clamp(150px, 30vw, 460px);
+  line-height: 0.78;
+  letter-spacing: -0.03em;
+  white-space: nowrap;
+  color: var(--contact-ink);
+  opacity: 0.1;
+  pointer-events: none;
+  user-select: none;
+  will-change: transform;
+}
+
+/* ---- 纸上的内容：整体走 --contact-pi（比纸快的一组弹簧），再叠 14vh 的领先量 ---- */
+.studio-contact__inner {
+  position: absolute;
+  z-index: 1;
+  left: clamp(28px, 10vw, 190px);
+  right: clamp(28px, 10vw, 190px);
+  top: 50%;
+  transform: translateY(calc(-50% + (1 - var(--contact-pi) - var(--contact-piv)) * 14vh));
+  will-change: transform;
+}
+
+/* 逐级显影：越靠后的元素要求更高的 p 才亮起来（配合下面对应的位移倍率） */
+.studio-contact__title,
+.studio-contact__rule {
+  opacity: clamp(0, calc((var(--contact-p) - 0.35) * 3.2), 1);
+}
+
+/* ⚠️ kicker 与 hint 单独写：它们除了"显影"还要乘一个**常驻透明度**
+   （kicker 0.85 / hint 0.55），所以不能进上面那条合写 —— 会被后面的
+   `opacity` 声明整条覆盖掉，显影直接失效。写成"显影 × 常驻"才是完整的。 */
+.studio-contact__kicker {
+  margin: 0 0 0.4em;
+  font-family: 'Caveat', 'NanoOldSongA', 'Noto Serif SC', serif;
+  font-size: clamp(20px, 2.2vw, 30px);
+  letter-spacing: 0.06em;
+  color: var(--contact-ink);
+  opacity: calc(clamp(0, calc((var(--contact-p) - 0.3) * 3.2), 1) * 0.85);
+}
+
+.studio-contact__title {
+  margin: 0;
+  font-family: 'NanoOldSongA', 'Noto Serif SC', 'Songti SC', serif;
+  font-weight: 400;
+  font-size: clamp(40px, 6.4vw, 96px);
+  line-height: 1.06;
+  letter-spacing: 0.02em;
+  color: var(--contact-ink);
+}
+
+.studio-contact__rule {
+  display: block;
+  margin: clamp(16px, 2.8vh, 32px) 0 clamp(22px, 4vh, 44px);
+  width: min(420px, 46vw);
+  height: 1px;
+  background: var(--contact-ink);
+  /* 线本身再淡一档，免得和标题抢 */
+  opacity: calc(clamp(0, calc((var(--contact-p) - 0.4) * 3.2), 1) * 0.4);
+}
+
+/* ---- 成对排版：上小标签、下全大写衬线大字，两组并排 ---- */
+.studio-contact__pairs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  /* 参考站那两栏是拉开铺满的（它用 justify-around），这里用 space-between：
+     两块分别贴住左右边界，中间留白 —— 比均分更稳，窄屏换行也不会歪。 */
+  justify-content: space-between;
+  gap: clamp(22px, 4.5vw, 72px);
+  max-width: min(1080px, 100%);
+}
+.studio-contact__pair {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(3px, 0.5vh, 9px);
+  min-width: 0;
+}
+.studio-contact__pair-label {
+  font-family: 'Caveat', 'NanoOldSongA', 'Noto Serif SC', serif;
+  font-size: clamp(15px, 1.6vw, 21px);
+  letter-spacing: 0.18em;
+  color: var(--contact-ink);
+  /* 标签永远比它下面的大字淡一档 —— 大字才是主角 */
+  opacity: 0.6;
+}
+.studio-contact__pair-value {
+  font-family: 'NanoOldSongA', 'Noto Serif SC', 'Songti SC', serif;
+  font-size: clamp(32px, 4.5vw, 45px);
+  line-height: 1.04;
+  letter-spacing: 0.01em;
+  /* 参考站的邮箱 / 账号是全大写的 → 这里也统一大写；
+     占位文案目前是 EMAIL@— / @—（用户："先不做内容"），
+     换真邮箱后若想要小写，把这条删掉即可。 */
+  text-transform: uppercase;
+  color: var(--contact-ink);
+  white-space: nowrap;
+}
+
+/* ---- 逐字上浮（参考站的最小单位：overflow:hidden 小盒 + 内层位移） ----
+   ⚠️ padding-block / margin-block 那一对是**必须的**：overflow:hidden 会连字母的
+      上下沿一起切掉（中文的下半截尤其明显），用 0.25em 的内补白把裁切框撑开、
+      再用等量负外边距把布局占位收回去 —— 视觉上等于"没动过"。参考站也这么干。 */
+.studio-contact__roll {
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: bottom;
+  padding-block: 0.25em;
+  margin-block: -0.25em;
+}
+.studio-contact__roll > i {
+  display: inline-block;
+  font-style: normal;
+  /* pre 是为了保住 "Let's Talk" 里那个空格：inline-block 会把行首空白折叠成 0 宽 */
+  white-space: pre;
+  transform: translateY(calc((1 - var(--contact-pi)) * (40% + var(--k, 0) * 1%)));
+  will-change: transform;
+}
+
+/* ---- 压在纸底的那一行小字 + 发丝线（同参考站页脚） ---- */
+.studio-contact__meta {
+  position: absolute;
+  left: clamp(28px, 10vw, 190px);
+  right: clamp(28px, 10vw, 190px);
+  bottom: clamp(18px, 3.4vh, 36px);
+  z-index: 1;
+  /* 全场最后才亮：要求 p > 0.72 —— 读者先看见大字，视线落到最底下才看到署名 */
+  opacity: clamp(0, calc((var(--contact-p) - 0.72) * 4), 1);
+}
+.studio-contact__meta-line {
+  display: block;
+  height: 1px;
+  margin-bottom: clamp(8px, 1.4vh, 14px);
+  background: color-mix(in srgb, var(--contact-ink) 28%, transparent);
+}
+.studio-contact__meta-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  font-family: 'Caveat', 'NanoOldSongA', 'Noto Serif SC', serif;
+  font-size: clamp(13px, 1.25vw, 17px);
+  letter-spacing: 0.08em;
+  color: var(--contact-ink);
+  opacity: 0.5;
+}
+
+.studio-contact__hint {
+  margin: clamp(20px, 3.6vh, 40px) 0 0;
+  font-family: 'Caveat', 'NanoOldSongA', 'Noto Serif SC', serif;
+  font-size: clamp(17px, 1.6vw, 22px);
+  letter-spacing: 0.08em;
+  color: var(--contact-ink);
+  /* 最后才出现：要求 p > 0.75，常驻再压到 0.55 */
+  opacity: calc(clamp(0, calc((var(--contact-p) - 0.75) * 4), 1) * 0.55);
+}
+
+/* 窄屏：内边距收窄；两块并排放不下就竖着堆（大字本身已经够宽了） */
+@media (max-width: 720px) {
+  .studio-contact__inner {
+    left: 24px;
+    right: 24px;
+  }
+  .studio-contact__meta {
+    left: 24px;
+    right: 24px;
+  }
+  .studio-contact__pairs {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: clamp(18px, 3.4vh, 32px);
+  }
+  .studio-contact__pair-value {
+    white-space: normal;
+  }
 }
 
 /* 荧光过曝闪光：专门用来吃掉 3D→2D 的切换瞬间。
@@ -5570,7 +6619,7 @@ body.green-os .about-overlay .about-pet {
   font-family: 'Cubic11', 'Zpix', 'Microsoft YaHei', sans-serif;
   font-size: 11px;
   color: #23503e;
-  animation: green-menu-in 0.13s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+  animation: green-menu-in 0.13s var(--ease-world) both;
 }
 @keyframes green-menu-in {
   from {
@@ -5714,7 +6763,7 @@ body.green-os .about-overlay .about-pet {
   --wk-accent: #7b6444;
   --wk-brass: #9d855a;
   --wk-cream: #efe4cf;
-  --wk-mint: #7ee8c7;
+  --wk-mint: #7ee8c7;              /* 木马场景的"薄荷高光"：留着 —— 它是木色里的一点冷光，本身就是重音，不是大面积 */
   --wk-ink: #1f1712;
   position: fixed;
   inset: 0;
@@ -5723,7 +6772,7 @@ body.green-os .about-overlay .about-pet {
   /* 本体不画底色 —— 真正看见的是下面那层磨砂玻璃 */
   background: transparent;
   opacity: 0;
-  animation: wk-in 0.42s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: wk-in 0.42s var(--ease-world) forwards;
 }
 .works-overlay.is-closing {
   animation: wk-out 0.38s ease forwards;
@@ -6051,23 +7100,31 @@ body.green-os .about-overlay .about-pet {
   min-width: 0;
 }
 .ww-code {
-  font-size: 10px;
-  letter-spacing: 0.22em;
+  /* 2026-09-16 字体统一：这两行是"屏幕外的英文标签"，按全站字族规则归 Caveat。
+     Caveat 的 x-height 低（同字号比 Inter 小一截），所以 10px → 12px、
+     9px → 11px 各补一档，否则在木马的小字位上糊成一片。
+     letter-spacing 也收窄：手写体本来就是连笔，0.2em 的间距会把连笔剪断。 */
+  font-family: 'Caveat', 'Noto Serif SC', serif;
+  font-size: 12px;
+  letter-spacing: 0.1em;
   color: var(--wk-mint);
 }
 .ww-title {
   font-size: 15px;
   line-height: 1.32;
   color: rgba(243, 233, 210, 0.95);
+  /* 2026-09-16 字体统一：项目名是"标题"，归 NanoOldSongA（原为 body 回退 Noto Serif）。
+     空槽位的 '待提交项目' 已收进字体子集，不会半句换体。 */
+  font-family: 'NanoOldSongA', 'Noto Serif SC', 'Songti SC', serif;
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
 }
 .ww-en {
-  font-size: 9px;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
+  font-family: 'Caveat', 'Noto Serif SC', serif;
+  font-size: 11px;
+  letter-spacing: 0.12em;
   color: rgba(239, 228, 207, 0.42);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -6257,7 +7314,7 @@ body.green-os .about-overlay .about-pet {
   background: #fffdf6;
   color: #45513f;
   box-shadow: 0 30px 90px rgba(0, 0, 0, 0.5);
-  animation: wk-pop 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: wk-pop 0.3s var(--ease-world) both;
 }
 @keyframes wk-pop {
   from { transform: translateY(16px) scale(0.985); opacity: 0; }
@@ -6278,12 +7335,17 @@ body.green-os .about-overlay .about-pet {
 .works-panel-code {
   font-size: 11px;
   letter-spacing: 0.16em;
-  color: #7d8f72;
+  /* 原 #7d8f72（偏黄的草绿）→ --pal-green：页面上所有的"绿"统一到同一支灰橄榄，
+     免得同屏出现两种绿（用户说的"颜色不统一"）。 */
+  color: var(--pal-green, #65745d);
 }
 .works-panel-title {
   margin-top: 4px;
   font-size: 17px;
   letter-spacing: 0.06em;
+  /* 2026-09-16 字体统一：原来是继承 body（Inter → Noto Serif SC），
+     和站内其他中文标题（内页大标题 / 日记标题）不是同一支宋体。 */
+  font-family: 'NanoOldSongA', var(--wkp-display, 'Noto Serif SC'), 'Songti SC', serif;
 }
 .works-panel-close {
   width: 30px;
@@ -6337,12 +7399,16 @@ body.green-os .about-overlay .about-pet {
 .works-side-arrow {
   font-size: 36px;
   line-height: 1;
-  font-family: 'Cinzel', 'Times New Roman', serif;
+  /* ‹ › 是符号不是英文，Caveat 没有这两个字形 —— 写成 Caveat 优先 + Cinzel 逐字回退，
+     将来若换成手写箭头也能自然继承。不要因为看到 Cinzel 就以为这里是"英文标签"。 */
+  font-family: 'Caveat', 'Cinzel', 'Times New Roman', serif;
   font-weight: 600;
 }
 .works-side-meta {
-  font-size: 9px;
-  letter-spacing: 0.32em;
+  /* PREV / NEXT：屏幕外的英文标签 → Caveat（顺带 9px → 11px，见 .ww-code 的说明） */
+  font-family: 'Caveat', 'Noto Serif SC', serif;
+  font-size: 11px;
+  letter-spacing: 0.18em;
   color: inherit;
   opacity: 0.6;
 }
@@ -6777,17 +7843,19 @@ img {
 }
 .mode-switch:hover .mode-switch-flip { transform: rotate(180deg); }
 
-/* 作者态：薄荷绿，与站内编辑入口同一套色 */
+/* 作者态：薄荷绿，与站内编辑入口同一套色。
+   2026-09-16：原来是霓虹薄荷 #7ee8c7（饱和 70%）—— 这是浮在页面上的**界面 chrome**，
+   不在任何屏幕里，属于"荧光色漏到世界外"，一并换成实测薄荷 --pal-mint。 */
 .mode-switch.is-author {
-  border-color: rgba(126, 232, 199, 0.62);
-  background: rgba(12, 40, 31, 0.86);
-  box-shadow: 0 6px 26px rgba(126, 232, 199, 0.2);
+  border-color: color-mix(in srgb, var(--pal-mint) 62%, transparent);
+  background: rgba(34, 44, 39, 0.86);
+  box-shadow: 0 6px 26px color-mix(in srgb, var(--pal-mint) 20%, transparent);
 }
 .mode-switch.is-author .mode-switch-dot {
-  background: #7ee8c7;
-  box-shadow: 0 0 10px #7ee8c7;
+  background: var(--pal-mint);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--pal-mint) 90%, transparent);
 }
-.mode-switch.is-author .mode-switch-label { color: #7ee8c7; }
+.mode-switch.is-author .mode-switch-label { color: var(--pal-mint); }
 
 /* 访客态：灰掉，明确"只能看" */
 .mode-switch.is-guest { opacity: 0.88; }
@@ -6813,7 +7881,7 @@ img {
   overflow: hidden;
   background: transparent;
   opacity: 0;
-  animation: ns-in 0.42s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: ns-in 0.42s var(--ease-world) forwards;
 }
 .newsstand-overlay.is-closing {
   animation: ns-out 0.38s ease forwards;
@@ -7000,12 +8068,22 @@ img {
   --wkp-ink: #3a2e23;              /* 纸面主字：深棕 */
   --wkp-dim: rgba(58, 46, 35, 0.6);
   --wkp-line: rgba(58, 46, 35, 0.15);
-  --wkp-accent: #98cab8;           /* 薄荷：主色 */
-  --wkp-accent-soft: #c7dfd4;      /* 薄荷：浅底 */
+  --wkp-accent: #b5e3d6;           /* 薄荷：主色（实测 #B5E3D6 / #B4E4D6 两图印证）
+     ⚠️ 这是**粉彩**薄荷（L 80%）：配巧克力字 / 压深底都很好，
+        但压在奶油纸（--wkp-paper #e9e7e1）上只有 1.5:1，**不能当纸面字色**；
+        纸面上的小字走 --wkp-accent-deep（5.8:1）。 */
+  --wkp-accent-soft: #defeec;      /* 薄荷：浅底（实测图1 大面积底色） */
   --wkp-accent-deep: #33604e;      /* 深薄荷：小字 / 悬停 */
   --wkp-sand: #baab8b;             /* 沙色：第二中性色 */
-  --wkp-band-bg: #98cab8;          /* 大字宣言带的底：薄荷实底 */
-  --wkp-band-ink: #6b4423;         /* 大字宣言带的字：巧克力棕（2026-09-14 用户要求，原 #3a2e23 深棕偏黑） */
+  /* 大字宣言带的底 —— 薄荷实底 + 巧克力棕字。
+     ⚠️ 2026-09-16 曾被我改成"灰橄榄 + 奶油"（理由是"薄荷只允许出现在屏幕里"），
+     用户随后明确表态：「我也喜欢**薄荷巧克力**的搭配」—— 立刻改回。
+     这就是本页配色注释里那张参考图（Corner Table）的做法：
+     薄荷 #B5E3D6 当**大色块**、巧克力棕 #6B4423 当**字**，两者互相成全；
+     薄荷在这里不是"点缀"，它是这一屏的主角。所以"薄荷只配小面积"这条
+     是我自己推的规矩、不是用户的 —— 已在 index.css 顶部的主色注释里更正。 */
+  --wkp-band-bg: #b5e3d6;          /* 大字宣言带的底：薄荷实底（巧克力字在它上面 6.1:1） */
+  --wkp-band-ink: #6b4423;         /* 大字宣言带的字：巧克力棕（2026-09-14 用户要求） */
 
   /* —— 字体 —— */
   --wkp-display: 'NanoOldSongA', 'Noto Serif SC', 'Songti SC', serif;
@@ -7023,7 +8101,7 @@ img {
      opacity 交给 transition，scale 用 cubic-bezier 缓出收尾，避免生硬。 */
   opacity: 0;
   transform: scale(1.04);
-  transition: opacity 0.45s ease, transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: opacity 0.45s ease, transform 0.7s var(--ease-world);
   transform-origin: 50% 50%;
 }
 .wkp.is-in {
@@ -7044,7 +8122,7 @@ img {
   overflow: hidden;
   /* 左栏错峰进入：从左侧轻微滑入，和右栏 .wkp-inner 的下移入场形成"推门"层次 */
   transform: translateX(-16px);
-  transition: transform 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.08s;
+  transition: transform 0.6s var(--ease-world) 0.08s;
 }
 .wkp.is-in .wkp-rail {
   transform: translateX(0);
@@ -7060,7 +8138,6 @@ img {
   font-family: var(--wkp-display);
   font-size: 15px;
   letter-spacing: 0.14em;
-  text-transform: uppercase;
 }
 .wkp-back {
   padding: 0;
@@ -7171,13 +8248,16 @@ img {
   height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
-  background: var(--wkp-paper);
+  /* ⚠️ 这里**不再**有自己的底色（2026-09-17）：右栏的纸色交给 .wkp 自己（它本来就有）。
+     原因：装饰层 .pdecor 是 z-index:-1 → 只画在**父级背景之上**；这一层要是不透明，
+     装饰就整块被它盖住（纸面上一朵花都看不见）。移走底色后装饰落在纸色之上、
+     而 .wkp-inner 里的正文仍然是正常流内容 → 稳稳压在装饰之上。 */
   overscroll-behavior: contain;
 }
 .wkp-inner {
   opacity: 0;
   transform: translate3d(0, 16px, 0);
-  transition: opacity 0.42s ease 0.04s, transform 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.04s;
+  transition: opacity 0.42s ease 0.04s, transform 0.6s var(--ease-world) 0.04s;
 }
 .wkp.is-in .wkp-inner {
   opacity: 1;
@@ -7249,7 +8329,7 @@ img {
   background:
     repeating-linear-gradient(
       45deg,
-      rgba(152, 202, 184, 0.26) 0 12px,
+      color-mix(in srgb, var(--pal-mint) 26%, transparent) 0 12px,
       transparent 12px 24px
     ),
     linear-gradient(140deg, #514132, #2f5a4a);
@@ -7291,7 +8371,6 @@ img {
   margin: 18px 0 0;
   font-size: 13px;
   letter-spacing: 0.16em;
-  text-transform: uppercase;
   color: #dcd2ba;
 }
 /* 全局「上一个 / 下一个项目」箭头：钉在视口右缘垂直居中（挂在 fixed 的 .wkp 上，
@@ -7326,7 +8405,7 @@ img {
   line-height: 1;
   cursor: pointer;
   transition: background 0.25s ease, color 0.25s ease, border-color 0.25s ease,
-    transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+    transform 0.35s var(--ease-world);
 }
 .wkp-pn-btn:hover {
   background: var(--wkp-accent);
@@ -7347,7 +8426,22 @@ img {
 /* ---- 大字宣言带 ---- */
 .wkp-band {
   padding: clamp(64px, 12vh, 150px) clamp(24px, 6vw, 92px);
-  background: var(--wkp-band-bg);
+  /* 图1 的做法：薄荷**底** + 只占 7% 面积的**深一档**圆点。
+     ⚠️ 必须拆成 background-color + background-image（原来是一句 `background:` 简写，
+        简写会把下面的点阵整层重置掉）。
+     半砖错位 = 经典 polka dot；圆点取 --pal-mint-deep（比底深一档），
+     复制的正是参考图"#DEFEEC 底 + #B5E3D6 点"那组深浅关系。
+     55% 而不是 100%：参考图里圆点是"淡淡压在底上"，不是硬边贴纸。
+     ⚠️ 砖从 56px 放到 76px、点从 5px 收到 4px（用户："不要太多 太密了"）——
+        所以这里宁可"稀"，别为了看得见就把点做大做密。 */
+  background-color: var(--wkp-band-bg);
+  background-image:
+    radial-gradient(circle at 50% 50%,
+      color-mix(in srgb, var(--pal-mint-deep) 55%, transparent) 0 4px, transparent 4px),
+    radial-gradient(circle at 50% 50%,
+      color-mix(in srgb, var(--pal-mint-deep) 55%, transparent) 0 4px, transparent 4px);
+  background-size: 76px 76px;
+  background-position: 0 0, 38px 38px;
   color: var(--wkp-band-ink);
   border-top: 1px solid rgba(58, 46, 35, 0.18);
   /* 多层级视差：宣言带的「背景层」是里面那层超大 ghost 字（比正文慢、方向相反）。
@@ -7458,7 +8552,7 @@ img {
   transition: color 0.2s ease, gap 0.2s ease;
 }
 .wkp-link:hover {
-  color: var(--wkp-accent);
+  color: var(--wkp-accent-deep);
   gap: 11px;
 }
 .wkp-link-arrow {
@@ -7838,7 +8932,7 @@ img {
   font-family: var(--wkp-display);
   font-size: 19px;
   line-height: 1;
-  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 0.3s var(--ease-world);
 }
 .wkp-act-next:hover .wkp-act-next-arrow {
   transform: translateX(4px);
@@ -7854,7 +8948,7 @@ img {
 .wkp-rise {
   opacity: 0;
   transform: translate3d(0, 22px, 0);
-  transition: opacity 0.62s ease, transform 0.72s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: opacity 0.62s ease, transform 0.72s var(--ease-world);
 }
 .wkp-rise.is-in {
   opacity: 1;
@@ -7932,7 +9026,7 @@ img {
   height: 52vw;
   max-width: 660px;
   max-height: 660px;
-  background: radial-gradient(circle, rgba(152, 202, 184, 0.34), rgba(152, 202, 184, 0) 68%);
+  background: radial-gradient(circle, color-mix(in srgb, var(--pal-mint) 34%, transparent), transparent 68%);
 }
 .wkp-par-blob.is-b {
   right: -14vw;
@@ -7962,6 +9056,8 @@ img {
   line-height: 0.8;
   letter-spacing: 0.02em;
   white-space: nowrap;
+  /* 跟着宣言带底翻面：薄荷底（浅）上用深棕压暗、灰橄榄底（深）上用奶油提亮。
+     2026-09-16 带底改回薄荷 → 这里也跟着改回深棕。 */
   color: rgba(107, 68, 35, 0.075);
   pointer-events: none;
   user-select: none;
@@ -8205,7 +9301,7 @@ img {
   /* 起手是"没画"，.is-on 时画出来 */
   stroke-dasharray: 100;
   stroke-dashoffset: 100;
-  transition: stroke-dashoffset 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.05s;
+  transition: stroke-dashoffset 0.5s var(--ease-world) 0.05s;
 }
 .cur.is-on .cur-ring__s {
   stroke-dashoffset: 0;
@@ -8304,7 +9400,6 @@ img {
 }
 .wkf-cap {
   left: 4vw;
-  text-transform: uppercase;
 }
 .wkf-hint {
   right: 4vw;
@@ -8456,15 +9551,48 @@ img {
      副作用正是用户要的"切换手感"—— 推进一格时**每条卡都沿这条斜线上下滑 0.23h**，
      所以切换不再是纯水平滑动，而是斜着走。 */
   --mjp-stagger: calc(var(--mjp-h) * 0.232);
-  --mjp-ink: #14110e;            /* 白底 → 文字改近黑 */
-  --mjp-dim: rgba(20, 17, 14, 0.55);
+  /* ---- 配色（2026-09-16 第四轮：**白底** —— 现行）----
+     四轮试色全留档，免得以后又绕一圈：
+       ① 纯白 #ffffff（照参考站 mattjinn.com/videos/ 的原样，录屏实测就是 #ffffff）
+          → 用户：「没有冲击力，不炸眼不吸引人」
+       ② 深巧克力「夜场放映」（--pal-choc 加暗 + 薄荷点缀）→ 用户：「好丑」
+          复盘：褐黑底叠低透明度的薄荷 = 橄榄泥；背景大字发灰，像印错了色。
+       ③ 整页薄荷（--pal-mint，当时还是鼠尾草绿；用户在我给的三选里挑了它，
+          配色逻辑是"薄荷当底、巧克力当墨"）
+       ④ **白底（现行）** —— 用户当天深夜改主意，指截图原话：「改成白色」。
+          于是底回到 ①，但**不是**整页回到 ① 的实现：① 用的是近黑 #14110e，
+          这轮保留巧克力墨 #31261c（暖、和全站同族，白底上对比度仍有 ~12:1）。
+     分工因此变成：**白底 + 巧克力墨 + 薄荷只在全屏播放器里当强调色**。
+     ⚠️ 两处联动**不用再动**了 —— 薄荷轮已经按"浅底"改对，白底同理：
+        ① ✅ MediaGalleryPage 的 StudioChrome：tone="dark"（tone 语义 = "为哪种底设计"，
+           dark = 浅底 → 墨色字；留在 "light" 会变成奶白字压白底，看不见）
+        ② ✅ data-cursor-tone：.mjp__viewport 与卡片的 .mjp__media-btn = **"light"**
+           （浅底 → 墨色光标标签）；全屏播放器（深底）那 5 处继续留 "dark"。
+     另：.mjp__player 仍是深暖黑 #171009 —— 和浅色列表页是**刻意的大反差**，
+     点开片子 = 关灯，画面是唯一的光。所以播放器内部的 --mjp-mint 强调色保留。
+     ⤴️ 下面凡是标了「白底」的，都是从薄荷轮改回来的（薄荷轮为浅色底"往白走"，
+        白底要反过来"往灰/往深一点点走"，否则整页只剩白、没有层次）。 */
+  --mjp-ink: #31261c;            /* 墨：巧克力棕（比 --pal-choc 提亮一档，纯褐会发闷） */
+  --mjp-dim: rgba(49, 38, 28, 0.58);
+  --mjp-cream: #fbf8f0;          /* 薄荷轮的"往亮走"高光色；白底轮已无人引用，留着备后续 */
+  --mjp-mint: #b5e3d6;           /* 薄荷本体：只在深底的播放器里当强调色
+     （深底 #171009 上 11:1，粉彩薄荷在暗处提亮最像"屏幕光"） */
 
   position: fixed;
   inset: 0;
   z-index: 60;                 /* 高于报刊亭浮层 */
   overflow: hidden;
-  /* 白底 —— 参考站列表页就是纯白（录屏实测像素 #ffffff）。
-     注意全屏播放器 .mjp__player 仍是黑底，两者互不影响。 */
+  /* 地面 = 纯白（2026-09-16 第四轮）。
+     参考站 mattjinn.com/videos/ 的列表页本来就是 #ffffff（录屏逐像素实测），
+     这轮按用户深夜那句「改成白色」回到它。
+     ⚠️ 不是"把薄荷换成白"，而是**整段三层叠加删掉、只留一个色值** ——
+        薄荷轮那三层（渐变 + 台光 + 角落补光）在底变成白之后全是无效功：
+        白底上没有"比白更亮"的空间，三层里最亮的仍然是 #ffffff，叠了等于没叠。
+     白底上这页的层次来源改由三样东西承担：
+        ① 卡片画面自己的饱和度（见 .mjp__media-canvas 的 filter）
+        ② 背景大字的淡墨灰（.mjp__bgword）
+        ③ 刻度尺/序号的巧克力实色（.mjp__tick.is-on / .mjp__ticker__num）
+     ⚠️ 全屏播放器 .mjp__player 仍是深底（下面单独一段），两者互不影响。 */
   background: #ffffff;
   color: var(--mjp-ink);
   font-family: var(--wkp-body);
@@ -8472,7 +9600,7 @@ img {
   opacity: 0;
   transform: scale(1.04);
   transform-origin: 50% 50%;
-  transition: opacity 0.45s ease, transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: opacity 0.45s ease, transform 0.7s var(--ease-world);
 }
 .mjp.is-in {
   opacity: 1;
@@ -8496,7 +9624,7 @@ img {
   /* 顶栏错峰滑入，和整页缩放形成"推门"层次 */
   opacity: 0;
   transform: translateY(-14px);
-  transition: opacity 0.5s ease 0.12s, transform 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.12s,
+  transition: opacity 0.5s ease 0.12s, transform 0.6s var(--ease-world) 0.12s,
     visibility 0.5s;
 }
 .mjp.is-in .mjp__nav {
@@ -8536,7 +9664,11 @@ img {
   font-family: var(--wkp-display);
   font-size: 12px;
   letter-spacing: 0.18em;
-  text-transform: uppercase;
+  /* 频道名 = 巧克力墨（第四轮：回到白底版的 0.62）。
+     薄荷轮把它提到 0.86，是因为薄荷属于**中灰调**底、颜色得压得住才看得见；
+     白底上不需要那么重 —— 0.62 已经是个清晰的 12px 页眉，
+     再重就会和左上角的返回键抢注意力（那才是全页唯一的退出口）。 */
+  color: var(--mjp-ink);
   opacity: 0.62;
 }
 
@@ -8574,6 +9706,13 @@ img {
   line-height: 1;
   letter-spacing: -0.02em;
   white-space: nowrap;
+  /* 淡墨大字（第四轮：回到白底版）。
+     ⚠️ 白底上"水印"的方向**只能是比底更暗**（往灰/往墨走）——
+        薄荷轮那套"奶油白大字 #fbf8f0"在白底上等于隐形（白压白、对比 1.0），
+        所以整条反过来：巧克力墨 + 极低透明度 0.08。
+     这也让这一层和卡片的关系更对：它退成"纸上淡淡的印刷底纹"，
+     而不是抢在卡片前面的另一种白。
+     ⚠️ 调"多重"改 opacity；改字号会破坏它"横跨卡片两侧"的比例（见上）。 */
   color: var(--mjp-ink);
   opacity: 0.08;
   pointer-events: none;
@@ -8604,6 +9743,10 @@ img {
   height: var(--mjp-h);
   width: auto;
   aspect-ratio: var(--ar, 1.7778);   /* 每条片子自己的比例 */
+  /* 非当前卡：白底版 0.34（第四轮回到原值）。
+     白底上"变淡"= 画面朝白里化开，比深底上"融进黑里"要克制，
+     所以数值可以比深底版（0.3）高一点 —— 同样数值在两种底上的观感完全不同。
+     真正决定"哪张是焦点"的其实不是这里，而是下面 .mjp__media-canvas 的 filter。 */
   opacity: 0.34;
   /**
    * 斜着错位 + 曲面 / 鱼眼（2026-09-15 第五轮 —— 照用户第二段录屏逐帧量过再定参）。
@@ -8667,6 +9810,20 @@ img {
   display: block;
   width: 100%;
   height: 100%;
+  /* 非当前卡：画面压暗 + 抽色，让"当前那张"在满彩里跳出来。
+     ⚠️ 这一层**和底色无关**，所以白底轮（第四轮）原样保留：
+        它作用的对象是**画面自己的像素**（把静帧压暗抽色），
+        不是在画面和底之间插一层 —— 换底不会让它失效，也不会让它变形。
+        （对比一下：.mjp__media 的 opacity 是"朝底里化开"，
+        方向完全由底色决定；这个 filter 是"静帧自身变没对焦"，方向是固定的。）
+     ⚠️ 挂在 canvas 上而不是 .mjp__media 上 —— 后者身上挂着 3D 变换，
+        给它加 filter 会强制压平它的子树，弧面/透视全没（实测过）。
+        canvas 是纯 2D 元素，filter 只影响画出来的像素，安全。 */
+  filter: saturate(0.5) brightness(0.6);
+  transition: filter 0.6s ease;
+}
+.mjp__media.is-current .mjp__media-canvas {
+  filter: none;
 }
 /* 帧源：藏起来只供 drawImage 取帧。
    ⚠️ 用 opacity:0 **而不是** display:none / visibility:hidden —— 后两者会让浏览器
@@ -8756,8 +9913,15 @@ img {
 }
 .mjp__ticker__num.is-current {
   opacity: 1;
+  /* 当前序号 = 巧克力实色 + 满透明度 —— ticker 的"眼睛"。
+     白底上没有底色替它衬托，焦点只能靠**自身重量**取胜：
+     墨色实字 vs 隔壁 0.5 的灰字。不需要再另找一种彩色。 */
+  color: var(--mjp-ink);
 }
 .mjp__ticker__num:not(.is-current) {
+  /* 0.5 是白底版原值。薄荷轮收到过 0.42 —— 那是对薄荷中灰底的补偿
+     （底本身已经有灰，非当前项再重就会和底抢）；
+     白底上这个理由不成立，越淡只会越糊，所以回到 0.5。 */
   opacity: 0.5;
 }
 /* 中间那列刻度：参考站左下角是 `01 ⌇⌇⌇ 04` 的形态 ——
@@ -8773,14 +9937,24 @@ img {
   width: 1px;
   height: 9px;
   background: var(--mjp-ink);
+  /* 未点亮的刻度和主色**同色**，靠透明度分主次就够。
+     （浅色底——白底/薄荷底——都这样；深底版才需要"再压暗一档"，
+      因为黑底上暗色会糊成一团。）0.26 = 白底版原值。 */
   opacity: 0.26;
   transform-origin: 50% 50%;
-  transition: opacity 0.35s ease, transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: opacity 0.35s ease, transform 0.45s var(--ease-world),
+    background 0.35s ease;
 }
 .mjp__tick.is-on {
   opacity: 1;
   /* 当前那条拉长 —— 一眼看出走到第几个了 */
   transform: scaleY(1.55);
+  /* 点亮的那条 = 巧克力实色 + 满透明度（第四轮回到白底版原样）。
+     ⚠️ 薄荷轮曾在它外面加过一圈奶油白描边（浅底上"提亮"= 往白走），
+        白底上那圈边等于消失（白描白边），留着只是一行无效 box-shadow，故删；
+        过渡里对应的 box-shadow 项也一并去掉，免得留个永不触发的动画声明。
+     现在它靠"实色 + 拉长 1.55×"两点在一片 0.26 的淡刻度里站出来，已经足够。 */
+  background: var(--mjp-ink);
 }
 .mjp__empty {
   position: absolute;
@@ -8798,7 +9972,10 @@ img {
   position: absolute;
   inset: 0;
   z-index: 5;
-  background: #000;
+  /* 暖黑（#171009）而不是纯黑 —— 它现在和薄荷列表页是**刻意的大反差**：
+     点开片子 = 房间里关灯，画面才是唯一的光。留一点暖度是为了和全站的巧克力棕同族，
+     纯黑会在边缘切出一条冷硬的青边。 */
+  background: #171009;
   opacity: 0;
   visibility: hidden;
   transition: opacity 0.55s ease, visibility 0.55s;
@@ -8815,7 +9992,8 @@ img {
   width: 100%;
   height: 100%;
   object-fit: contain;
-  background: #000;
+  /* 竖向片子两侧的留白跟播放器同色（暖黑），别露出两块纯黑的"信箱条"。 */
+  background: #0e0a08;
 }
 .mjp__player-stage {
   position: absolute;
@@ -8911,7 +10089,9 @@ img {
 .mjp__player-bar-fill {
   position: absolute;
   inset: 0;
-  background: #fff;
+  /* 进度条是播放器里最大的彩色面。播放器是**深底**，所以这里用薄荷
+     （深底上提亮 = 往饱和色走，和列表页"薄荷底上用巧克力"正好是反过来的同一套逻辑）。 */
+  background: var(--mjp-mint);
   transform: scaleX(var(--p, 0));
   transform-origin: left center;
   transition: transform 0.2s linear;
@@ -8934,7 +10114,6 @@ img {
   font-family: var(--wkp-display);
   font-size: 11px;
   letter-spacing: 0.14em;
-  text-transform: uppercase;
   color: #fff;
   cursor: pointer;
   opacity: 0.7;
@@ -8943,6 +10122,8 @@ img {
 .mjp__player-btn:hover,
 .mjp__player-btn.is-on {
   opacity: 1;
+  /* 激活/悬停的控件（Credits / Sound 之类）转薄荷，和进度条同一支色。 */
+  color: var(--mjp-mint);
 }
 .mjp__player-credits {
   position: absolute;
@@ -8977,7 +10158,6 @@ img {
 .mjp__player-role {
   opacity: 0.55;
   letter-spacing: 0.1em;
-  text-transform: uppercase;
 }
 .mjp__player-name {
   opacity: 0.9;
@@ -9045,7 +10225,7 @@ img {
   opacity: 0;
   transform: scale(1.04);
   transform-origin: 50% 50%;
-  transition: opacity 0.45s ease, transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: opacity 0.45s ease, transform 0.7s var(--ease-world);
 }
 .cp-page.is-in {
   opacity: 1;
@@ -9054,10 +10234,25 @@ img {
 .cp-topbar {
   flex: 0 0 auto;
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  /* 2026-09-16：原来是 auto 1fr auto 三栏（Back / 标题 / 占位）。
+     「Back」交给统一外壳后这里只剩标题一栏 —— 仍留着三栏会把标题挤到第二行。 */
+  grid-template-columns: 1fr;
   align-items: end;
   gap: 20px;
-  padding: clamp(22px, 3.4vh, 40px) clamp(24px, 5vw, 72px) clamp(14px, 2vh, 24px);
+  /* 上内边距 +34px：给统一外壳让位。
+     ⚠️ 实测踩到过：原来那一格放的是 13px 的小号 Back 按钮，和标题并排不冲突；
+     返回挪到绝对层之后，标题的顶边（4.2vw≈60px 的大字）会和
+     「RETURN TO ARCHIVE」撞在同一像素上（截图里字压字）。 */
+  padding: calc(clamp(22px, 3.4vh, 40px) + 34px) clamp(24px, 5vw, 72px) clamp(14px, 2vh, 24px);
+}
+/* 统一外壳在这一页要和标题共用同一条左基线（标题的 padding 更大），
+   所以把外壳的左右内缩对齐过来，而不是改标题。 */
+.cp-chrome {
+  --chrome-inset: clamp(24px, 5vw, 72px);
+}
+/* 视频页同理：它的留白比外壳默认值大（原 .mjp__nav 的 clamp(24px,5vw,72px)） */
+.mjp-chrome {
+  --chrome-inset: clamp(24px, 5vw, 72px);
 }
 .cp-topbar-spacer {
   min-width: 0;
@@ -9149,7 +10344,7 @@ img {
   background: rgba(255, 255, 255, 0.4);
   text-decoration: none;
   color: inherit;
-  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.25s ease;
+  transition: transform 0.35s var(--ease-world), border-color 0.25s ease;
 }
 a.cp-card:hover {
   transform: translateY(-3px);
@@ -9232,7 +10427,7 @@ a.cp-card:hover {
 /* 窄屏：文案页把字号与留白收一档（视频页的窄屏规则在 .mjp 段里单独写） */
 @media (max-width: 768px) {
   .cp-topbar {
-    grid-template-columns: auto 1fr;
+    grid-template-columns: 1fr;
     gap: 12px;
   }
   .cp-topbar-spacer {
@@ -9312,14 +10507,14 @@ a.cp-card:hover {
   --wkp-body: 'Inter', 'Noto Sans SC', system-ui, sans-serif;
   --wkp-dim: rgba(58, 46, 35, 0.6);
   --wkp-line: rgba(58, 46, 35, 0.15);
-  --wkp-accent: #98cab8;
+  --wkp-accent: #b5e3d6;
   --wkp-accent-deep: #33604e;
 
   --di-paper: #ece7d4;
   --di-paper-2: #f2eee0;
   --di-ink: #3a2e23;
   --di-dim: rgba(58, 46, 35, 0.62);
-  --di-mint: #98cab8;
+  --di-mint: #b5e3d6;
   --di-blue: #6f86c9;
   --di-yellow: #d9c94a;
 }
@@ -9330,7 +10525,9 @@ a.cp-card:hover {
     radial-gradient(rgba(58, 46, 35, 0.045) 1px, transparent 1.3px) 0 0 / 22px 22px,
     linear-gradient(160deg, var(--di-paper-2), var(--di-paper));
   border: 1px solid rgba(58, 46, 35, 0.12);
-  /* 圆圈翻页键要半出页面外（.diary-nav 负偏移），本子不能裁 —— 裁切交给 .diary-flip */
+  /* 本子本身不裁（纸胶带 / 线圈 / 印章都有内容故意压到边外），
+     纸面内容的裁切交给 .diary-flip。
+     （2026-09-16 第三轮起 .diary-nav 已收进纸内，不再需要靠这里溢出。） */
   overflow: visible;
 }
 
@@ -9354,7 +10551,16 @@ a.cp-card:hover {
 .diary-wm.is-3 { left: 15%; bottom: 16%; transform: rotate(-4deg); }
 .diary-wm.is-4 { right: 11%; bottom: 6%; transform: rotate(7deg); font-size: 54px; }
 
-/* —— 翻页层 —— */
+/* —— 翻页层（2026-09-16 第三轮：真·卷曲）——
+   用户原话：「不喜欢实习日记的翻页方式，没有翻页时的弯曲感，现在是直直地翻过去的」。
+   根因：CSS 变换是**仿射**的 —— 平面矩形无论怎么 rotateY / skew，转完还是平面矩形。
+   所以真弯曲只能"切条 + 每条各自转"拼出来（和 .mjp 画廊用 canvas 逐切片重画同一思路，
+   只不过那边内容画在 canvas 上、这里内容是真 DOM，只能切元素）：
+     .diary-flip   透视 + 裁切（**所有带共用一台投影像机**，各带各投会把弧面投裂）
+     .diary-turn   整页绕左书脊**公转**（0 → ±108°）
+     .diary-band   ×12，每条竖带各自**自转**一小角，合起来是一段圆弧
+     .diary-sheet  内容（12 条带各渲染一份，靠 clip-path 只露出自己那一条）
+   几何与参数在 NotebookOverlay.tsx 的 applyCurl 里。 */
 .diary-flip {
   position: absolute;
   inset: 0;
@@ -9362,9 +10568,46 @@ a.cp-card:hover {
   /* 本子 overflow:visible（让圆圈翻页键伸出页面外），纸面内容的裁切在这里做 */
   overflow: hidden;
   border-radius: inherit;
+  /* ⚠️ perspective 必须挂在这一层、而不是每条带上：带子要共用同一个投影像机，
+     否则 12 条各投各的、每一小段的透视都不一致 —— 弧线会"裂开"。
+     1700px 是照日记本本体的尺度定的（本子约占视口 70% 宽）；
+     数值越小透视越猛、卷曲越夸张。 */
+  perspective: 1700px;
+  perspective-origin: 50% 50%;
 }
-.diary-flip.is-flipping {
+/* 公转层：整页绕左书脊转。卷曲是它内部每条带自己的事。 */
+.diary-turn {
+  position: absolute;
+  inset: 0;
+  transform-origin: left center;
+  /* 必须 preserve-3d：竖带的 translateZ / rotateY 要落在同一套 3D 空间里，
+     否则会被压平成 2D —— 弧面立刻消失（和 .mjp__wrapper 同一个坑）。 */
+  transform-style: preserve-3d;
+}
+/* 翻页期间才开 will-change：常驻会平白多出 12 个合成层，
+   而这一页不翻的时候是完全静态的。 */
+.diary-flip.is-flipping .diary-turn,
+.diary-flip.is-flipping .diary-band {
   will-change: transform;
+}
+/* 竖带：同一张纸的第 i 条。inset:0 = 满幅，靠 clip-path 只露出自己那一段，
+   再由 JS 每帧写 transform（绕自身中心转 + 送到圆弧上的位置）。 */
+.diary-band {
+  position: absolute;
+  inset: 0;
+  /* JS 每帧按该带的像素中心改写，这里只是兜底 */
+  transform-origin: 0 50%;
+}
+/* 卷曲高光：越靠近纸的自由边（被卷起来那端）越亮 —— 一道淡高光顺着弧面扫过去。
+   只靠剪影形状的话，静帧里"弧面"和"平移过的平面片"其实不太好分辨，
+   这层高光是让人一眼看出"纸是弯的"最省事的一笔。
+   --sheen 由 JS 每帧写（0..0.16），完全摊平时归 0。 */
+.diary-band-sheen {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  background: rgba(255, 255, 255, var(--sheen, 0));
 }
 .diary-sheet {
   position: absolute;
@@ -9376,7 +10619,8 @@ a.cp-card:hover {
   scrollbar-width: thin;
   scrollbar-color: rgba(58, 46, 35, 0.25) transparent;
 }
-/* 翻页时的动态阴影：翻出加深（贴书脊一侧最重）、翻入淡出 */
+/* 翻页时的动态阴影：翻出加深（贴书脊一侧最重）、翻入淡出。
+   留在屏幕空间（.diary-turn 之外）：它是一层遮罩，跟着纸转会变成"纸上跟着转的黑斑"。 */
 .diary-shade {
   position: absolute;
   inset: 0;
@@ -9439,7 +10683,7 @@ a.cp-card:hover {
   stroke-linecap: round;
   vector-effect: non-scaling-stroke;
   stroke-dasharray: 100;
-  animation: diary-draw 0.9s cubic-bezier(0.4, 0, 0.2, 1) 0.25s both;
+  animation: diary-draw 0.9s var(--ease-io) 0.25s both;
 }
 .diary-ring-stroke.is-2 {
   animation-delay: 0.55s;
@@ -9460,7 +10704,6 @@ a.cp-card:hover {
   font-family: var(--wkp-display);
   font-size: 13px;
   letter-spacing: 0.3em;
-  text-transform: uppercase;
   color: var(--di-dim);
 }
 
@@ -9596,7 +10839,7 @@ a.cp-card:hover {
   background: #fbf9f3;
   box-shadow: 0 10px 26px rgba(28, 19, 12, 0.22);
   transform: rotate(var(--rot, -2deg));
-  transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 0.25s var(--ease-world);
 }
 .diary-polaroid:hover {
   transform: rotate(0deg) translateY(-4px);
@@ -9671,7 +10914,8 @@ a.cp-card:hover {
 /* —— 左上进度胶囊（参考示例 3/5 Notes 的位置） —— */
 .diary-progress {
   position: absolute;
-  top: 26px;
+  /* 2026-09-16：从 26px 下移到 78px —— 顶上那条让给统一外壳的「RETURN TO STUDIO」 */
+  top: 78px;
   left: 30px;
   z-index: 3;
   display: inline-flex;
@@ -9719,12 +10963,17 @@ a.cp-card:hover {
 }
 
 /* —— 圆圈箭头翻页键（2026-09-16 用户指定形态）——
-   下一页 = 圆圈右箭头，钉在本子右下角、半出页面外（用户参考图的位置）；
-   上一页 = 圆圈左箭头，第 2 页起出现在左下角对称位置。
-   是 .diary-book 的直接子级，绝对定位相对本子本身。 */
+   下一页 = 圆圈右箭头，钉在本子右下角；上一页 = 圆圈左箭头，第 2 页起出现在左下角对称位置。
+   是 .diary-book 的直接子级，绝对定位相对本子本身。
+   2026-09-16 第三轮：位置从**半出页面外**（bottom/left/right 都是 -18px）
+   收进纸面内侧 20px —— 用户原话「翻页键往里收一下」「往上调调」。
+   原来的负偏移是照参考图钉在纸边上的，但压在本子上看着像飘在外面；
+   收进来之后它才像"贴在本子角落的一枚键"，也不会被 .diary-flip 的裁切切到。
+   ⚠️ 收进来后要确认它没压到正文：.diary-sheet 的底部内边距是 clamp(60px,9vh,88px)，
+      正好容得下 20 + 46 = 66px 的按钮，改这两处时一起看。 */
 .diary-nav {
   position: absolute;
-  bottom: -18px;
+  bottom: 20px;
   z-index: 4;
   width: 46px;
   height: 46px;
@@ -9733,8 +10982,8 @@ a.cp-card:hover {
   background: none;
   cursor: pointer;
 }
-.diary-nav.is-next { right: -18px; }
-.diary-nav.is-prev { left: -18px; }
+.diary-nav.is-next { right: 20px; }
+.diary-nav.is-prev { left: 20px; }
 .diary-nav-circle {
   display: flex;
   align-items: center;
@@ -9749,7 +10998,7 @@ a.cp-card:hover {
   line-height: 1;
   box-shadow: 0 4px 14px rgba(28, 19, 12, 0.18);
   transition:
-    transform 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.22s var(--ease-world),
     box-shadow 0.22s ease,
     background 0.22s ease;
 }

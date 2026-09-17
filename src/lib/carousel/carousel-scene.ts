@@ -1453,7 +1453,12 @@ export function createCarousel(
     if (e.defaultPrevented) return;
     const target = e.target as HTMLElement;
     if (target.closest('input,button,[role="dialog"]')) return;
-    if (e.key === 'Escape') reset();
+    /* ⚠️ 2026-09-16 第一档改造 ③ 移除了这里的 `if (e.key === 'Escape') reset();` ——
+       全站的 Esc 现在统一走 @/lib/escape-stack（window 捕获阶段 + 命中即停），
+       本模块这条 bubble 监听收不到 Esc 了（留着就是一条骗人的死代码）。
+       语义没丢：WorksCarousel 的 useEscape 在"聚焦中"那一分支调的就是 resetView()，
+       而 resetView() 内部正是 apiRef.current.reset()（= 本文件的 reset），
+       还顺带清了 focused / active —— 是原行为的超集。 */
     if (active >= 0 && e.key === 'ArrowRight')
       focus((active + 1) % SLOT_COUNT);
     if (active >= 0 && e.key === 'ArrowLeft')

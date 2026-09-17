@@ -24,6 +24,7 @@
  * 详见 ⑤⑥⑦ 处的注释。 */
 
 import gsap from 'gsap';
+import { EASE } from '@/lib/ease';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { SplitText } from 'gsap/SplitText';
 import Lenis from 'lenis';
@@ -104,13 +105,13 @@ export function initWkpMotion(scrollEl: HTMLElement): WkpMotion {
         ...(reduced ? {} : { yPercent: 22 }),
         opacity: 0,
         duration: reduced ? 0.35 : 0.9,
-        ease: reduced ? 'power1.out' : 'power4.out',
+        ease: EASE.world,
         delay: 0.15,
       });
     }
     const note = scrollEl.querySelector<HTMLElement>('.wkp-hero-note');
     if (note) {
-      gsap.from(note, { y: amp(14), opacity: 0, duration: reduced ? 0.3 : 0.7, ease: 'power3.out', delay: 0.6 });
+      gsap.from(note, { y: amp(14), opacity: 0, duration: reduced ? 0.3 : 0.7, ease: EASE.world, delay: 0.6 });
     }
 
     /* ③ 宣言带逐字 scrub：字随滚动一颗颗点亮。

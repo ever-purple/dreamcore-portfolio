@@ -46,7 +46,7 @@ export const COPY_PROJECTS: CopyProject[] = [
 
 /** 页面标题 / 副标 */
 export const COPY_PAGE_COPY = {
-  title: 'COPYWRITING & AI',
+  title: 'Copywriting & AI',
   subtitle: '',
   empty: '内容整理中 —— 这里是文案与 AI 项目。',
 };

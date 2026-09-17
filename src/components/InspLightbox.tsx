@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { useEscape } from '@/lib/escape-stack';
 
 export type LightboxItem = {
   src: string;
@@ -23,24 +24,22 @@ type Props = {
  *    挂到 body 就完全绕开这两个坑。z-index 取 9990 —— 刻意压在 9999 的胶片颗粒层下面，
  *    这样颗粒依然盖在预览图上，和站内其它浮层的观感一致。
  *
- * 2. **Esc 必须用 capture 抢在 AboutOverlay 前面**。AboutOverlay 在 window 上挂了
- *    bubble 阶段的 Esc → onClose()，如果这里也用默认阶段，按一下 Esc 会把预览和整个
- *    About 页一起关掉。所以这里用 capture 监听 + stopPropagation 把事件吃掉。
+ * 2. **Esc 走全站统一的 Esc 栈**（2026-09-16 第一档改造 ③）。旧写法是自己用
+ *    capture 阶段 + stopPropagation 抢在 AboutOverlay 前面 —— 因为那时所有浮层
+ *    都是在 window 上各挂各的 bubble 监听，"谁先跑"得靠自己造。现在栈本身就保证
+ *    一次按键只命中栈顶（预览是后开的，天然在 About 之上），这段 hack 可以退休了。
  */
 export function InspLightbox({ item, onClose }: Props) {
   const closeRef = useRef<HTMLButtonElement>(null);
 
+  /* Esc = 关预览（只在预览真的开着时入栈） */
+  useEscape(onClose, item !== null);
+
+  /* 打开后把焦点挪进浮层（键盘可达性） */
   useEffect(() => {
     if (!item) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      e.stopPropagation();
-      onClose();
-    };
-    window.addEventListener('keydown', onKey, true);
     closeRef.current?.focus();
-    return () => window.removeEventListener('keydown', onKey, true);
-  }, [item, onClose]);
+  }, [item]);
 
   if (!item) return null;
 

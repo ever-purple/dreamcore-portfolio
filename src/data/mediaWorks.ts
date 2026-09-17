@@ -141,7 +141,7 @@ export const MEDIA_WORKS: MediaWork[] = [
 /** 页面标题 / 副标（列表页顶部大字） */
 export const MEDIA_PAGE_COPY = {
   /** 主标题 */
-  title: 'VIDEOS & MUSIC',
+  title: 'Videos & Music',
   /** 背景大字（没有频道时的兜底；有频道走 CHANNEL_WORD）。
       必须短 —— 21vw 的字号下，超过 8 个字符就会被视口两边切掉半个字，很脏。 */
   word: 'videos',

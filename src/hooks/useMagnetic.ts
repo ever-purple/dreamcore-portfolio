@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { EASE } from '@/lib/ease';
 import gsap from 'gsap';
 
 interface MagneticOptions {
@@ -35,15 +36,15 @@ export function useMagnetic<T extends HTMLElement = HTMLButtonElement>(
           x: dx * strength,
           y: dy * strength,
           duration: durationIn,
-          ease: 'power2.out',
+          ease: EASE.world,
           overwrite: 'auto',
         });
       } else {
-        gsap.to(el, { x: 0, y: 0, duration: durationOut, ease: 'power2.out', overwrite: 'auto' });
+        gsap.to(el, { x: 0, y: 0, duration: durationOut, ease: EASE.world, overwrite: 'auto' });
       }
     };
     const onLeave = () =>
-      gsap.to(el, { x: 0, y: 0, duration: durationOut, ease: 'power2.out', overwrite: 'auto' });
+      gsap.to(el, { x: 0, y: 0, duration: durationOut, ease: EASE.world, overwrite: 'auto' });
 
     el.addEventListener('mousemove', onMove);
     el.addEventListener('mouseleave', onLeave);

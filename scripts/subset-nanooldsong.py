@@ -75,8 +75,40 @@ add_file(os.path.join(ROOT, "src/data/diary.ts"), [
     r"chips:\s*\[([^\]]*)\]",
 ])
 
-# 组件里写死的 display 文本（新加写死标题记得在这里补）
-chars.update("三步 · 从文化符号到情绪价值")
+# 组件里写死的 display 文本。
+#
+# ⚠️ 这里是**唯一需要手工维护**的地方 —— data/*.ts 是自动扫的，但 JSX 里写死的
+#    display 文案（标题、标签、按钮）扫不到，漏了就会静默回退 Noto Serif
+#    （同一行里两个宋体混着，肉眼能看出来但很容易归因错）。
+#    新加写死的 display 标题，记得在这里补一句。
+#
+# 为什么不做"全站 src/ 扫 CJK"：实测那样会收进 1500+ 字（约 700KB+），
+#    而 body 正文走的是 Noto Sans SC、About/Green Os 走 --ab-* 系列字体，
+#    跟 NanoOldSongA 无关。所以宁可显式登记，也别把子集灌成第二个全字库。
+HARDCODED_DISPLAY = [
+    # 策划案内页的固定小节标题
+    "三步 · 从文化符号到情绪价值",
+    # 全屏菜单（StudioMenu.tsx 的 MENU_ITEMS.zh）——
+    # 2026-09-16 用户要求"字体统一"后，菜单中文从「PF频凡胡涂体」换成 NanoOldSongA，
+    # 其中 于/我/联/系/式/简/历 原本不在子集里（实测确认），不补就会一半新宋一半旧宋。
+    "关于我",
+    "策划项目",
+    "AI及视频",
+    "联系方式",
+    "简历",
+    # 工作室物件的中文批注（与 ObjectZone / studio.ts 的 name 对应）
+    "个人信息",
+    "实习日记",
+    "创作档案",
+    # 木马（策划档案）里的空槽位占位文案 —— 两个组件各写死一句：
+    #   WorksWheel.tsx 的 '待提交项目'（轮盘条目）、
+    #   WorkDetail.tsx 的 '空槽位 · 等待提交'（详情面板标题）。
+    # 2026-09-16 把 .ww-title / .works-panel-title 统一到 NanoOldSongA 后，
+    # 这两句必须收进来，否则"空/槽/位/等"会静默回退 Noto Serif（一行两种宋体）。
+    "待提交项目",
+    "空槽位 · 等待提交",
+]
+chars.update("".join(HARDCODED_DISPLAY))
 
 # 数字 / 常用标点 / 英文字母
 chars.update("0123456789")

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { ProjectState, ProjectSection } from '@/data/works';
 import { coverAr } from '@/lib/cover-ar';
+import { useEscape } from '@/lib/escape-stack';
 
 export type ProjectSectionDraft = ProjectSection;
 
@@ -97,11 +98,6 @@ export function WorkDetail({ project, forceEdit, canEdit = false, totalSlots = 0
   useEffect(() => {
     if (!project) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        onClose();
-        return;
-      }
       // ← / → 切换策划案；编辑态下避免和文字光标抢键，仅在未聚焦输入元素时生效
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
         if (!onSwitch || !totalSlots) return;
@@ -118,7 +114,11 @@ export function WorkDetail({ project, forceEdit, canEdit = false, totalSlots = 0
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [project, onClose, onSwitch, totalSlots]);
+  }, [project, onSwitch, totalSlots]);
+
+  /* Esc = 关掉这份表单。走全站统一的 Esc 栈（@/lib/escape-stack）：
+     表单常盖在木马 / 详情页之上，栈保证一次按键只关最上面那层。 */
+  useEscape(onClose, project !== null);
 
   // 高光图预览地址（编辑态选了新图时）：必须在 early return 之前声明，否则
   // project 为 null 的首帧会少调用一个 hook，触发 React #310。

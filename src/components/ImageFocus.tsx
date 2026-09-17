@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useImperativeHandle, useRef, type Ref } from 'react';
+import { EASE } from '@/lib/ease';
 import gsap from 'gsap';
 
 export type ImageFocusHandle = {
@@ -73,7 +74,7 @@ export function ImageFocus({ src, caption, origin, onClose, ref }: Props) {
       gsap.set(root, { autoAlpha: 0 });
       const tl = gsap.timeline();
       tlRef.current = tl;
-      tl.to(root, { autoAlpha: 1, duration: 0.26, ease: 'power2.out' }, 0);
+      tl.to(root, { autoAlpha: 1, duration: 0.26, ease: EASE.world }, 0);
 
       if (from && from.width > 1 && to.width > 1) {
         /* FLIP：把图挪到缩略图的中心、缩到缩略图的宽度，再回到自身的位置与 scale 1。
@@ -84,10 +85,10 @@ export function ImageFocus({ src, caption, origin, onClose, ref }: Props) {
           y: from.top + from.height / 2 - (to.top + to.height / 2),
           scale: s,
         });
-        tl.to(img, { x: 0, y: 0, scale: 1, duration: 0.54, ease: 'power3.out' }, 0);
+        tl.to(img, { x: 0, y: 0, scale: 1, duration: 0.54, ease: EASE.world }, 0);
       } else {
         gsap.set(img, { scale: 0.94 });
-        tl.to(img, { scale: 1, duration: 0.46, ease: 'power3.out' }, 0);
+        tl.to(img, { scale: 1, duration: 0.46, ease: EASE.world }, 0);
       }
     });
 
@@ -113,7 +114,7 @@ export function ImageFocus({ src, caption, origin, onClose, ref }: Props) {
     }
 
     const tl = gsap.timeline({ onComplete: onClose });
-    tl.to(root, { autoAlpha: 0, duration: 0.34, ease: 'power2.in' }, 0);
+    tl.to(root, { autoAlpha: 0, duration: 0.34, ease: EASE.in }, 0);
 
     const from = origin?.isConnected ? origin.getBoundingClientRect() : null;
     const now = img.getBoundingClientRect();   // 当前实际位置（可能还在打开动画中途）
@@ -127,7 +128,7 @@ export function ImageFocus({ src, caption, origin, onClose, ref }: Props) {
           scale: s,
           transformOrigin: '50% 50%',
           duration: 0.46,
-          ease: 'power3.inOut',
+          ease: EASE.io,
         },
         0,
       );

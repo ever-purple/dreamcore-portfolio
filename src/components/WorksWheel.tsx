@@ -7,6 +7,7 @@ import {
   type Ref,
 } from 'react';
 import gsap from 'gsap';
+import { EASE } from '@/lib/ease';
 import type { ProjectState } from '@/data/works';
 import { coverAr } from '@/lib/cover-ar';
 
@@ -71,7 +72,7 @@ const GAUGE_ROW = 30;
 const WHEEL_THRESHOLD = 50; // 累计多少 deltaY 算"滚了一下"
 const STEP_LOCK = 240; // 两次步进之间的最小间隔（ms）
 const STEP_DURATION = 0.5; // 单步补间时长（s）
-const STEP_EASE = 'power3.out';
+const STEP_EASE = EASE.world;
 const DRAG_PER_ITEM = 70; // 拖拽多少 px 换一个项目
 
 /**

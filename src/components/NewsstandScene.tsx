@@ -4,6 +4,8 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { getRoomEnv } from '@/lib/room-env';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { BOOK_ROWS, createBook } from '@/lib/newsstandBooks';
+import { StudioChrome } from '@/components/StudioChrome';
+import { useEscape } from '@/lib/escape-stack';
 
 type Props = {
   open: boolean;
@@ -932,18 +934,11 @@ export default function NewsstandScene({ open, covered = false, onClose, onPick 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted]);
 
-  /* Esc 关闭 */
-  useEffect(() => {
-    if (!mounted) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      // 被落地页盖住时 Esc 归上层落地页管（否则一按把书架也关了，跳过「Back 回书架」）
-      if (coveredRef.current) return;
-      onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [mounted, onClose]);
+  /* Esc 关闭 —— 走全站统一的 Esc 栈（@/lib/escape-stack）。
+     被落地页盖住时**让出**（active=false）：这时 Esc 该归上面那层落地页管，
+     否则一按会把书架和落地页一起关掉，跳过「Back 回书架」这一层。
+     （改造前是自己在监听里判断 coveredRef —— 那是"谁后挂谁先跑"的产物。） */
+  useEscape(onClose, mounted && !covered);
 
   if (!mounted) return null;
 
@@ -961,13 +956,11 @@ export default function NewsstandScene({ open, covered = false, onClose, onPick 
 
       <div className="newsstand-canvas-host" ref={hostRef} />
 
-      {/* 关闭：白圈 ×，置于页面上部正中。
-          会与顶部的「作者 / 访客」切换徽标重叠 —— 收尾时那个徽标会整个移除，重叠无妨。 */}
-      <button type="button" className="newsstand-close-circle" onClick={onClose} aria-label="关闭创作档案">
-        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path d="M6 6 L18 18 M18 6 L6 18" />
-        </svg>
-      </button>
+      {/* 统一外壳（第一档改造 ①）：左上「RETURN TO STUDIO」+ 右上「MENU」。
+          原来这里是**正中**一颗白圈 ✕ —— 位置和别的板块都不一样，
+          是"每页像两个站"里最显眼的一处。现在归到左上角，与工作室/纸页/木马同一条基线。
+          tone=light：这层是深色 3D 场景，奶白字 + 投影才读得清。 */}
+      <StudioChrome label="Return to Studio" onBack={onClose} tone="light" />
 
       {loading && !failed ? (
         <div className="newsstand-loading" role="status">

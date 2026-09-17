@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useEscape } from '@/lib/escape-stack';
 
 /* ------------------------------------------------------------------ */
 /* CRT 物理质感遮罩                                                     */
@@ -247,19 +248,10 @@ export function GreenOsBar({ windowTitle, onShutDown, items = [], activeId, onNa
     return () => window.clearInterval(t);
   }, []);
 
-  // 开始菜单开着时按 ESC 收起来
-  useEffect(() => {
-    if (!menuOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        // 只收菜单，不往下传给 AboutOverlay 的"ESC 关整页"
-        e.stopPropagation();
-        setMenuOpen(false);
-      }
-    };
-    window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
-  }, [menuOpen]);
+  // 开始菜单开着时按 ESC 收起来。走全站统一的 Esc 栈 ——
+  // 菜单开得比 About 页晚，天然在栈顶，于是"只收菜单、不关整页"这件事
+  // 由栈保证，不再需要手动 stopPropagation 抢事件。
+  useEscape(() => setMenuOpen(false), menuOpen);
 
   return (
     <>
@@ -303,7 +295,7 @@ export function GreenOsBar({ windowTitle, onShutDown, items = [], activeId, onNa
             >
               <span className="green-menu-mark">⏻</span>
               <span className="green-menu-label">关机</span>
-              <span className="green-menu-en">exit</span>
+              <span className="green-menu-en">EXIT</span>
             </button>
           </div>
         </>

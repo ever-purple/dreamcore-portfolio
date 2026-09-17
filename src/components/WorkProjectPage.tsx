@@ -11,13 +11,16 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import gsap from 'gsap';
+import { EASE } from '@/lib/ease';
 import type { ProjectState } from '@/data/works';
 import { coverAr } from '@/lib/cover-ar';
 import { WORK_PAGES } from '@/data/work-pages';
 import { CursorLabel } from '@/components/CursorLabel';
 import { ImageFocus, type ImageFocusHandle } from '@/components/ImageFocus';
+import { PageDecor } from '@/components/PageDecor';
 import { initWkpMotion, type WkpMotion } from '@/components/wkp-motion';
 import { prefersReduced } from '@/lib/motion-pref';
+import { useEscape } from '@/lib/escape-stack';
 
 type Props = {
   /** 当前展示的项目 */
@@ -222,7 +225,7 @@ export function WorkProjectPage({
         height: from.height,
         borderRadius: 8,
         duration: 0.46,
-        ease: 'power3.inOut',
+        ease: EASE.in,
       },
       0,
     );
@@ -255,19 +258,16 @@ export function WorkProjectPage({
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  /* Esc：先关大图，再关整页（捕获阶段 + stopPropagation，否则一下把木马也关了） */
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      e.stopPropagation();
-      /* 放大层开着 → 交给它自己的关闭动画（先缩回缩略图再卸载）。
-         直接 setFocus(null) 会让图瞬间消失，FLIP 的关闭动画就白做了。 */
-      if (focusRef.current) focusHandleRef.current?.close();
-      else requestClose();
-    };
-    window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
-  }, [requestClose]);
+  /* Esc：先关大图，再关整页。
+     走全站统一的 Esc 栈（@/lib/escape-stack）—— 以前是"捕获阶段 + stopPropagation"
+     自己造优先级（注释原话：「否则一下把木马也关了」），现在栈本身就保证
+     一次按键只命中栈顶那一个处理器。 */
+  useEscape(() => {
+    /* 放大层开着 → 交给它自己的关闭动画（先缩回缩略图再卸载）。
+       直接 setFocus(null) 会让图瞬间消失，FLIP 的关闭动画就白做了。 */
+    if (focusRef.current) focusHandleRef.current?.close();
+    else requestClose();
+  });
 
   /* 滚动动效：Lenis 惯性阻尼 + ScrollTrigger 视差/缩放/逐字（见 wkp-motion.ts）。
      挂在 project.slot 上：换项目时 inner 重建，整套触发器跟着重建。
@@ -350,7 +350,7 @@ export function WorkProjectPage({
             height: to.height,
             borderRadius: 0,
             duration: 0.62,
-            ease: 'power3.inOut',
+            ease: EASE.world,
           },
           0,
         );
@@ -545,6 +545,12 @@ export function WorkProjectPage({
       data-cursor-tone="dark"
       aria-label={`项目详情：${project.code} ${project.title}`}
     >
+      {/* ---- 背景装饰（2026-09-17 / 用户第 1 条"美化子页面"）----
+          左栏（深棕实底）不铺装饰：.pdecor--wkp 的 --pdecor-inset-left 把可用范围
+          缩到右栏纸面（窄屏左栏翻到顶部时那条会归零，见 index.css）。
+          下面那句字是**项目编号** —— 每个案子自己的花体签名。 */}
+      <PageDecor variant="wkp" word={project.code.replace('_', ' ')} />
+
       {/* ==================== 左栏：固定不滚动 ==================== */}
       {/* 整块都是「返回」热区：光标动作名 Back + 点空白处返回（见 onRailClick 注释）。
           目录项 Jump / Back 按钮自带 data-cursor，就近覆盖，不受影响。 */}

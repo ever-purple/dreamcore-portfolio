@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { EASE } from '@/lib/ease';
 import gsap from 'gsap';
 
 interface LoadingScreenProps {
@@ -58,7 +59,7 @@ export function LoadingScreen({ ready, onEnter }: LoadingScreenProps) {
     const tween = gsap.to(counterRef.current, {
       scale: 1.06,
       duration: 2.4,
-      ease: 'sine.inOut',
+      ease: EASE.io,
       yoyo: true,
       repeat: -1,
       transformOrigin: 'center',
@@ -74,7 +75,7 @@ export function LoadingScreen({ ready, onEnter }: LoadingScreenProps) {
       filter: 'blur(12px)',
       opacity: 0,
       duration: 0.9,
-      ease: 'power2.inOut',
+      ease: EASE.io,
     });
   }, [leaving]);
 

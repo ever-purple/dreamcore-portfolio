@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { EASE } from '@/lib/ease';
 import gsap from 'gsap';
 import { SplitText } from 'gsap/SplitText';
 import { CursorLabel } from '@/components/CursorLabel';
+import { PageDecor } from '@/components/PageDecor';
+import { StudioChrome } from '@/components/StudioChrome';
+import { useEscape } from '@/lib/escape-stack';
 import {
   CHANNEL_LABEL,
   CHANNEL_WORD,
@@ -553,21 +557,24 @@ export function MediaGalleryPage({ channel, onClose }: Props) {
     go(dy > 0 ? 1 : -1);
   };
 
-  /* ---- 键盘：←/→ 切换，Esc 退出播放（没在播就关整页） ---- */
+  /* ---- Esc：正在播就先退出播放，没在播就退回书架 ----
+     走全站统一的 Esc 栈（@/lib/escape-stack）：这一页盖在书架之上，
+     只有"栈"能保证一次按键只关最上面那层（旧版两页会一起关）。 */
+  useEscape(() => {
+    if (playing) setPlaying(false);
+    else onClose();
+  });
+
+  /* ---- 键盘：←/→ 切换（非播放态）。这不是 Esc，照旧挂在普通监听上。 ---- */
   useEffect(() => {
+    if (playing) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        if (playing) setPlaying(false);
-        else onClose();
-        return;
-      }
-      if (playing) return;
       if (e.key === 'ArrowRight' || e.key === 'ArrowDown') go(1);
       if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') go(-1);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [go, onClose, playing]);
+  }, [go, playing]);
 
   const openAt = useCallback((i: number, el: HTMLElement) => {
     flipRect.current = el.getBoundingClientRect();
@@ -594,30 +601,47 @@ export function MediaGalleryPage({ channel, onClose }: Props) {
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
     >
-      {/* ---- 顶栏（播放态淡出，复刻 mattjinn 的 .navigation 行为） ---- */}
-      <header className="mjp__nav">
-        <button
-          type="button"
-          className="mjp__back"
-          onClick={onClose}
-          data-cursor="Back"
-          data-cursor-tone="dark"
-        >
-          ← Back
-        </button>
-        {/* 顶栏标题 = 当前频道名（从哪台设备进来的）；没频道时用默认标题。
-            放**右上角**（参考站也是右上角挂 Menu）——
-            正中间被站内「作者模式」角标占着，放中间会被压住（2026-09-15 实测）。 */}
-        <span className="mjp__nav-title">
-          {channel ? CHANNEL_LABEL[channel] : MEDIA_PAGE_COPY.title}
-        </span>
-      </header>
+      {/* ---- 背景装饰（2026-09-17 / 用户第 1 条"美化子页面"）----
+          点阵花朵 / 星 / 花体字母 / 散点，全部 z-index:-1 → 压在纸色之上、内容之下，
+          **物理上不可能盖住卡片与标题**（见 index.css 的 .pdecor 段）。
+          这页卡片在 44% 高度横贯整屏，所以构图刻意只走"上带 + 下带"两条饰带。 */}
+      <PageDecor variant="mjp" />
+
+      {/* ---- 统一外壳（第一档改造 ①）----
+          原来是 [← Back] …… [频道名] 两栏。现在左上那枚返回换成全站通用的
+          「返回书架」（位置/字族/悬停手感和工作室那枚一模一样），频道名进外壳右侧、
+          紧挨着 MENU —— 于是整条顶栏读起来和工作室完全同一套。
+          频道名原本挂在右上角（参考站也是右上挂 Menu），挪进外壳后位置基本不变
+          （正中间被站内「作者模式」角标占着，不能放中）。
+          播放态整块淡出：原来 .navigation 就是这么处理的，别挡着画面。 */}
+      <StudioChrome
+        label="Return to Archive"
+        onBack={onClose}
+        /* ⚠️ 2026-09-16 第四轮（现行 = 整页白底，见 index.css 的 .mjp）：
+           本页底色走了 白 → 深巧克力 → 薄荷 → 白 四轮，tone **每轮都要跟着翻**。
+           tone 的语义是"为哪种底设计"：
+             'light' = 深底 → 奶白字 + 投影；'dark' = 浅底 → 墨色字、去投影。
+           现在是 #ffffff 白底 → 仍是 'dark'。
+           ⚠️ 这一格**从薄荷轮起就没动过**（薄荷与白都是浅底，同一套墨色字照样立得住），
+              白底上唯一的差别是"墨字压白"比"墨字压薄荷"对比更强 —— 只会更清楚，不用调。
+           若改成 'light'，"Return to Archive" / Menu 会变成奶白字 + 黑影，白底上直接消失。 */
+        tone="dark"
+        className={`mjp-chrome${playing ? ' is-faded' : ''}`}
+        extra={
+          <span className="mjp__nav-title">
+            {channel ? CHANNEL_LABEL[channel] : MEDIA_PAGE_COPY.title}
+          </span>
+        }
+      />
 
       {total === 0 ? (
         <p className="mjp__empty">{MEDIA_PAGE_COPY.empty}</p>
       ) : (
         <>
-          <div className="mjp__viewport" ref={vpRef} data-cursor="" data-cursor-tone="dark">
+          {/* data-cursor-tone="light"：视口底 = 白（浅底）→ 光标标签走墨色。
+              从第三轮（薄荷）沿用到第四轮（白），都是浅底 → 不用改；
+              别改成 "dark"（那是深底用的白色标签，白底上直接看不见）。 */}
+          <div className="mjp__viewport" ref={vpRef} data-cursor="" data-cursor-tone="light">
             {/* ---- 背景大字层（多层视差里的最慢一层）----
                 参考站那套「music / videos / shows」的斜体衬线大字，这里当作背景字：
                 随 --cur 以 **0.05×** 的速度横移（卡片是 1×），看着就是被卡片"掠过"的远景。 */}
@@ -722,7 +746,7 @@ function VideoInfo({ work, reduced }: { work: MediaWork; reduced: boolean }) {
         rotateX: 0,
         duration: 0.72,
         stagger: 0.018,
-        ease: 'power3.out',
+        ease: EASE.world,
       });
     } catch {
       gsap.set(el, { autoAlpha: 1 }); // SplitText 不可用就直接显示
@@ -796,7 +820,8 @@ function ReelItem({
         className="mjp__media-btn"
         onClick={() => onOpen(index, btnRef.current!)}
         data-cursor="Play"
-        data-cursor-tone="dark"
+        /* 卡片浮在白底上 → 浅底 → 墨色光标标签（同 .mjp__viewport） */
+        data-cursor-tone="light"
         aria-label={`播放：${work.title}`}
       >
         {/* 可见的那一层：每帧按圆柱面投影重画的画布 ——
@@ -862,7 +887,7 @@ function Player({
       height: window.innerHeight,
       borderRadius: 0,
       duration: 0.85,
-      ease: 'expo.out',
+      ease: EASE.world,
       onComplete: () =>
         gsap.set(el, { clearProps: 'position,left,top,width,height,borderRadius,overflow' }),
     });
@@ -883,7 +908,7 @@ function Player({
       height: flipFrom.height,
       borderRadius: 12,
       duration: 0.5,
-      ease: 'power3.inOut',
+      ease: EASE.in,
       onComplete: onClose,
     });
   }, [flipFrom, onClose, reduced]);

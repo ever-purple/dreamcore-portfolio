@@ -12,6 +12,7 @@ import { AboutVisitor } from '@/components/AboutVisitor';
 import { GreenOsBar, GreenOsBoot, GreenOsTitle } from '@/components/GreenOs';
 import { PlayerProvider } from '@/context/PlayerContext';
 import { aboutNav } from '@/data/about';
+import { useEscape } from '@/lib/escape-stack';
 
 type Props = {
   open: boolean;
@@ -98,14 +99,9 @@ export function AboutOverlay({ open, onClose, onHoverChange, greenOs = false, bo
     };
   }, [mounted]);
 
-  useEffect(() => {
-    if (!mounted) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [mounted, onClose]);
+  /* Esc = 关整页。走全站统一的 Esc 栈（@/lib/escape-stack）——
+     About 底下可能还压着大图预览 / 开始菜单，栈保证一次按键只关最上面那层。 */
+  useEscape(onClose, mounted);
 
   const handleCloseHover = useCallback(
     (hovering: boolean) => onHoverChange?.(hovering),
@@ -182,7 +178,7 @@ export function AboutOverlay({ open, onClose, onHoverChange, greenOs = false, bo
               {/* webmaster 不再放照片，改放"代码小人"（ascii me），保持原比例不压缩 */}
               <AsciiPortrait />
               <figcaption>
-                <span className="ab-blink">☆</span> webmaster <span className="ab-blink ab-blink-late">☆</span>
+                <span className="ab-blink">☆</span> WEBMASTER <span className="ab-blink ab-blink-late">☆</span>
               </figcaption>
               <Sparkles count={5} seed={13} />
             </figure>

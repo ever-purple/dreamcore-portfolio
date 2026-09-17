@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { EASE } from '@/lib/ease';
 import gsap from 'gsap';
 
 /** 哪些动作名吃磁吸。只做这三个 —— Jump / Edit / Next / Prev 保持纯滞后跟随，免得满屏都在吸。 */
@@ -53,8 +54,8 @@ export function CursorLabel() {
     let lastTy = NaN;
 
     /* 弹簧滞后：x 比 y 慢一点（0.5 / 0.42），对角线移动时会有很轻的弧线感 */
-    const toX = gsap.quickTo(root, 'x', { duration: 0.5, ease: 'power3' });
-    const toY = gsap.quickTo(root, 'y', { duration: 0.42, ease: 'power3' });
+    const toX = gsap.quickTo(root, 'x', { duration: 0.5, ease: EASE.world });
+    const toY = gsap.quickTo(root, 'y', { duration: 0.42, ease: EASE.world });
 
     /** 目标点没变就不重复下发（见 lastTx 的注释） */
     const push = (tx: number, ty: number) => {

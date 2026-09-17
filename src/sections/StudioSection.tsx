@@ -1,9 +1,9 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, useCallback, useEffect, useMemo, useRef, useState, Suspense } from 'react';
 import { AboutOverlay } from '@/components/AboutOverlay';
 import { CrtOverlay } from '@/components/GreenOs';
-import { HandFrame } from '@/components/HandFrame';
 import { ObjectZone } from '@/components/ObjectZone';
 import { NotebookOverlay } from '@/components/NotebookOverlay';
+import { StudioChrome, StudioNavProvider, type StudioNav } from '@/components/StudioChrome';
 
 /**
  * 木马策划案：Three.js 场景很重，必须懒加载成独立分包。
@@ -22,10 +22,21 @@ const MediaGalleryPage = lazy(() => import('@/components/MediaGalleryPage'));
 const CopyProjectPage = lazy(() => import('@/components/CopyProjectPage'));
 import { StudioMenu } from '@/components/StudioMenu';
 import { StudioLensBackground } from '@/components/StudioLensBackground';
+import { StudioContactPanel } from '@/components/StudioContactPanel';
+import { LisaHud } from '@/components/LisaHud';
 import { useMagnetic } from '@/hooks/useMagnetic';
+import { useRoomParallax } from '@/lib/useRoomParallax';
 import { studioObjects, type StudioObject } from '@/data/studio';
 import { CHANNEL_BY_DEVICE, type MediaChannel } from '@/data/mediaWorks';
 import { playCrtOff, playCrtOn } from '@/lib/crtAudio';
+import { createStudioMusic, type StudioMusic } from '@/lib/studioMusic';
+
+/**
+ * 盖上工作室的那一层，该让音乐去哪一档（见 src/lib/studioMusic.ts 文件头）。
+ *   away —— 慢慢远去：3.4s 淡到听不见（任何子页面）
+ *   off  —— 立刻停：视频页自己会出声，背景音乐必须让位
+ */
+type MusicCue = 'away' | 'off';
 
 type Props = {
   onSelectObject?: (object: StudioObject) => void;
@@ -54,7 +65,37 @@ const T = {
 const CRT_POINT = studioObjects.find((o) => o.id === 'computer')!.point;
 
 /**
- * Studio 主空间：静态底图（无缝循环视频平铺），无视差。
+ * 温和对焦时间轴（2026-09-16 第一档改造 ②）：木马 / 报刊亭 / 线圈本共用。
+ * 与上面那套 extreme dive 是**两条互斥**的时间轴，不会同时跑。
+ *   · 只有电脑有"扎进显像管"这套极端转场（scale 16 + 过曝白光），因为它的语义
+ *     真的是"钻进这台机器里"；另外三个物件是"推近看看"，用温和版。
+ */
+const FOCUS = {
+  /** 镜头推近时长（= CSS .studio-cam.is-focus-in 的 0.6s） */
+  in: 600,
+  /**
+   * 推近进行到这个时刻才让浮层开始长出来 —— 这 240ms 是**刻意留的**：
+   * 先让眼睛看到"镜头在朝物件走"，内容才是"从物件上长出来的"，
+   * 而不是浮层先弹出来、镜头在背后白动。
+   */
+  contentAt: 240,
+  /** 反向拉回时长（= .is-focus-out 的 0.6s） */
+  out: 600,
+};
+
+/** 各物件的画面坐标（视口百分比）—— 四个物件都拿它当镜头推进的原点 */
+const POINT_BY_ID = Object.fromEntries(studioObjects.map((o) => [o.id, o.point])) as Record<
+  StudioObject['id'],
+  { x: number; y: number }
+>;
+
+/**
+ * Studio 主空间：循环视频铺满全屏的房间。
+ * - **鼠标景深视差**（2026-09-16 第六轮）：鼠标一动，画面板 / 暗角 / 脉冲点三层
+ *   各按不同倍率位移 —— 见 src/lib/useRoomParallax.ts 与 index.css 的同名段。
+ *   ⚠️ 这条注释原来写的是「无视差」，第六轮起不再成立。
+ * - **向下滚动露出联系方式**（同轮）：滚轮攒进度、巧克力纸从下方带视差推上来 ——
+ *   见 src/components/StudioContactPanel.tsx。
  * - 自定义奶白手型光标跟随鼠标
  * - 四个隐形感应区：鼠标靠近物件时弹出点击按钮（按钮 = 物体名，tooltip = 板块）
  * - 点击笔记本：原地打开线圈本弹层（纸张右侧滑入 + 背景模糊）
@@ -62,7 +103,12 @@ const CRT_POINT = studioObjects.find((o) => o.id === 'computer')!.point;
  */
 export function StudioSection({ onSelectObject, onBack }: Props) {
   const [hoveredId, setHoveredId] = useState<StudioObject['id'] | null>(null);
-  const [notebookOpen, setNotebookOpen] = useState(false);
+  /* ?diary=1 可直接预览实习日记浮层（与 ?works=1 / ?media=1 / ?newsstand=1 同一套
+     调试参数约定）。加它的直接原因：日记挂在一个 3D 笔记本物件上，
+     想反复看翻页动效就得先等场景加载、再把镜头转到那个角度去点它 —— 太慢了。 */
+  const [notebookOpen, setNotebookOpen] = useState(() => {
+    return new URLSearchParams(window.location.search).has('diary');
+  });
   const [menuOpen, setMenuOpen] = useState(false);
   // ?works=1 可直接预览木马策划案浮层（与 ?newsstand=1 / ?about=1 同一套调试参数约定）
   const [worksOpen, setWorksOpen] = useState(() => {
@@ -104,6 +150,12 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
   });
   /** 镜头推进状态：idle 静止 / in 扎进屏幕 / out 拉回来 */
   const [dive, setDive] = useState<'idle' | 'in' | 'out'>('idle');
+  /**
+   * 温和对焦（第一档改造 ②）：{ x, y } = 目标物件在画面里的坐标，dir = 推近 / 拉回。
+   * 同时最多只有一个 —— 浮层都是全屏的，不存在"同时盯着两个物件"。
+   * 与 dive 互斥：电脑走 dive（扎进显像管），另外三个物件走 focus（推近看看）。
+   */
+  const [focus, setFocus] = useState<{ x: number; y: number; dir: 'in' | 'out' } | null>(null);
   /** 过曝闪光 */
   const [crtFlash, setCrtFlash] = useState(false);
   /** CRT 质感层是否激活（?greenos=1 预览时直接点亮，否则预览里没有扫描线/暗角） */
@@ -127,16 +179,42 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
     const params = new URLSearchParams(window.location.search);
     return params.has('direct');
   });
-  const musicRef = useRef<HTMLAudioElement | null>(null);
-  const musicStoppedRef = useRef(false);
+  const musicRef = useRef<StudioMusic | null>(null);
   const timersRef = useRef<number[]>([]);
+  /**
+   * 对焦专用的定时器组。和 timersRef 分开，是因为 `closeCrt()` 会**一次清空**
+   * timersRef（它要撤掉面试官模式那个"460ms 后收房间"的尾巴），
+   * 不该顺手把对焦的收尾也一起毙掉 —— 那会让镜头永久停在 1.9 倍。
+   */
+  const focusTimersRef = useRef<number[]>([]);
 
   // 顶栏按钮磁吸：鼠标靠近时被轻轻吸向指针
   const magneticBackRef = useMagnetic<HTMLButtonElement>();
   const magneticMenuRef = useMagnetic<HTMLButtonElement>();
 
+  /**
+   * 房间的「鼠标动、背景也动」景深视差（2026-09-16 第六轮 / 用户第 1 条需求）。
+   * ⚠️ 主量写在 **section（.studio-scope）** 上，**不是** .studio-cam：
+   *    .studio-cam 身上挂着推镜 keyframe（cam-dive-* / cam-focus-*，全都带 forwards），
+   *    往它写 transform 会被动画最后一帧**永久覆盖** —— 同一个坑在滤镜那边已经踩过一次
+   *    （见 index.css 里 .studio-lens-root 的注释）。
+   *    写在 scope 上还有个好处：三层都靠自定义属性继承拿量，不必逐个传 ref。
+   */
+  const scopeRef = useRef<HTMLElement>(null);
+  useRoomParallax(scopeRef);
+
   const later = useCallback((ms: number, fn: () => void) => {
     timersRef.current.push(window.setTimeout(fn, ms));
+  }, []);
+
+  /** 同 later，但落进对焦自己的定时器组（清单见 focusTimersRef 的注释） */
+  const laterFocus = useCallback((ms: number, fn: () => void) => {
+    focusTimersRef.current.push(window.setTimeout(fn, ms));
+  }, []);
+
+  const clearFocusTimers = useCallback(() => {
+    focusTimersRef.current.forEach(window.clearTimeout);
+    focusTimersRef.current = [];
   }, []);
 
   // 卸载时清掉所有转场定时器，避免切页面后回调打到已卸载的组件上
@@ -144,6 +222,8 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
     () => () => {
       timersRef.current.forEach(window.clearTimeout);
       timersRef.current = [];
+      focusTimersRef.current.forEach(window.clearTimeout);
+      focusTimersRef.current = [];
     },
     [],
   );
@@ -156,30 +236,18 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
     return () => document.body.classList.remove(cls);
   }, [crtOn]);
 
-  // About 打开期间不播放工作室背景音乐（用 ref 让挂载时的自动播放也能判断）
-  const aboutOpenRef = useRef(aboutOpen);
+  // 工作室背景音乐：仅在工作室页面循环播放。
+  // 音频链（lowpass + gain）与 away/halt/stop 的语义见 src/lib/studioMusic.ts 文件头。
   useEffect(() => {
-    aboutOpenRef.current = aboutOpen;
-  }, [aboutOpen]);
+    const music = createStudioMusic('/studio/studio-music.mp3');
+    musicRef.current = music;
+    music.play(); // 进站时已被手势解锁；若被自动播放策略拦住，下面的 unlock 会补播
 
-  // 工作室背景音乐：仅在工作室页面循环播放
-  useEffect(() => {
-    const audio = new Audio('/studio/studio-music.mp3');
-    audio.loop = true;
-    audio.preload = 'auto';
-    audio.volume = 0.7;
-    musicRef.current = audio;
-
-    const tryPlay = () => {
-      if (musicStoppedRef.current) return; // 已停止就不再补播
-      if (aboutOpenRef.current) return; // About Me 区域不播放背景音乐
-      audio.play().catch(() => {});
-    };
-    tryPlay();
-
-    // 若进入工作室前的手势未解锁音频（自动播放策略），首次交互再补播
+    // AudioContext 出生即 suspended，必须在**用户手势**里 resume，
+    // 否则整条链静音（见模块头「约束 2」）——这是本改造唯一会静默失效的点。
     const unlock = () => {
-      tryPlay();
+      music.unlock();
+      music.play();
       window.removeEventListener('pointerdown', unlock);
       window.removeEventListener('keydown', unlock);
     };
@@ -189,34 +257,79 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
     return () => {
       window.removeEventListener('pointerdown', unlock);
       window.removeEventListener('keydown', unlock);
-      audio.pause();
-      audio.currentTime = 0;
+      music.dispose();
       musicRef.current = null;
     };
   }, []);
 
-  // 在工作室点击按钮（进入子页 / 打开菜单 / 回首页）→ 立即停止音乐
-  const stopMusic = useCallback(() => {
-    musicStoppedRef.current = true;
-    const a = musicRef.current;
-    if (a) a.pause();
-  }, []);
-
-  // 关掉菜单/笔记本弹层、回到工作室画面 → 音乐自动继续（从暂停处接上）
-  const resumeMusic = useCallback(() => {
-    musicStoppedRef.current = false;
-    const a = musicRef.current;
-    if (a) a.play().catch(() => {});
-  }, []);
-
   /**
-   * 木马策划案算"离开工作室画面"，背景音乐停下。
-   * 用 effect 而不是只在 handleSelect 里停，是为了连 `?works=1` 直接预览
-   * （没走点击流程）也能一致地静音；关闭时由 onClose 的 resumeMusic() 恢复。
+   * 音乐档位（第二档 ④，2026-09-16 晚按用户听感重做）—— **一处派生**，
+   * 而不是每个 onClose 里手工恢复。
+   *
+   * 改造前是"谁打开谁负责停、谁关闭谁负责续"：`stopMusic()` 散在 handleSelect /
+   * openCrt / goToObject / toggleMenu 里，`resumeMusic()` 散在六七个 onClose 里。
+   * 漏一个就是"音乐莫名不响了"，加一个浮层又要再配一遍 —— 和顶栏双影是同一类毛病。
+   *
+   * 现在反过来：音乐档位是"有没有东西盖在工作室上"的**纯函数**，
+   * 跟第一档把顶栏收起来用的 `is-covered` 是同一个思路。增删浮层只需要决定它属于哪一档：
+   *
+   *   off  —— 视频与音乐页：那页自己会放片子，背景音乐必须**立刻停**
+   *   away —— 其余所有子页面 / 浮层 / CRT：**3.4s 淡到听不见**（用户：不要压低，要"渐渐消失"）
+   *   null —— 回到工作室画面：前台满音量
+   *
+   * ⚠️ `off` 必须排在 `away` 前面：视频页是从书架钻进去的，那一刻 `newsstandOpen`
+   * 还没收干净，写在后面会被 `away` 吃掉。
    */
+  const musicCue = useMemo<MusicCue | null>(() => {
+    if (mediaOpen) return 'off';
+    if (dive !== 'idle' || aboutOpen || crtOn) return 'away';
+    if (
+      menuOpen ||
+      worksOpen ||
+      newsstandOpen ||
+      notebookOpen ||
+      copyOpen
+    ) {
+      return 'away';
+    }
+    return null;
+  }, [
+    mediaOpen,
+    dive,
+    aboutOpen,
+    crtOn,
+    menuOpen,
+    worksOpen,
+    newsstandOpen,
+    notebookOpen,
+    copyOpen,
+  ]);
+
   useEffect(() => {
-    if (worksOpen) stopMusic();
-  }, [worksOpen, stopMusic]);
+    const music = musicRef.current;
+    if (!music || music.isStopped()) return;
+    if (musicCue === 'off') music.halt();
+    else if (musicCue === 'away') music.away();
+    else music.play();
+  }, [musicCue]);
+
+  /** 真停 —— 只在**离开工作室**（点左上角回首页）时用，不是"进内容页" */
+  const stopMusic = useCallback(() => {
+    musicRef.current?.stop();
+  }, []);
+
+  const toggleMenu = useCallback(() => {
+    setMenuOpen((prev) => !prev);
+  }, []);
+
+  const closeMenu = useCallback(() => {
+    setMenuOpen(false);
+  }, []);
+
+  const nav = useMemo<StudioNav>(
+    () => ({ menuOpen, toggleMenu, closeMenu }),
+    [menuOpen, toggleMenu, closeMenu],
+  );
 
   /**
    * 点电脑 → 镜头扎进 CRT 屏幕 → 过曝 → Green OS（三步走，总时长约 1.2s）
@@ -226,7 +339,7 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
    */
   const openCrt = useCallback(() => {
     if (aboutOpen || dive === 'in') return;
-    stopMusic();
+    // 不再手动停音乐：`musicCue` 会在 dive 变 'in' 的同一帧让音乐开始淡出（away）
     setSkipBoot(false); // 正片流程：镜头推进 → 过曝白光 → 开机自检
     setDive('in');
     playCrtOn(); // 消磁 + 行频啸叫，必须在点击手势里触发
@@ -238,7 +351,7 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
       setCrtOn(true);
     });
     later(T.flashAt + T.flashHold, () => setCrtFlash(false)); // 白光开始淡出
-  }, [aboutOpen, dive, later, stopMusic]);
+  }, [aboutOpen, dive, later]);
 
   /**
    * 菜单里的 About Me —— **面试官模式：直奔 Green OS 桌面**。
@@ -254,12 +367,11 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
    */
   const openCrtDirect = useCallback(() => {
     if (aboutOpen) return;
-    stopMusic();
     setSkipBoot(true);
     setViaCrt(true);
     setAboutOpen(true); // OS 立刻开始淡入，底下的房间还看得见
     later(460, () => setCrtOn(true)); // OS 铺满后再收房间 + 点亮 CRT 质感层
-  }, [aboutOpen, later, stopMusic]);
+  }, [aboutOpen, later]);
 
   /** 关掉 Green OS → 反向 Zoom Out，CRT 质感层淡出，平滑回到房间视角 */
   const closeCrt = useCallback(() => {
@@ -294,24 +406,96 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
     later(130, () => setCrtFlash(false));
     later(T.out, () => setDive('idle'));
     later(T.out + 30, () => setViaCrt(false));
-    later(T.out + 60, () => resumeMusic());
-  }, [later, resumeMusic]);
+    // 音乐不在这里手动恢复：dive 回 'idle' 后由 musicCue 自己把音乐拉回前台
+  }, [later]);
+
+  /**
+   * 打开某个物件的内容 —— **先推镜头，再长内容**（2026-09-16 第一档改造 ②）。
+   *
+   * 改造前只有电脑有转场（镜头扎进屏幕），木马 / 报刊亭 / 线圈本都是"啪"地弹浮层。
+   * 用户说的"每个板块很分离"，一大半来自这里：进入方式不同，观感就不可能是一体的。
+   *
+   * @param id     目标物件（拿它的 point 当镜头推进原点）
+   * @param open   真正把浮层挂起来的那一下 —— 放在推近途中执行
+   * @param replay 是否重播"推近"。从工作室点物件一定是 true；
+   *               用 MENU 从 A 板块横跳到 B 板块时传 false —— 那时 cam 已经停在
+   *               1.9 倍，重播会先把画面弹回 1 倍再推一遍，隔着磨砂玻璃也看得出抖一下。
+   *               只改 transform-origin 就够了（class 不变 = 动画不重启）。
+   */
+  const openFocused = useCallback(
+    (id: StudioObject['id'], open: () => void, replay = true) => {
+      const p = POINT_BY_ID[id];
+      clearFocusTimers();
+      setFocus({ x: p.x, y: p.y, dir: 'in' });
+      if (replay) laterFocus(FOCUS.contentAt, open);
+      else open();
+    },
+    [clearFocusTimers, laterFocus],
+  );
+
+  /** 反向：关掉浮层 → 镜头拉回 1:1（与推近互为镜像，时长也一致） */
+  const closeFocused = useCallback(() => {
+    clearFocusTimers();
+    setFocus((f) => (f ? { ...f, dir: 'out' } : null));
+    // 动画跑完再清空 —— 提前清会让 cam 瞬间跳回 1 倍，转场就断成两截了
+    laterFocus(FOCUS.out + 40, () => setFocus(null));
+  }, [clearFocusTimers, laterFocus]);
 
   const handleSelect = useCallback(
     (object: StudioObject) => {
-      // 进入 About Me（电脑）、木马策划案、报刊亭创作档案都算"离开工作室画面"，
-      // 背景音乐停下；只有笔记本算"还在工作室里"，音乐继续放着。
-      // 回到工作室时由各自的 onClose → resumeMusic() 恢复。
-      if (object.id !== 'notebook') {
-        stopMusic();
+      // 音乐不在这里管：浮层一打开，`musicCue` 就会让它开始淡出（见上面那个派生值）。
+      if (object.id === 'computer') {
+        // 电脑走极端版（扎进显像管 + 过曝白光），**不套**温和对焦
+        openCrt();
+      } else if (object.id === 'notebook') {
+        openFocused('notebook', () => setNotebookOpen(true));
+      } else if (object.id === 'carousel') {
+        openFocused('carousel', () => setWorksOpen(true));
+      } else if (object.id === 'newsstand') {
+        openFocused('newsstand', () => setNewsstandOpen(true));
       }
-      if (object.id === 'notebook') setNotebookOpen(true);
-      if (object.id === 'computer') openCrt();
-      if (object.id === 'carousel') setWorksOpen(true);
-      if (object.id === 'newsstand') setNewsstandOpen(true);
       onSelectObject?.(object);
     },
-    [onSelectObject, openCrt, stopMusic],
+    [onSelectObject, openCrt, openFocused],
+  );
+
+  /**
+   * 菜单里的板块跳转（第一档改造 ①）：`策划项目` / `AI 及视频` 这两个条目
+   * 以前点了没反应，菜单在内容页里看着像装饰。现在它们和"点物件"走完全同一条路 ——
+   * 一个菜单项从任何地方点下去，落到的地方都一样。
+   */
+  const goToObject = useCallback(
+    (id: StudioObject['id']) => {
+      // 先把这个板块之外的内容层全收掉（不逐个走 onClose，也不做转场动画：
+      // 马上要被新内容盖住，走动画反而会看到"旧的还没走、新的已经来了"）。
+      // ⚠️ 这一步也管 About：.about-overlay 的 z 是 260，比木马(266)还低，
+      //    不收干净的话从木马跳 About 会看到木马盖在 OS 上面。
+      setNotebookOpen(false);
+      setWorksOpen(false);
+      setNewsstandOpen(false);
+      setMediaOpen(false);
+      setCopyOpen(false);
+
+      if (id === 'computer') {
+        // 电脑不套温和对焦，直接交回 CRT 那套（openCrtDirect 会自己写状态）
+        clearFocusTimers();
+        setFocus(null);
+        openCrtDirect();
+        return;
+      }
+
+      openFocused(
+        id,
+        () => {
+          setWorksOpen(id === 'carousel');
+          setNewsstandOpen(id === 'newsstand');
+          setNotebookOpen(id === 'notebook');
+        },
+        // 已经在某个板块里（focus 非空）→ 只换原点，不重播推近；从房间里点 → 正常推近
+        focus === null,
+      );
+    },
+    [clearFocusTimers, focus, openCrtDirect, openFocused],
   );
 
   /**
@@ -323,7 +507,6 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
    */
   const handleNewsstandPick = useCallback(
     (row: 'devices' | 'books', index: number) => {
-      stopMusic();
       // 2026-09-16 用户要求（行为反转）：点进落地页**不再关掉** 3D 书架 ——
       // 书架模型留在落地页后面（covered，GL 暂停、不吃事件），
       // 落地页按 Back → 先回到书架模型界面，再按一次才回 My Studio。
@@ -332,7 +515,7 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
         setMediaOpen(true);
       } else setCopyOpen(true);
     },
-    [stopMusic],
+    [],
   );
 
   /**
@@ -433,18 +616,45 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
     [],
   );
 
+  /** 转场进行中（镜头在动）：锁掉感应区、藏掉顶栏 */
+  const transitioning = dive !== 'idle' || focus !== null;
+  /**
+   * 有板块/浮层盖在工作室之上 → 把工作室自己那条顶栏收掉。
+   * ⚠️ 光靠 transitioning **不够**：用调试参数直接进内容页（?works=1）没有转场，
+   * 于是工作室自己那条顶栏会留着，和内容页的「Return to Studio」**在同一位置**叠成双影 ——
+   * 两边坐标完全一样（因为它们现在就是同一个组件），一叠就露馅。
+   * 菜单也算进来：菜单铺满全屏（z 400），顶栏在它底下只会透出一层鬼影，
+   * 而且反正点不到 —— 关闭键由 StudioMenu 自己那颗 Close 承担。
+   */
+  const layerOpen =
+    worksOpen ||
+    newsstandOpen ||
+    notebookOpen ||
+    mediaOpen ||
+    copyOpen ||
+    aboutOpen ||
+    menuOpen;
+
   return (
+    <StudioNavProvider value={nav}>
     <section
+      ref={scopeRef}
       className={`studio-scope relative h-screen w-full overflow-hidden bg-wine-dark${
-        dive !== 'idle' ? ' is-transitioning' : ''
-      }${crtOn ? ' is-os' : ''}`}
+        transitioning ? ' is-transitioning' : ''
+      }${layerOpen ? ' is-covered' : ''}${crtOn ? ' is-os' : ''}`}
     >
       {/* 底图：循环视频，平铺全屏。
-          外面这层 .studio-cam 就是"相机" —— 转场时以 CRT 屏幕为原点整体放大，
-          视觉上等于镜头朝屏幕扎进去。transform-origin 与电脑物件的位置保持一致。 */}
+          外面这层 .studio-cam 就是"相机" —— 转场时以目标物件为原点整体放大，
+          视觉上等于镜头朝它推过去。原点取 studio 数据里的 point：
+             · 电脑 → 极端版 .is-in（scale 16，扎进显像管）
+             · 木马 / 报刊亭 / 线圈本 → 温和版 .is-focus-*（scale 1.9，推近看看） */}
       <div
-        className={`studio-cam${dive === 'in' ? ' is-in' : ''}${dive === 'out' ? ' is-out' : ''}`}
-        style={{ transformOrigin: `${CRT_POINT.x}% ${CRT_POINT.y}%` }}
+        className={`studio-cam${dive === 'in' ? ' is-in' : ''}${dive === 'out' ? ' is-out' : ''}${
+          focus ? ` is-focus-${focus.dir}` : ''
+        }`}
+        style={{
+          transformOrigin: `${(focus ?? CRT_POINT).x}% ${(focus ?? CRT_POINT).y}%`,
+        }}
       >
         {/* 背景双层：底层 = 原始循环视频，上层 = LensDistortion 镜头畸变（fit=cover 铺满）；
             鼠标滑过处用 CSS mask 挖一个软边圆洞露出底层清晰原图，形成水波般的揭示范围。
@@ -465,58 +675,63 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
       {/* 氛围暗角（Green OS 打开时由 .is-os 一起藏起来，别把暗角压在浅色 OS 上） */}
       <div className="studio-vignette pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_35%,rgba(0,0,0,0.55)_100%)]" />
 
-      {/* 顶部导航 */}
-      <header className="studio-topbar absolute inset-x-0 top-0 z-50 flex items-center justify-between p-6 md:p-8">
-        <button
-          ref={magneticBackRef}
-          type="button"
-          onClick={() => {
-            stopMusic();
-            onBack?.();
-          }}
-          className="font-display text-lg tracking-[0.2em] text-cream transition-opacity hover:opacity-70"
-        >
-          MY STUDIO
-        </button>
-        <button
-          ref={magneticMenuRef}
-          type="button"
-          onClick={() => {
-            if (menuOpen) resumeMusic(); // 关闭菜单 → 回到工作室，音乐继续
-            else stopMusic(); // 打开菜单 → 停音乐
-            setMenuOpen((v) => !v);
-          }}
-          className="studio-pill"
-        >
-          {/* 手绘圆圈 + 手写体 —— 原来是一条 `rounded-full border` 的胶囊（也是"硬边框"）。
-              常显（不靠悬停），所以 .studio-pill 在 CSS 里直接把 dashoffset 归零。 */}
-          <HandFrame shape="ring">{menuOpen ? 'Close' : 'MENU'}</HandFrame>
-        </button>
-      </header>
+      {/* 向下滚动露出的「联系方式」（第六轮 / 用户第 2 条）。
+          位置很讲究：**在暗角之后、StudioChrome 之前** ——
+          z 45 让它盖住房间与暗角，但仍然压在那条全局导航（z 50）下面，
+          于是纸升起来之后"返回"和"MENU"照样看得见、点得到（那是唯一的退出口）。
+          `blocked` 传的是别的浮层：被菜单/木马/落地页盖住时滚轮归它们，
+          而且面板会主动收回去（见组件文件头「坑 3」）。 */}
+      <StudioContactPanel blocked={layerOpen} />
+
+      {/* My Studio 最上层：L.I.S.A. 风格打字机 + 快捷胶囊对话 HUD（top:62% / left:5%）。
+          任何浮层 / 板块盖上来时 hidden，避免在 Green OS / 落地页之上浮一层。 */}
+      <LisaHud hidden={layerOpen} />
+
+      {/* 顶部导航 —— 用**全站同一个** StudioChrome（第一档改造 ①）。
+          工作室自己也是它的一个用户，于是从房间钻进任何板块时，
+          左上角那枚返回、右上角那枚手绘圈 MENU 都留在原地不动，
+          只有返回文案跟着层级变（MY STUDIO → RETURN TO STUDIO / 返回书架）。
+          `studio-topbar` 这个 class 是给转场用的钩子：.is-transitioning 会把它淡掉
+          （镜头在推近、房间在放大，导航却钉在 1:1 上会立刻穿帮）。 */}
+      <StudioChrome
+        label="My Studio"
+        onBack={() => {
+          stopMusic();
+          onBack?.();
+        }}
+        tone="light"
+        zIndex={50}
+        className="studio-topbar"
+        backRef={magneticBackRef}
+        menuRef={magneticMenuRef}
+      />
 
       {/* 线圈本弹层 */}
       <NotebookOverlay
         open={notebookOpen}
         onClose={() => {
           setNotebookOpen(false);
-          resumeMusic(); // 关闭本子 → 回到工作室，音乐继续
+          closeFocused(); // 镜头从本子拉回 1:1
+          // 音乐不用管：notebookOpen 转 false 后 musicCue 自己把音乐拉回前台
         }}
       />
 
       {/* 全屏菜单 */}
       <StudioMenu
         open={menuOpen}
-        onClose={() => {
-          setMenuOpen(false);
-          resumeMusic(); // 关闭菜单（含 ESC）→ 回到工作室，音乐继续
-        }}
+        onClose={closeMenu}
         onSelect={(id) => {
-          // 目前只有 About Me 有落地页；其余条目保持"占位"不响应。
-          if (id !== 'about') return;
-          // 直接关菜单、**不**调用 resumeMusic() —— 我们要离开工作室进 Green OS 了，
-          // 音乐该继续停着（关闭 OS 回房间时由 closeCrt 里的 resumeMusic 恢复）。
+          // 只关菜单：接下来要么换板块、要么进 Green OS，都是"离开工作室画面"，
+          // 音乐由 musicCue 统一负责，这里不用（也不该）手动接管。
           setMenuOpen(false);
-          openCrtDirect();
+          // 策划项目 / AI 及视频 → 和点物件走同一条路（第一档改造 ① 的连带收益：
+          // 以前这两条点了没反应，菜单一进内容页就像装饰）。
+          if (id === 'works') return goToObject('carousel');
+          if (id === 'lab') return goToObject('newsstand');
+          // Contact / Resume 还没有落地页，保持占位。
+          if (id !== 'about') return;
+          // About Me → 面试官模式：直奔 Green OS 桌面，跳过镜头推进与开机自检
+          goToObject('computer');
         }}
       />
 
@@ -527,15 +742,15 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
             open={worksOpen}
             onClose={() => {
               setWorksOpen(false);
-              resumeMusic(); // 关掉木马策划案 → 回到工作室，音乐继续
+              closeFocused(); // 镜头从木马拉回 1:1
             }}
           />
         </Suspense>
       ) : null}
 
-      {/* 报刊亭 → 创作档案（点报刊亭物件 → 原地展开 3D 绿锈展架，镜头推近 + 房间模糊）
+      {/* 报刊亭 → 创作档案（点报刊亭物件 → 原地展开 3D 绿锈展架）
           2026-09-16：书架在落地页开着时**保持挂载**（盖住≠卸载），落地页 Back 先回到书架。
-          covered = 被落地页盖住 → NewsstandScene 暂停 GL 循环 + 忽略 Esc。 */}
+          covered = 被落地页盖住 → NewsstandScene 暂停 GL 循环 + 让出 Esc（见 escape-stack）。 */}
       {newsstandOpen ? (
         <Suspense fallback={null}>
           <NewsstandScene
@@ -543,7 +758,7 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
             covered={mediaOpen || copyOpen}
             onClose={() => {
               setNewsstandOpen(false);
-              resumeMusic(); // 关掉展架场景 → 回到工作室，音乐继续
+              closeFocused(); // 镜头从书架拉回 1:1
             }}
             onPick={handleNewsstandPick}
           />
@@ -551,7 +766,9 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
       ) : null}
 
       {/* 第一排落地页：视频与音乐作品（点报刊亭顶层设备 → 独立全屏页）
-          2026-09-16：Back 只关落地页露出书架，音乐保持停 —— 回到工作室（关书架）才 resume。 */}
+          2026-09-16 晚：这一页是唯一让背景音乐**立刻停**的地方（它自己会出声）。
+          Back 只关落地页、回到书架模型 —— 那时 musicCue 是 away（仍然静音），
+          直到关掉书架、真正看见工作室画面，音乐才被拉回前台。 */}
       {mediaOpen ? (
         <Suspense fallback={null}>
           <MediaGalleryPage
@@ -590,7 +807,7 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
             return;
           }
           setAboutOpen(false);
-          resumeMusic(); // 关掉 About → 回到工作室，音乐继续
+          // 音乐不用管：aboutOpen 转 false 后 musicCue 自己把音乐拉回前台
         }}
       />
 
@@ -600,5 +817,6 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
       {/* 荧光过曝闪光（z 最高的一层，专门用来吃掉 3D→2D 的切换瞬间） */}
       {crtFlash ? <div className="crt-flash" aria-hidden="true" /> : null}
     </section>
+    </StudioNavProvider>
   );
 }

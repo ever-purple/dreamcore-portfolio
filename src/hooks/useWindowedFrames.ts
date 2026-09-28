@@ -1,20 +1,28 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
- * 序列帧「窗口式」预加载。
+ * 序列帧「全量预加载」—— 回到最初的实现。
  *
- * 为什么不用 useImagePreloader：那个版本要等 120 张 2560×1443 的 JPG 全部下完
- * 才置 complete，而 LoadingScreen 与 HomeSection 的滚动门禁都挂在 complete 上，
- * 于是首屏必须等 64MB 才动 —— 慢网下等于打不开。
+ * 为什么又把窗口式换成全量：
+ * ---------------------------------------------------------------------------
+ * 窗口式（只保 [focus-6, focus+20] 里的帧、窗口外主动 removeAttribute('src') 释放解码）
+ * 为了省内存牺牲了「滚动到哪一帧、那一帧就一定在」，实测出来的三个症状合起来
+ * 正是用户说的「显示不全，甚至不动」：
  *
- * 更隐蔽的问题是内存：120 张全解码约 2560×1443×4B ≈ 1.7GB，移动端会被系统直接杀掉。
+ *   ① 快速下滚：当前进度那张还没解码完，只能拿"最近的已解码旧帧"顶上
+ *      → 画面冻在某一帧不动，等解码追上来再突然跳一大段（中间几十帧全没看到）。
+ *   ② 回滚（100 → 0）：下滚时被释放掉的帧要重新下载，
+ *      → 上滚时画面卡住，根本回不到起点。
+ *   ③ 刚进入时首帧若还没解码，且静止时 tick 认为"进度没变"就不重绘
+ *      → canvas 一直是纯黑，什么都看不到。
  *
- * 这里的取舍：**不降画质**（帧依然是原始 2560×1443），只降「同时要下的量」和「同时占多少内存」。
- *   · 开局只等前 readyCount 张（默认 12 张 ≈ 4MB）就放行；
- *   · focus(frame) 由滚动 tick 驱动，围绕当前位置展开 [frame-behind, frame+ahead] 取窗；
- *   · 窗口外的帧主动释放解码位图（removeAttribute('src')），滚回来再从 HTTP 缓存补；
- *     正常速度下这些帧基本还在内存缓存里，用户感知不到二次加载。
- *   · 没到位的帧在绘制端自然「停住」，用户看到的是原地等一下，而不是白屏或降级模糊。
+ * 全量的代价是常驻显存（120 × 2560×1443×4B ≈ 1.7GB），换来的是**任何时刻滚到
+ * 哪一帧就有哪一帧**：0 → 100 完整开门到 OPEN，100 → 0 完整回到起点，两个方向
+ * 都是连续的，不会冻、不会跳、不会黑屏。
+ *
+ * 关于"要不要等 64MB"：加载页本来就等了全部帧（useAssetPreload 的 wait 里就有
+ * 这 120 张，而且它也是用 Image 解码的），所以这里**不会额外增加等待**——
+ * 字节已经在缓存里，只是再建一份常驻的解码位图给 canvas 用。
  */
 
 export interface WindowedFrames {
@@ -23,26 +31,21 @@ export interface WindowedFrames {
    * 引用**全程稳定**，不会把绘制 effect 拖进「每加载一张就重算一次」。
    */
   images: HTMLImageElement[];
-  /** 首个窗口就绪 —— 放行用它，别用 complete */
+  /** 全部解码完成（全量加载下与 complete 同义，保留两个名字是为了不改调用方） */
   ready: boolean;
-  /** 全部就绪 —— 只用来停调度 */
+  /** 全部就绪 */
   complete: boolean;
   /** 已就绪张数 */
   loadedCount: number;
-  /** 告诉 hook 当前滚动落在第几帧，据此展开预取窗口 */
+  /**
+   * 全量加载没有「焦点窗口」的概念，这里退化为空操作。
+   * 保留在接口里，HomeSection 不用改签名。
+   */
   focus: (frame: number) => void;
 }
 
 export interface WindowedFramesOptions {
-  /** 开局放行所需的张数，默认 12（≈4MB @360KB/张） */
-  readyCount?: number;
-  /** 预取窗口向前看多少张，默认 20 */
-  ahead?: number;
-  /** 预取窗口向后保留多少张，默认 6 */
-  behind?: number;
-  /** 跑出窗口多远释放解码，默认 32。必须 > ahead，否则和预取打架 */
-  recycle?: number;
-  /** 并发请求上限，默认 6 */
+  /** 并发解码上限，默认 12。120 张同时发会把主线程和带宽一起打满 */
   concurrency?: number;
 }
 
@@ -50,13 +53,7 @@ export function useWindowedFrames(
   urls: string[],
   options: WindowedFramesOptions = {},
 ): WindowedFrames {
-  const {
-    readyCount = 12,
-    ahead = 20,
-    behind = 6,
-    recycle = 32,
-    concurrency = 6,
-  } = options;
+  const { concurrency = 12 } = options;
 
   const imagesRef = useRef<HTMLImageElement[]>([]);
   if (imagesRef.current.length !== urls.length) {
@@ -64,7 +61,6 @@ export function useWindowedFrames(
   }
   const images = imagesRef.current;
 
-  const focusRef = useRef<(frame: number) => void>(() => {});
   const [state, setState] = useState<{ ready: boolean; complete: boolean; loadedCount: number }>({
     ready: false,
     complete: false,
@@ -73,109 +69,82 @@ export function useWindowedFrames(
 
   useEffect(() => {
     let cancelled = false;
-
-    const requested = new Set<number>();
-    const recycled = new Set<number>();
-    const loaded = new Set<number>();
-    const queue: number[] = [];
+    let done = 0;
+    let next = 0;
     let active = 0;
-    let lastFocus = -1;
 
-    /** 释放解码位图：槽位置空，滚回来时会被重新请求（多半命中内存缓存） */
-    const recycleOne = (i: number) => {
-      const img = images[i];
-      if (!img) return;
-      img.onload = null;
-      img.onerror = null;
-      img.removeAttribute('src');
-      recycled.add(i);
-      // 清掉「已请求」标记，否则 focus 不会重新把它排进队列
-      requested.delete(i);
+    /** 全部到位时对外置一次状态（避免 120 次 setState 把加载页拖成幻灯片） */
+    const markAllDone = () => {
+      if (cancelled) return;
+      setState({ ready: true, complete: true, loadedCount: done });
     };
 
-    const settle = (i: number) => {
+    /** 一张解码完成（或失败） */
+    const settle = () => {
       active -= 1;
       if (cancelled) return;
-      loaded.add(i);
-      const n = loaded.size;
-      setState((s) => ({
-        ready: s.ready || n >= Math.min(readyCount, urls.length),
-        complete: n >= urls.length,
-        loadedCount: n,
-      }));
-
-      // 落在窗口外的（可能在排队期间被滚动甩开的）顺手放掉解码
-      if (lastFocus >= 0 && Math.abs(i - lastFocus) > recycle) recycleOne(i);
-
-      Promise.resolve().then(pump);
+      done += 1;
+      if (done >= urls.length) {
+        done = urls.length;
+        markAllDone();
+      }
+      pump();
     };
 
-    const loadOne = (i: number) => {
+    const start = (i: number) => {
       const url = urls[i];
-      if (url === undefined) return;
-      requested.add(i);
-      recycled.delete(i);
-      active += 1;
       const img = images[i] ?? (images[i] = new Image());
+
+      // 组件重挂载但数组是同一个引用 → 已解码的直接算完成，不重复请求
+      if (img.naturalWidth > 0) {
+        done += 1;
+        if (done >= urls.length) markAllDone();
+        return;
+      }
+      // 空槽 / 坏 URL：也要计数，否则 complete 永远等不到
+      if (url === undefined) {
+        done += 1;
+        if (done >= urls.length) markAllDone();
+        return;
+      }
+
+      active += 1;
       img.decoding = 'async';
-      img.onload = () => settle(i);
-      // 坏图也要放行，别让它把 ready 永远卡住；不重试，重试只会拖慢进度
-      img.onerror = () => settle(i);
+      img.onload = () => settle();
+      // 坏图也要放行，别让它把 complete 永远卡住
+      img.onerror = () => settle();
       img.src = url;
     };
 
     const pump = () => {
-      while (active < concurrency && queue.length > 0) {
-        loadOne(queue.shift() as number);
+      if (cancelled) return;
+      while (active < concurrency && next < urls.length) {
+        const i = next;
+        next += 1;
+        start(i);
       }
     };
 
-    const doFocus = (frame: number) => {
-      const f = Math.max(0, Math.min(urls.length - 1, Math.round(frame) || 0));
-      lastFocus = f;
+    // 空列表：直接放行，别让调用方永远等一个不会来的 ready
+    if (urls.length === 0) {
+      setState({ ready: true, complete: true, loadedCount: 0 });
+      return;
+    }
 
-      // 1) 把窗口内缺的排进队列，近的先补
-      const fresh: number[] = [];
-      const lo = Math.max(0, f - behind);
-      const hi = Math.min(urls.length - 1, f + ahead);
-      for (let i = lo; i <= hi; i += 1) {
-        if (requested.has(i) || i < readyCount) continue;
-        fresh.push(i);
-      }
-      if (fresh.length > 0) {
-        fresh.sort((a, b) => Math.abs(a - f) - Math.abs(b - f));
-        queue.push(...fresh);
-        pump();
-      }
-
-      // 2) 窗口外的放掉解码，别让 1.7GB 位图堆在内存里
-      const rlo = f - recycle;
-      const rhi = f + recycle;
-      for (let i = 0; i < urls.length; i += 1) {
-        if (i >= rlo && i <= rhi) continue;
-        if (requested.has(i) && !recycled.has(i)) recycleOne(i);
-      }
-    };
-
-    // 开局只排前 readyCount 张；其余等 focus 驱动
-    for (let i = 0; i < Math.min(readyCount, urls.length); i += 1) queue.push(i);
-    lastFocus = 0;
-    focusRef.current = doFocus;
     pump();
 
     return () => {
       cancelled = true;
-      focusRef.current = () => {};
-      // 稀疏数组里还有空槽（尚未请求的帧），不判空会在这里把整个渲染树打挂
       images.forEach((img) => {
         if (!img) return;
         img.onload = null;
         img.onerror = null;
       });
     };
-  }, [urls, readyCount, ahead, behind, recycle, concurrency, images]);
+  }, [urls, concurrency, images]);
 
-  const focus = useCallback((frame: number) => focusRef.current(frame), []);
+  // 全量加载：focus 不再需要
+  const focus = useCallback(() => {}, []);
 
   return {
     images,

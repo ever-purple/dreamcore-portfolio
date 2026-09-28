@@ -45,6 +45,10 @@ export function HomeSection({
   const rafRef = useRef<number>(0);
   const targetProgressRef = useRef(0);
   const displayedRef = useRef(0);
+  // 是否已经真的往 canvas 上画过一次。
+  // 静止时 tick 认为「进度没变」就不重绘，若此刻首帧还没解码完，canvas 会一直
+  // 保持纯黑（实测进首页后黑屏约 2 秒）。用它保证「只要画得出来就一定画一次」。
+  const paintedRef = useRef(false);
   const lastTsRef = useRef(0);
   const dimsRef = useRef({ width: 0, height: 0, dpr: 1 });
   const atEndRef = useRef(false);
@@ -104,41 +108,52 @@ export function HomeSection({
     drawCrossfade(displayedRef.current);
   };
 
+  // 找「当前进度之前、最近一张已下完的帧」做兜底：冷加载（首访 / CDN 冷）时后面的帧
+  // 还没流到，用最近的已下载帧绘制，推镜就会一直往前走、而不是卡在开头几帧 —— 否则
+  // 看起来就是「一下就到」、时好时坏（缓存热了才正常）。热路径（全下完）下这个兜底
+  // 恒等于原帧号，行为完全不变。
+  const nearestLoadedLE = (idx: number): number => {
+    for (let i = Math.max(0, idx); i >= 0; i -= 1) {
+      const im = images[i];
+      if (im && im.naturalWidth > 0) return i;
+    }
+    return -1;
+  };
+
   // 帧间溶解绘制：相邻两帧按小数权重叠加，消灭逐帧硬切的阶梯感
+  // 返回是否真的画上去了（false = 连一张能用的帧都没有，canvas 还是黑的）
   const drawCrossfade = (progress: number) => {
     const canvas = canvasRef.current;
-    if (!canvas || images.length === 0) return;
+    if (!canvas || images.length === 0) return false;
     const ctx = canvas.getContext('2d', { alpha: false });
-    if (!ctx) return;
+    if (!ctx) return false;
 
     const N = images.length - 1;
     const f = Math.max(0, Math.min(N, progress * N));
     const i0 = Math.floor(f);
-    const i1 = Math.min(N, i0 + 1);
-    const t = f - i0;
-    const img0 = images[i0];
-    if (!img0 || img0.naturalWidth === 0) return;
+    // 兜底帧：冷加载时 i0 可能还没下完，落到最近已就绪的那张，避免整段冻结
+    const i0r = nearestLoadedLE(i0);
+    if (i0r < 0) return false; // 连第一帧都没下完，先不画
 
     const { dpr } = dimsRef.current;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    if (t < 0.001) {
-      const r = getRect(img0);
-      ctx.globalAlpha = 1;
-      ctx.drawImage(img0, r.drawX, r.drawY, r.drawW, r.drawH);
-      return;
-    }
-
-    const img1 = images[i1];
+    const img0 = images[i0r];
+    const t = f - i0r; // 相对兜底帧的小数进度
+    const i1 = Math.min(N, i0r + 1);
     const r0 = getRect(img0);
     ctx.globalAlpha = 1;
     ctx.drawImage(img0, r0.drawX, r0.drawY, r0.drawW, r0.drawH);
-    if (img1 && img1.naturalWidth > 0) {
+
+    // 下一帧若已就绪就做溶解过渡；未就绪则只画当前兜底帧（仍随进度往前走）
+    const img1 = images[i1];
+    if (img1 && img1.naturalWidth > 0 && t > 0.001) {
       const r1 = getRect(img1);
-      ctx.globalAlpha = t;
+      ctx.globalAlpha = Math.min(1, t);
       ctx.drawImage(img1, r1.drawX, r1.drawY, r1.drawW, r1.drawH);
     }
     ctx.globalAlpha = 1;
+    return true;
   };
 
   // 滚动驱动：逻辑用原始进度（响应即时），视觉用帧率无关指数平滑（丝滑）
@@ -206,8 +221,9 @@ export function HomeSection({
       // 任何帧率下观感一致，且不会因掉帧而阶跃。
       const prev = displayedRef.current;
       displayedRef.current += (raw - prev) * (1 - Math.exp(-SMOOTH_K * dt));
-      if (Math.abs(displayedRef.current - prev) > 1e-4) {
-        drawCrossfade(displayedRef.current);
+      // 进度变了才重绘；但只要还没成功画过一次，就每帧都试，直到画上为止
+      if (Math.abs(displayedRef.current - prev) > 1e-4 || !paintedRef.current) {
+        if (drawCrossfade(displayedRef.current)) paintedRef.current = true;
       }
 
       rafRef.current = requestAnimationFrame(tick);
@@ -217,8 +233,13 @@ export function HomeSection({
 
     window.addEventListener('resize', resizeCanvas);
     resizeCanvas();
+    // 复位「到底拦截向下」。这个标志住在 App 里、跨 HomeSection 挂载存活，
+    // 从工作室回来时若还留着上次到底置的 true，整个首页就再也滚不动了
+    // （HomeSection 只在 atEnd 变化时才下发复位，重挂载后两边都是 false 就永远不复位）。
+    atEndRef.current = false;
+    setDownBlocked(false);
     displayedRef.current = computeProgress();
-    drawCrossfade(displayedRef.current);
+    if (drawCrossfade(displayedRef.current)) paintedRef.current = true;
     rafRef.current = requestAnimationFrame(tick);
 
     return () => {

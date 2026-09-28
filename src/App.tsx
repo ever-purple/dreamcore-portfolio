@@ -54,9 +54,10 @@ function App() {
     }
     return window.location.hash === '#about' ? 'studio' : 'home';
   });
-  // 序列帧改为窗口式加载：开局只等前 12 张（≈4MB）就放行，其余按滚动位置后台补。
-  // 帧保持原始 2560×1443 不变清晰，只改变「同时下载多少」。
-  const { images, ready: framesReady, focus: focusFrame } = useWindowedFrames(frameUrls);
+  // 序列帧回到「全量加载」：120 张全部解码常驻，滚到哪一帧就有哪一帧
+  // （窗口式会冻帧/跳帧/黑屏，详见 useWindowedFrames 顶部说明）。
+  // 加载页本来就等了这 120 张，所以这里不增加额外等待。
+  const { images, complete: framesComplete, focus: focusFrame } = useWindowedFrames(frameUrls);
 
   /** 加载页的 0→100%：已下完的资源 / 该下的总数，纯真实值 */
   const { done, total, ready: assetsReady } = useAssetPreload({
@@ -152,6 +153,12 @@ function App() {
   // 点击 MY STUDIO → 回到首页初始（滚动归零）
   const handleBack = useCallback(() => {
     clearEntryHash();
+    // 关键：把「到底拦截向下」的标志复位。
+    // downBlockedRef 住在 App 里、跨 HomeSection 挂载存活；从工作室回来时它
+    // 还留着上次滚到 119 帧时置的 true，而 HomeSection 只在 atEnd **变化**时才
+    // 下发复位 —— 重挂载后 atEndRef 又是 false、和它相等，于是一直没人复位，
+    // 结果就是回到首页后向下滚动被永久拦截（实测 396 次滚轮 scrollY 纹丝不动）。
+    downBlockedRef.current = false;
     lenisRef.current?.scrollTo(0, { immediate: true });
     window.scrollTo(0, 0);
     setStage('home');
@@ -168,11 +175,15 @@ function App() {
       {stage === 'home' ? (
         <>
           {!entered && (
-            <LoadingScreen ready={assetsReady} progress={progress} onEnter={handleEnter} />
+            <LoadingScreen
+              ready={assetsReady && framesComplete}
+              progress={progress}
+              onEnter={handleEnter}
+            />
           )}
           <HomeSection
             images={images}
-            ready={framesReady}
+            ready={framesComplete}
             entered={entered}
             onFrameFocus={focusFrame}
             onOpen={handleOpen}

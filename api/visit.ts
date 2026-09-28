@@ -1,14 +1,57 @@
-// 注意：云函数里 import './_lib' 一律不要带 .ts 后缀——
-// Vercel 对 Node 函数按文件独立转译，运行时找不到 `./_lib.ts` 会导致
-// FUNCTION_INVOCATION_FAILED。无扩展名在 esbuild 打包、本地 tsx 下都能正确解析。
-import { redis, storageReady, type VercelRequest, type VercelResponse } from './_lib';
-
 /**
- * GET  /api/visit          → 读当前 { count: 第几位访客(UV), pv: 浏览量 }
- * POST /api/visit          → 记一次浏览；body 里带 { unique: true } 时同时计一位新访客
+ * 访客统计（Vercel Serverless + Upstash Redis，零 npm 依赖）
+ *
+ *  GET  /api/visit → 读当前 { count: 第几位访客(UV), pv: 浏览量 }
+ *  POST /api/visit → 记一次浏览；body 里带 { unique: true } 时同时计一位新访客
  *
  * 存储未配置 → 503 { reason: 'storage-not-configured' }，前端自动退回本地计数。
+ *
+ * ⚠️ 共享代码（Redis 客户端 / 类型）直接内联在本文件里，不要拆回 ./_lib：
+ *    Vercel 对 /api 下的函数按文件独立转译，跨文件 import 在部分构建管线下
+ *    解析不到（实测导致 FUNCTION_INVOCATION_FAILED，且无日志）。
+ *    要改公共逻辑请 visit / guestbook / admin 三个文件同步改。
  */
+
+/* ---------------- Vercel 最小类型（@vercel/node 不在项目依赖里，就地声明） ---------------- */
+type VercelRequest = {
+  method?: string;
+  body?: unknown;
+  query?: Record<string, string | string[] | undefined>;
+  headers?: Record<string, string | string[] | undefined>;
+};
+
+type VercelResponse = {
+  status(code: number): VercelResponse;
+  setHeader(key: string, value: string): void;
+  json(body: unknown): void;
+  send(body: string): void;
+};
+
+/* ---------------- Upstash Redis（REST 直连，无 SDK） ----------------
+ * Vercel Storage → Marketplace → Upstash 建库会自动注入
+ *   KV_REST_API_URL / KV_REST_API_TOKEN；
+ * 在 Upstash 官网直连建库时的命名是
+ *   UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN，这里两套都认。
+ * 两个都没配时本接口返回 503，前端退回 localStorage 行为，站点不会坏。
+ */
+const KV_URL = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL || '';
+const KV_TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || '';
+
+const storageReady = () => Boolean(KV_URL && KV_TOKEN);
+
+/** 调一条 Redis 命令。args 形如 ['incr', 'dc:pv'] / ['get', 'dc:uv'] */
+async function redis(...args: string[]): Promise<unknown> {
+  const cmdPath = args.map(encodeURIComponent).join('/');
+  const r = await fetch(`${KV_URL}/${cmdPath}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${KV_TOKEN}` },
+  });
+  if (!r.ok) throw new Error(`upstash ${r.status}`);
+  const j = (await r.json()) as { result?: unknown };
+  return j.result;
+}
+
+/* ---------------- 接口本体 ---------------- */
 
 const UV_KEY = 'dc:uv';
 const PV_KEY = 'dc:pv';

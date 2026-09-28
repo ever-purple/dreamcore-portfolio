@@ -126,7 +126,7 @@ const PORT = 8899;
 const server = fakeUpstash();
 
 server.listen(PORT, async () => {
-  // 必须在 import 之前设好：_lib.ts 里 KV_URL 是模块加载时就读下来的常量
+  // 必须在 import 之前设好：三个函数文件顶部的 KV_URL 是模块加载时就读下来的常量
   process.env.KV_REST_API_URL = `http://127.0.0.1:${PORT}`;
   process.env.KV_REST_API_TOKEN = 'test-token';
   process.env.ADMIN_KEY = 'secret123';

@@ -1,0 +1,7 @@
+{
+  "_comment": "GLB 压缩清单。from/to 都是相对项目根目录的路径。跑 npm run compress:glb 生效。",
+  "models": [
+    { "from": "public/newsstand/rack.glb", "to": "_glb_out/rack.glb" },
+    { "from": "public/newsstand/tape.glb", "to": "_glb_out/tape.glb" }
+  ]
+}

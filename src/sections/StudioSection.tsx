@@ -3,6 +3,7 @@ import { AboutOverlay } from '@/components/AboutOverlay';
 import { CrtOverlay } from '@/components/GreenOs';
 import { ObjectZone } from '@/components/ObjectZone';
 import { NotebookOverlay } from '@/components/NotebookOverlay';
+import { downloadResume } from '@/lib/resume';
 import { StudioChrome, StudioNavProvider, type StudioNav } from '@/components/StudioChrome';
 
 /**
@@ -22,7 +23,7 @@ const MediaGalleryPage = lazy(() => import('@/components/MediaGalleryPage'));
 const CopyProjectPage = lazy(() => import('@/components/CopyProjectPage'));
 import { StudioMenu } from '@/components/StudioMenu';
 import { StudioLensBackground } from '@/components/StudioLensBackground';
-import { StudioContactPanel } from '@/components/StudioContactPanel';
+import { StudioContactPanel, type StudioContactHandle } from '@/components/StudioContactPanel';
 import { LisaHud } from '@/components/LisaHud';
 import { useMagnetic } from '@/hooks/useMagnetic';
 import { useRoomParallax } from '@/lib/useRoomParallax';
@@ -125,9 +126,10 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
     return new URLSearchParams(window.location.search).has('media');
   });
   /**
-   * 视频页的**片单频道** —— 由点的是第一排第几台设备决定（DVD→横屏 / DV→AI / MP3→竖屏）。
-   * 不传 = 列出全部作品（?media=1 直接预览时就是这个状态）。
-   * 调试可以写 `?media=1&channel=ai` 直接看某个频道，不用去点 3D 模型。
+   * 视频页的**进门频道** —— 由点的是第一排第几台设备决定（DVD→横屏 / DV→AI / MP3→竖屏）。
+   * 2026-09-21 起频道不再过滤片单（三个入口都是同一份全量循环列表），
+   * 只决定初始定位：进门落在该频道第一条片子上。
+   * 调试可以写 `?media=1&channel=ai` 直接看某个入口的定位，不用去点 3D 模型。
    */
   const [mediaChannel, setMediaChannel] = useState<MediaChannel | undefined>(() => {
     const v = new URLSearchParams(window.location.search).get('channel');
@@ -181,6 +183,8 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
   });
   const musicRef = useRef<StudioMusic | null>(null);
   const timersRef = useRef<number[]>([]);
+  /** 联系方式面板句柄：菜单点 Contact 时直接把它推到顶（见 StudioContactPanel）。 */
+  const contactRef = useRef<StudioContactHandle>(null);
   /**
    * 对焦专用的定时器组。和 timersRef 分开，是因为 `closeCrt()` 会**一次清空**
    * timersRef（它要撤掉面试官模式那个"460ms 后收房间"的尾巴），
@@ -464,6 +468,23 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
    * 以前点了没反应，菜单在内容页里看着像装饰。现在它们和"点物件"走完全同一条路 ——
    * 一个菜单项从任何地方点下去，落到的地方都一样。
    */
+  /** 把盖在工作室之上的板块浮层全部收掉（不逐个走各自的 onClose 动画：马上要被别的东西取代）。
+      2026-09-17 晚为菜单里的 Contact 加的：联系方式面板属于**工作室画面**，
+      被木马 / 落地页 / 本子 / Green OS 盖着时是看不见的 —— 以前点了要手动先关掉浮层
+      才看得到（用户原话：「必须关掉旋转木马模型页才行」）。
+      只收浮层 + 镜头拉回 1:1，不做 goToObject 那套转场：回到工作室画面正是我们要的结果。
+      ⚠️ 面板本身不用在这里再调 reveal —— StudioContactPanel 里有 pendingRevealRef，
+         `blocked` 一落下来会自动补发那次请求（改成同步调也只是重复设同一个目标值）。 */
+  const closeOverlays = useCallback(() => {
+    setNotebookOpen(false);
+    setWorksOpen(false);
+    setNewsstandOpen(false);
+    setMediaOpen(false);
+    setCopyOpen(false);
+    setAboutOpen(false);
+    closeFocused();
+  }, [closeFocused]);
+
   const goToObject = useCallback(
     (id: StudioObject['id']) => {
       // 先把这个板块之外的内容层全收掉（不逐个走 onClose，也不做转场动画：
@@ -501,8 +522,10 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
   /**
    * 报刊亭里点开某排物件 → 进对应落地页（2026-09-15）。
    * 按 row 分流：devices（顶层 DVD/DV/MP3）→ 视频与音乐；books（下层档案）→ 文案与 AI。
-   * 顶层三台设备还各自带一条**片单频道**（CHANNEL_BY_DEVICE）：
-   *   DVD → 横屏 / DV → AI / MP3 → 竖屏，落地页只列该频道的片子。
+   * 顶层三台设备各带一条片单频道（CHANNEL_BY_DEVICE）：
+   *   DVD → 横屏 / DV → AI / MP3 → 竖屏。
+   * 2026-09-21 规则反转：三个入口看的是**同一份全量循环片单**（横屏→AI→竖屏），
+   * 频道只决定进门时定位在第几条，不再过滤列表。
    * 进落地页算"离开工作室画面"，背景音乐停下；关闭时由各自的 onClose 恢复。
    */
   const handleNewsstandPick = useCallback(
@@ -681,7 +704,7 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
           于是纸升起来之后"返回"和"MENU"照样看得见、点得到（那是唯一的退出口）。
           `blocked` 传的是别的浮层：被菜单/木马/落地页盖住时滚轮归它们，
           而且面板会主动收回去（见组件文件头「坑 3」）。 */}
-      <StudioContactPanel blocked={layerOpen} />
+      <StudioContactPanel ref={contactRef} blocked={layerOpen} />
 
       {/* My Studio 最上层：L.I.S.A. 风格打字机 + 快捷胶囊对话 HUD（top:62% / left:5%）。
           任何浮层 / 板块盖上来时 hidden，避免在 Green OS / 落地页之上浮一层。 */}
@@ -728,7 +751,15 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
           // 以前这两条点了没反应，菜单一进内容页就像装饰）。
           if (id === 'works') return goToObject('carousel');
           if (id === 'lab') return goToObject('newsstand');
-          // Contact / Resume 还没有落地页，保持占位。
+          // Contact → 直接从底部把"联系方式"面板推上来（不必滚 12 格）。
+          //      先收浮层：面板长在工作室画面里，被木马/落地页盖着时推上来也看不见
+          //      （2026-09-17 晚用户报「必须关掉旋转木马模型页才行」）。
+          if (id === 'contact') {
+            closeOverlays();
+            return contactRef.current?.reveal();
+          }
+          // Resume → 直接下载简历（文件没上传时会有提示告诉你放哪，见 src/lib/resume.ts）
+          if (id === 'resume') return void downloadResume();
           if (id !== 'about') return;
           // About Me → 面试官模式：直奔 Green OS 桌面，跳过镜头推进与开机自检
           goToObject('computer');

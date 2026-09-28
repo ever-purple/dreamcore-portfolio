@@ -40,9 +40,10 @@ export type RowSpec = {
   books: BookSpec[];
 };
 
-const W = 0.115; // 书宽（模型单位；架子1.glb 高 1.07 / 宽 0.485，与老架子同尺度）
+// W / D 导出：报刊亭场景要拿它们给书配「静止位拾取代理盒」（尺寸必须与书一致）
+export const W = 0.115; // 书宽（模型单位；架子1.glb 高 1.07 / 宽 0.485，与老架子同尺度）
 const H = 0.148; // 书高（展示柜层间净高约 0.18，不能顶到上层搁板）
-const D = 0.034; // 书厚
+export const D = 0.034; // 书厚
 
 /**
  * 下层书籍：放在展示柜**下层搁板**上，完整展示（取消「只露一半」），
@@ -155,6 +156,177 @@ function barcode(ctx: CanvasRenderingContext2D, x: number, y: number, w: number,
   ctx.restore();
 }
 
+/**
+ * 第一本书（cover=1）的「文案」主题封面 —— 插画为主（用户 2026-09-22）。
+ *
+ * 构图（暖牛皮纸底，与文案页的小票纸张肌理同气质）：
+ *   上半是标题「Copywriting」+ 中文「文案」（小一号）；
+ *   中下是一本**摊开的笔记本**插画：左右两页、中线书脊、纸上画着一行行
+ *   手写感文字线条（用起伏的小弧线模拟「写满字的纸页」，而不是死板的直线）；
+ *   右下角一支斜放的钢笔，笔尖指向纸页 —— 呼应「写文案」这个动作。
+ *   底部一条条码 + 页脚小字，压住版式，像一本讲究的纸本刊物。
+ *
+ * 用纯 Canvas 绘制（零素材依赖），风格与占位封面同一套机制。
+ */
+function drawCopywritingCover(ctx: CanvasRenderingContext2D, w: number, h: number) {
+  // —— 底：暖牛皮纸（贴近文案页 --wkp-paper 的暖灰米，但更暖一点做封面底色）——
+  const bgTop = '#c9b391';
+  const bgBottom = '#b89c74';
+  const bg = ctx.createLinearGradient(0, 0, 0, h);
+  bg.addColorStop(0, bgTop);
+  bg.addColorStop(1, bgBottom);
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, w, h);
+
+  const ink = '#2a2118';       // 深墨
+  const inkSoft = 'rgba(42,33,24,0.55)';
+  const pad = w * 0.09;
+  ctx.textBaseline = 'alphabetic';
+
+  // —— 标题区 ——
+  ctx.fillStyle = ink;
+  ctx.font = `600 ${w * 0.128}px ${SERIF}`;
+  ctx.textAlign = 'left';
+  ctx.fillText('Copywriting', pad, pad + w * 0.13);
+
+  ctx.font = `500 ${w * 0.058}px ${SANS}`;
+  ctx.fillStyle = inkSoft;
+  // 中文「文案」用字距拉开
+  tracked(ctx, '文 案', pad + w * 0.012, pad + w * 0.13 + w * 0.082, w * 0.03);
+
+  // 标题下一条细线（隔开标题与插画）
+  ctx.strokeStyle = inkSoft;
+  ctx.globalAlpha = 0.5;
+  ctx.lineWidth = Math.max(1, w * 0.004);
+  ctx.beginPath();
+  ctx.moveTo(pad, pad + w * 0.13 + w * 0.13);
+  ctx.lineTo(w - pad, pad + w * 0.13 + w * 0.13);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  // —— 摊开的笔记本插画 ——
+  // 本子居中，宽约 0.84w，高约 0.52w（两页并排）
+  const nbW = w * 0.84;
+  const nbH = w * 0.50;
+  const nbX = (w - nbW) / 2;
+  const nbY = h * 0.335;
+  const spineX = nbX + nbW / 2; // 中线书脊
+
+  // 本子阴影（略微投影，让本子「浮」在封面上）
+  ctx.save();
+  ctx.shadowColor = 'rgba(42,33,24,0.32)';
+  ctx.shadowBlur = w * 0.05;
+  ctx.shadowOffsetY = w * 0.028;
+  // 纸页底色（左右两页）
+  ctx.fillStyle = '#f4ecd9';
+  roundRect(ctx, nbX, nbY, nbW, nbH, w * 0.014);
+  ctx.fill();
+  ctx.restore();
+
+  // 两页之间的书脊凹痕（竖线 + 中间微暗）
+  const spineGrad = ctx.createLinearGradient(spineX - w * 0.03, 0, spineX + w * 0.03, 0);
+  spineGrad.addColorStop(0, 'rgba(42,33,24,0)');
+  spineGrad.addColorStop(0.5, 'rgba(42,33,24,0.16)');
+  spineGrad.addColorStop(1, 'rgba(42,33,24,0)');
+  ctx.fillStyle = spineGrad;
+  ctx.fillRect(spineX - w * 0.03, nbY, w * 0.06, nbH);
+
+  // 纸页上的「手写文字行」—— 用小弧线模拟写满字的行
+  // 左右两页各画若干行，行内用起伏的短横线（不是直线，有手写感）
+  const pagePad = w * 0.055;
+  const pageInnerW = nbW / 2 - pagePad * 2;
+  const lineCount = 7;
+  const lineGap = (nbH - pagePad * 2) / (lineCount - 1);
+  const drawLines = (pageCenterX: number) => {
+    const lx = pageCenterX - pageInnerW / 2;
+    for (let li = 0; li < lineCount; li++) {
+      const ly = nbY + pagePad + li * lineGap;
+      const lineW = pageInnerW * (0.55 + Math.random() * 0.42);
+      // 手写感的起伏线：一段段小弧
+      ctx.strokeStyle = inkSoft;
+      ctx.globalAlpha = 0.34;
+      ctx.lineWidth = Math.max(1, w * 0.006);
+      ctx.beginPath();
+      const segs = 8;
+      for (let s = 0; s <= segs; s++) {
+        const sx = lx + (lineW * s) / segs;
+        const sy = ly + (s % 2 === 0 ? 0 : w * 0.006);
+        if (s === 0) ctx.moveTo(sx, sy);
+        else ctx.lineTo(sx, sy);
+      }
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  };
+  drawLines(nbX + nbW / 4); // 左页
+  drawLines(nbX + (nbW * 3) / 4); // 右页
+
+  // 右页上一条「正在写」的高亮笔迹（更实的一行，表示笔刚写过）
+  ctx.strokeStyle = ink;
+  ctx.globalAlpha = 0.72;
+  ctx.lineWidth = Math.max(1.2, w * 0.007);
+  ctx.beginPath();
+  const hiX = nbX + (nbW * 3) / 4 - pageInnerW / 2;
+  const hiY = nbY + pagePad + lineGap * 4;
+  const hiW = pageInnerW * 0.62;
+  for (let s = 0; s <= 6; s++) {
+    const sx = hiX + (hiW * s) / 6;
+    const sy = hiY + (s % 2 === 0 ? 0 : w * 0.007);
+    if (s === 0) ctx.moveTo(sx, sy);
+    else ctx.lineTo(sx, sy);
+  }
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  // —— 钢笔（右下角，斜放，笔尖指向纸页）——
+  const penX = nbX + nbW * 0.82;
+  const penY = nbY + nbH * 1.16;
+  const penLen = w * 0.34;
+  const penAngle = -0.62; // 斜度
+  ctx.save();
+  ctx.translate(penX, penY);
+  ctx.rotate(penAngle);
+  // 笔身
+  ctx.fillStyle = '#8d3a2b';
+  roundRect(ctx, -penLen, -w * 0.022, penLen, w * 0.044, w * 0.01);
+  ctx.fill();
+  // 笔帽/笔夹（尾端深色一段）
+  ctx.fillStyle = '#22312b';
+  roundRect(ctx, -penLen, -w * 0.022, w * 0.07, w * 0.044, w * 0.008);
+  ctx.fill();
+  // 笔尖（金属色三角）
+  ctx.fillStyle = '#d8c69a';
+  ctx.beginPath();
+  ctx.moveTo(0, -w * 0.022);
+  ctx.lineTo(w * 0.055, 0);
+  ctx.lineTo(0, w * 0.022);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  // —— 页脚：条码 + 小字 ——
+  barcode(ctx, pad, h - pad - h * 0.062, w * 0.3, h * 0.06, ink);
+  ctx.fillStyle = inkSoft;
+  ctx.font = `400 ${w * 0.032}px ${SANS}`;
+  ctx.textAlign = 'right';
+  tracked(ctx, 'WRITING · 文案 · NO.01', w - pad, h - pad - h * 0.01, w * 0.01, 'right');
+  ctx.textAlign = 'left';
+
+  paper(ctx, w, h, 0.05);
+}
+
+/** roundRect 垫片（老浏览器没有 ctx.roundRect） */
+function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  const rr = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
+}
+
 /** 占位封面：纯色 + 细线框 + 卷号。像设计选择，不像「图丢了」。 */
 function drawPlaceholder(ctx: CanvasRenderingContext2D, w: number, h: number, i: number) {
   const t = COVER_TINTS[i % COVER_TINTS.length];
@@ -218,7 +390,11 @@ export function coverTexture(i: number, onReal?: (tex: THREE.Texture) => void): 
   const placeholder = new THREE.CanvasTexture(cv);
   placeholder.colorSpace = THREE.SRGBColorSpace;
   placeholder.anisotropy = 8;
-  if (ctx) drawPlaceholder(ctx, CW, CH, key);
+  if (ctx) {
+    // 第一本书（cover=1）＝「文案」主题插画封面；其余保持占位（2026-09-22）
+    if (i === 1) drawCopywritingCover(ctx, CW, CH);
+    else drawPlaceholder(ctx, CW, CH, key);
+  }
   placeholder.needsUpdate = true;
   const entry: CoverEntry = { tex: placeholder, real: false };
   coverCache.set(key, entry);
@@ -329,7 +505,13 @@ export function createBook(spec: BookSpec): THREE.Group {
   g.add(back);
 
   const spine = new THREE.Mesh(new THREE.BoxGeometry(board, h, d), spineMat);
-  spine.position.set(-(w - board) / 2, h / 2, 0);
+  // ⚠️ 书脊必须在封面**左侧紧贴、不重叠**：封面 box 宽 w、左端 x=-w/2，
+  //   书脊宽 board，其中心应在 -w/2 - board/2（内侧 x=-w/2 与封面左端对齐）。
+  //   老代码中心写 -(w-board)/2 = -w/2 + board/2，书脊 box 右半段**穿进封面**，
+  //   接缝处 Z-fighting —— 深绿色书脊封条边缘高频闪烁（用户 2026-09-22
+  //   「只有第一本穿模，封书条一直闪」；只有第一本显眼是因为它的书脊是深绿、
+  //   和暖牛皮封面强对比，另两本同色看不出）。
+  spine.position.set(-(w / 2) - board / 2, h / 2, 0);
   g.add(spine);
 
   g.traverse((o) => {

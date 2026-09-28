@@ -1,0 +1,37 @@
+{
+  "savedAt": 1790502360316,
+  "store": {
+    "vision": [],
+    "music": [],
+    "projects": [],
+    "skills": [],
+    "cases": [
+      {
+        "id": "link-1790501208121",
+        "title": "天猫绿动生活用行动给小流浪一个家 | SocialBeta",
+        "cover": "/insp/media/image-image-mujm6qip.png",
+        "link": "https://socialbeta.com/campaign/28239",
+        "tags": [
+          "#TVC",
+          "#电商"
+        ]
+      },
+      {
+        "id": "link-1790502188800",
+        "title": "喜茶首届全国联考来了！ | SocialBeta",
+        "cover": "/insp/media/image-image-mujmrt9d.png",
+        "link": "https://socialbeta.com/campaign/28297",
+        "tags": [
+          "#线下营销"
+        ]
+      },
+      {
+        "id": "link-1790502360316",
+        "title": "爱「搞试」的年轻人，为什么都在小红书？｜SocialBeta",
+        "cover": "/insp/media/image-image-mujmvi21.png",
+        "link": "https://socialbeta.com/article/111383"
+      }
+    ],
+    "knowledge": []
+  }
+}

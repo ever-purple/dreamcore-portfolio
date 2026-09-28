@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react';
 import { SHAPE, TILE_STARS, type ShapeName } from '@/components/decorShapes';
+import { ASCII_BLOOM, type BloomKind } from '@/components/bloomAsciiArt';
 
 /**
  * 子页面背景装饰层（2026-09-17 / 第二轮重构）
@@ -35,7 +36,7 @@ import { SHAPE, TILE_STARS, type ShapeName } from '@/components/decorShapes';
  *   颜色与浓度全在 CSS 变量上。⚠️ 用户明确"不要牵牛花"（那是 AsciiFlower 的主角）。
  */
 
-type Tone = 'mint' | 'mintdeep' | 'base' | 'green' | 'paper' | 'choc';
+type Tone = 'mint' | 'mintdeep' | 'base' | 'green' | 'paper' | 'choc' | 'lilac';
 type Kind = ShapeName | 'softstar' | 'letter';
 type TiledKind = 'polka' | 'stars' | 'grid';
 
@@ -58,7 +59,34 @@ type Orn = {
   text?: string;
   /** 窄屏隐藏 */
   sm?: boolean;
+  /**
+   * 用**点阵当墨**：花由一颗颗点拼出来 = 参考图3/4/5 那种 halftone / ASCII 质感。
+   * ⚠️ 不填 = 纯色实块（2026-09-17 第三轮用户要"颜色纯"才改的，子页那批花还在用）。
+   *    所以这一档收成 **opt-in**：只有点了 `dots` 的花变点阵，其余页面不受影响。
+   */
+  dots?: boolean;
+  /**
+   * 换成 **ASCII 字符花**（真字符排出来的，见 bloomAsciiArt.ts）。
+   * 填了它就**不再走 SVG 遮罩**，`k` 变成占位（helper `b()` 会给个 dummy）。
+   * ⚠️ 这一档和 `dots`/实块互斥：字符画本身就有颗粒感，再叠点阵没意义。
+   */
+  bloom?: BloomKind;
 };
+
+/**
+ * ASCII 字符花的 helper。`size` 是**字号**（不是宽度）—— 字符画按
+ * `列数 × 0.6 × 字号` 撑开，和 `letter` 那一档一样用字号定位大小。
+ * `k` 这里给 `'star'` 纯属占位：`bloom` 分支在 OrnSpan 里会提前 return，用不到 k。
+ */
+const b = (
+  kind: BloomKind,
+  x: number,
+  y: number,
+  size: string,
+  tone: Tone,
+  op: number,
+  extra: Omit<Orn, 'k' | 'x' | 'y' | 'w' | 'tone' | 'op'> = {},
+): Orn => ({ k: 'star', bloom: kind, x, y, w: size, tone, op, ...extra });
 
 /** 点阵密度：面状 5px 网格 ≈ 43% 覆盖；星/字母 3px 更密才够实。 */
 const DOTS: Record<Kind, { dot: string; r: string }> = {
@@ -108,9 +136,13 @@ const VARIANTS: Record<string, Variant> = {
       o('letter', 15, 15, 'clamp(88px, 10vw, 160px)', 'base', 0.78, { rot: -7, text: 'Reel' }),
       tiny(22, 4, 'clamp(24px, 2.6vw, 40px)', 'mintdeep', 0.88, -12),
       o('sparkle', 9, 20, 'clamp(26px, 2.8vw, 42px)', 'mint', 0.85),
-      /* 右下簇：烟花花 + 蕾丝椭圆框 + 星 */
-      o('spray', 92, 88, 'clamp(190px, 21vw, 320px)', 'choc', 0.64, { rot: 8 }),
-      o('oval', 83, 94, 'clamp(130px, 15vw, 220px)', 'base', 0.74, { rot: -6 }),
+      /* 右下簇：烟花花 + 蕾丝椭圆框在 2026-09-17 第二轮被删；这一角挂**淡紫 ASCII 彼岸花**
+         （先走专用组件 AsciiLycoris，后并进通用 `b()` 通道，位置按旧 CSS 折成中心点）。
+         ⚠️ 2026-09-17 晚有个坑，记在这别重犯：另一个会话收到用户一张截图 + 「删掉这种风格」，
+            它把这里的删指**理解成了"删掉彼岸花 / ASCII 花整条链"**，于是删了
+            `b('lycoris', …)` / lilac 色调 / 甚至文档注释。**用户随后澄清：要删的不是这个。**
+            彼岸花与 ASCII 花是用户点名要的，恢复回来。 */
+      b('lycoris', 80, 76, 'clamp(5px, 0.9vw, 13px)', 'lilac', 0.52),
       tiny(80, 78, 'clamp(20px, 2.2vw, 34px)', 'mintdeep', 0.88, 8),
       /* 顶带小星，压着标题栏的空白 */
       tiny(52, 4, 'clamp(14px, 1.5vw, 24px)', 'mintdeep', 0.85, 8),
@@ -120,19 +152,32 @@ const VARIANTS: Record<string, Variant> = {
 
   /* ======================= 文案页（暖米纸 · 星星阵饰带）=======================
      卡片是半透明白 → 平铺的星星阵会透出一层，正是"印在带底纹的纸上"。
-     左上是巧克力大花簇，**字母 Copy 移到右下簇、压在蝴蝶结花心上**（避开左上标题）。 */
+     左上那一簇**只剩一颗小星**（巧克力大花 2026-09-22 已删，见下）；
+     右下角只留花体字母 Copy（原本压着蝴蝶结，2026-09-17 晚
+     那朵百合 + 蝴蝶结已按用户截图删掉），避开左上标题。 */
   cp: {
     tiled: { kind: 'stars', tone: 'mintdeep', op: 0.2 },
     orn: [
-      o('blossom', 3, 9, 'clamp(220px, 25vw, 360px)', 'choc', 0.7, { rot: -12 }),
+      /* ⚠️ 2026-09-22：这一角原来是 `o('blossom', 3, 9, 'clamp(220px, 25vw, 360px)', 'choc', 0.7, {rot:-12})`
+         （巧克力实心大花）—— 用户贴截图说「不要遮挡」：实测它 333×333 压在 y 112~163 的
+         `.cp-filters` 胶囊行上（相交 10043 px²），深色从**透明胶囊**里透出来，
+         「文案」两字直接糊掉。用户要「删掉」，已删。
+         （胶囊本身也补了页同色实底，双保险，见 index.css 的 .cp-filter。）
+         别再以「左上太空」为由加回来：标题 + 筛选就在这一角，任何大块深色都会压字。 */
       tiny(23, 5, 'clamp(22px, 2.4vw, 36px)', 'mint', 0.82, 10),
-      o('lily', 96, 78, 'clamp(180px, 20vw, 300px)', 'base', 0.58, { rot: 6 }),
-      o('bow', 85, 91, 'clamp(120px, 14vw, 200px)', 'choc', 0.68, { rot: -6 }),
-      /* 字母 Copy 落在右下簇、压在蝴蝶结上 —— 与左上标题错开 */
+      /* 2026-09-17 晚 / 用户截图「去掉这个花和蝴蝶结」：
+         右下的实块百合（原 `o('lily', 96, 78, …)`）+ 巧克力蝴蝶结
+         （原 `o('bow', 85, 91, …)`）**整对删掉** —— 它俩本来就是"结心压花"的组合，
+         只删一个会剩个孤零件，一起走才干净。
+         ⚠️ 字母 Copy 保留：它落在 x78/y86，和右边那颗小星仍能凑成一簇。 */
       o('letter', 78, 86, 'clamp(92px, 10.5vw, 170px)', 'base', 0.76, { rot: -5, text: 'Copy' }),
       tiny(90, 66, 'clamp(18px, 2vw, 30px)', 'mintdeep', 0.82, -16),
       tiny(50, 92, 'clamp(13px, 1.4vw, 22px)', 'mint', 0.8, 6),
       o('sparkle', 42, 4, 'clamp(22px, 2.4vw, 36px)', 'mintdeep', 0.78),
+      /* 2026-09-17 晚 / 用户「其他地方可以加一下这种花，不要灰白色」：
+         左下角本来是空的 —— 补一朵 ASCII 大丽花，巧克力色（暖米纸上对比最足），
+         与左上那朵实块巧克力大花**同色对角**，构图立刻稳。 */
+      b('dahlia', 10, 82, 'clamp(4px, 0.72vw, 10px)', 'choc', 0.5),
     ],
   },
 
@@ -147,53 +192,116 @@ const VARIANTS: Record<string, Variant> = {
       o('blossom', 7, 84, 'clamp(200px, 22vw, 330px)', 'base', 0.68, { rot: -10 }),
       o('letter', 17, 93, 'clamp(76px, 8.5vw, 140px)', 'choc', 0.78, { rot: -4, text: 'Plan' }),
       tiny(26, 74, 'clamp(18px, 2vw, 30px)', 'mint', 0.84, -8),
-      o('oval', 96, 52, 'clamp(120px, 13vw, 200px)', 'choc', 0.62, { rot: 8, sm: true }),
+      /* 这一行原本是 `o('oval', 96, 52, …)`（巧克力色双层虚线椭圆）。
+         2026-09-17 晚按用户「删掉线描空心图形」撤掉 —— `SHAPE.oval` 是
+         `fill="none"` + `stroke-dasharray`，**纯描边、一点填充都没有**，正是被否掉的那一类。
+         ⚠️ 别再以"压住右栏空角"为由加回来；要补空角就用有填充的形状（blossom / spray）。 */
+      /* ⚠️ 2026-09-17 夜：这一角原本挂着一朵 ASCII 莲花，用户随后要求
+         「把莲花放置左边区域左上角」→ 已挪成左栏自己的背景层
+         （WorkProjectPage 的 `.wkp-rail-bloom` + index.css 里那条规则）。
+         别再往这一角补花，先把下面这条实测结论读完：
+         **这页装饰层是「视口固定 + z-index:-1」，而首屏整屏都不透明** ——
+         `HEADER.wkp-hero`（实底 #f1efe9）+ `SECTION.wkp-band`（薄荷实底 #b5e3d6）
+         把装饰整块挡住，所以首屏看不到任何装饰；滚过首屏后正文区块 bg 全是
+         transparent，才透得出来。当初报「莲花没看到」就是这个原因，
+         **不是没渲染、也不是浓度太低**（无头 Edge 开 `?works=1&wkp=0`，
+         在字符画上逐点取 `elementsFromPoint` 量出来的）。
+         本变体剩下的 spray / blossom / letter 同理：首屏不可见是结构如此。 */
     ],
   },
 
   /* ======================= 实习日记（牛皮纸本子内页）=======================
      纸面已有四条手写水印（keep going / 2026 / idea! / to be continued），
      两簇贴左上与右下角，字母 Diary 挂左中空白带——和四条水印全错开。
-     巧克力花压在牛皮纸上对比足够，浓度略收一档避免显脏。 */
+     巧克力花压在牛皮纸上对比足够，浓度略收一档避免显脏。
+
+     ⚠️ 2026-09-17（拼贴版式）：一页被内容铺满后，「贴角 + 中心留白」的假设失效 ——
+     左上那朵巧克力大花正好落在**手写标题**底下（实测截图：标题陷进花色里、对比度很差）。
+     所以左上簇整体下移到 y≈30%（避开标题带 y 0~22% / x 8~30%），落进左侧板块卡后面；
+     平铺层从 0.18 收到 0.15。其余保持原来的浓度与位置。 */
   diary: {
-    tiled: { kind: 'polka', tone: 'base', op: 0.18 },
+    tiled: { kind: 'polka', tone: 'base', op: 0.15 },
     orn: [
-      o('blossom', 12, 12, 'clamp(190px, 21vw, 300px)', 'choc', 0.64, { rot: -14 }),
-      tiny(24, 22, 'clamp(20px, 2.2vw, 34px)', 'mint', 0.82, 14),
+      o('blossom', 3, 30, 'clamp(190px, 21vw, 300px)', 'choc', 0.6, { rot: -14 }),
+      tiny(15, 39, 'clamp(20px, 2.2vw, 34px)', 'mint', 0.8, 14),
       o('blossomThin', 90, 82, 'clamp(170px, 19vw, 280px)', 'base', 0.62, { rot: 10 }),
-      o('bow', 81, 93, 'clamp(110px, 12.5vw, 180px)', 'choc', 0.64, { rot: -8 }),
+      /* 2026-09-17 用户要求删掉这里的蝴蝶结（原 `o('bow', 81, 93, …)`）：
+         它正好叠在右下那朵瘦瓣花的下缘，「花 + 结」两件套在纸角上互相抢，
+         而且 bow 是点阵遮罩画的、线条粗，在牛皮纸上读起来就是一坨灰。
+         右下簇现在只留「瘦瓣花 + 一颗小星」，反而干净。
+         ⚠️ 别再加回来。`SHAPE.bow` 这个形状**现在全站已无引用**（cp 变体那一对
+            也在 2026-09-17 晚按用户截图删掉了）—— 形状本身留着不碍事，
+            但别再造"结心压花"这种两件套，用户连着两处都要求删掉了。 */
       tiny(78, 70, 'clamp(16px, 1.8vw, 28px)', 'mintdeep', 0.82, -12, true),
-      o('letter', 6, 42, 'clamp(72px, 8vw, 132px)', 'base', 0.66, { rot: -6, text: 'Diary' }),
+      o('letter', 3, 62, 'clamp(72px, 8vw, 132px)', 'base', 0.6, { rot: -6, text: 'Diary' }),
+      tiny(48, 90, 'clamp(13px, 1.4vw, 22px)', 'mint', 0.8, 20),
+      /* 2026-09-17 晚 / 用户「其他地方可以加一下这种花」：
+         右上角（x≈90）躲开了手写标题带（标题只占 x 8~30 / y 0~22）。
+         浓度比别页再收一档（0.45）：牛皮纸底色本来深，字符画堆太实会显脏。
+         窄屏隐藏 —— 本子内页窄屏是单栏滚动，装饰容易横穿正文。 */
+      b('dahlia', 90, 18, 'clamp(4px, 0.68vw, 9px)', 'base', 0.45, { sm: true }),
+    ],
+  },
+
+  /* ======================= 实习日记 · 内页（除第一页外的所有页）=======================
+     2026-09-22 用户原话：「把实习日记中除了第一页，删掉其他页中的花朵、ascll 画、
+     2026 元素」。这一档 = 上面 `diary` 那套**抽掉三样东西**：
+       · 巧克力大花 blossom（x3 / y30）
+       · 瘦瓣花 blossomThin（x90 / y82）
+       · ASCII 大丽花 b('dahlia', 90, 18)（字符画）
+     用户没点名的照旧留着：波点平铺层、三颗小星、花体字母 Diary ——
+     内页不至于空到没有手账感，也不会再被花压到正文标题上。
+     ⚠️ 第一页仍走 `diary`：用户明确说"除了第一页"，两套**别合并回一个变体**，
+        合并等于全站删花，与要求相反。 */
+  diaryPlain: {
+    tiled: { kind: 'polka', tone: 'base', op: 0.15 },
+    orn: [
+      tiny(15, 39, 'clamp(20px, 2.2vw, 34px)', 'mint', 0.8, 14),
+      tiny(78, 70, 'clamp(16px, 1.8vw, 28px)', 'mintdeep', 0.82, -12, true),
+      o('letter', 3, 62, 'clamp(72px, 8vw, 132px)', 'base', 0.6, { rot: -6, text: 'Diary' }),
       tiny(48, 90, 'clamp(13px, 1.4vw, 22px)', 'mint', 0.8, 20),
     ],
   },
 
   /* ======================= 联系方式的巧克力纸（深底 · 薄荷当墨）=======================
-     巧克力底 + 薄荷花本就是高对比，浓度再抬一档，星阵饰带也更实。 */
+     2026-09-17 第四轮：用户把实心花 + 点圈椭圆两张截图发来说「删掉，
+     花我想要 ascii 风格的」（参考图3/4/5/7 —— 花由点拼成）。
+     所以：椭圆圈**直接删**；两朵实心花换成**点阵花**（`dots: true`）——
+     形还是参数化花枝/花瓣，墨从"一整块"换成"一颗颗点"。
+     星星一颗不动（用户明确要留）。右上已有那朵 ASCII 牵牛花字符画，不重复摆花。 */
   contact: {
     tiled: { kind: 'stars', tone: 'mint', op: 0.32 },
     orn: [
-      o('blossomThin', 5, 87, 'clamp(190px, 21vw, 310px)', 'mint', 0.8, { rot: -16 }),
+      /* 这里原本是 `o('sprig', 5, 87, …)`（左下那枝薄荷色花枝）。
+         2026-09-17 晚按用户「删掉线描空心图形」撤掉：`SHAPE.sprig` 的**茎是 `fill="none"`
+         + `stroke`**，属于纯描边件（叶虽然实心，但整枝在纸面上读起来就是一根线）。
+         ⚠️ 别再加回来。左下角真要压东西，用 `blossomThin` 或 `tiny()` 这种实心/点阵件。 */
       tiny(15, 71, 'clamp(22px, 2.4vw, 38px)', 'mint', 0.92, 10),
-      o('sprig', 96, 76, 'clamp(160px, 18vw, 260px)', 'mint', 0.74, { rot: 6, sm: true }),
-      o('oval', 92, 24, 'clamp(130px, 14vw, 210px)', 'mint', 0.8, { rot: 10 }),
+      o('blossomThin', 96, 76, 'clamp(160px, 18vw, 260px)', 'mint', 0.74, {
+        rot: 6,
+        sm: true,
+        dots: true,
+      }),
       tiny(84, 44, 'clamp(18px, 2vw, 30px)', 'mint', 0.92, -14),
       o('sparkle', 8, 38, 'clamp(20px, 2.2vw, 34px)', 'mint', 0.88, { rot: 18 }),
     ],
   },
 
   /* ======================= 工作室全屏菜单（巧克力覆盖层 · 薄荷当墨）=======================
-     替换原来那朵 ASCII 牵牛花（用户：太像素风 / ascii）。这里改用和子页同款的
-     实色花 + 薄荷星阵饰带，巧克力底上薄荷天然高对比。菜单主体文字在正中，
-     装饰只在四角与上下饰带，不抢字。 */
+     2026-09-17 第四轮：用户「菜单页面也换一下」—— 和联系方式同一套处理：
+     点圈椭圆删掉，实色花换成**点阵花**（dots: true，花由点拼成）。
+     星阵饰带与小星不动。菜单主体文字在正中，装饰只在四角与饰带，不抢字。 */
   menu: {
     tiled: { kind: 'stars', tone: 'mint', op: 0.28 },
     orn: [
-      o('blossom', 6, 8, 'clamp(200px, 22vw, 320px)', 'mint', 0.78, { rot: -14 }),
+      o('blossom', 6, 8, 'clamp(200px, 22vw, 320px)', 'mint', 0.78, { rot: -14, dots: true }),
       tiny(26, 4, 'clamp(22px, 2.4vw, 36px)', 'mint', 0.9, 10),
-      o('spray', 94, 90, 'clamp(190px, 21vw, 320px)', 'mint', 0.74, { rot: 8 }),
-      o('oval', 84, 96, 'clamp(130px, 14vw, 210px)', 'mint', 0.78, { rot: -6 }),
+      o('spray', 94, 90, 'clamp(190px, 21vw, 320px)', 'mint', 0.74, { rot: 8, dots: true }),
       tiny(80, 76, 'clamp(20px, 2.2vw, 34px)', 'mint', 0.9, 8),
+      /* 2026-09-17 晚 / 用户「其他地方可以加一下这种花」：
+         左下角原本空的，补一朵 ASCII 三色堇。深底给薄荷亮色 + 高浓度（0.6）——
+         照本文件浓度基准里"深底给亮色"那条，字符画细线在巧克力底上浓度低了会糊。 */
+      b('pansy', 9, 87, 'clamp(4px, 0.75vw, 10.5px)', 'mint', 0.6),
     ],
   },
 };
@@ -215,7 +323,21 @@ function OrnSpan({ orn, word }: { orn: Orn; word?: string }) {
     ...(orn.blur ? { '--pdecor-blur': orn.blur } : null),
   } as CSSProperties;
 
-  const cls = `pdecor__orn pdecor--${orn.tone}${orn.sm ? ' pdecor__orn--sm-hide' : ''}`;
+  const cls = `pdecor__orn pdecor--${orn.tone}${orn.sm ? ' pdecor__orn--sm-hide' : ''}${
+    orn.dots ? ' pdecor__orn--dots' : ''
+  }`;
+
+  if (orn.bloom) {
+    return (
+      <pre
+        className={`ascii-bloom pdecor--${orn.tone}${orn.sm ? ' pdecor__orn--sm-hide' : ''}`}
+        style={{ ...style, fontSize: orn.w } as CSSProperties}
+        aria-hidden="true"
+      >
+        {ASCII_BLOOM[orn.bloom]}
+      </pre>
+    );
+  }
 
   if (orn.k === 'letter') {
     return (

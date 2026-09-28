@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Plugin } from 'vite';
+import { resolveLinkMeta, normalizeUrl } from './link-meta';
 
 /**
  * 「站内编辑 → 写回代码」的开发期写入通道。
@@ -27,6 +28,34 @@ const UPLOAD_URL_BASE = '/works/editor';
 
 const ALLOWED_EXT = new Set(['jpg', 'jpeg', 'png', 'webp', 'avif', 'gif', 'pdf']);
 const MAX_BODY = 32 * 1024 * 1024;
+
+/* ---- 灵感收藏的落盘通道（与上面分开：存 JSON 数据文件 + 媒体目录） ---- */
+
+/**
+ * 为什么是 `public/` 而不是 `src/data/*.ts`：src 下的模块会被 Vite 纳进模块图，
+ * 一改就触发 HMR 整页刷新 —— 作者每保存一条收藏页面就重载一次，没法连续录入。
+ * public/ 是纯静态资源，写完即可被 fetch 到，不惊动模块图；而且 `npm run build`
+ * 会原样拷进 dist/，构建产物同样带着这份数据。
+ */
+const INSP_DATA_FILE = 'public/insp/data.json';
+const INSP_MEDIA_DIR = 'public/insp/media';
+const INSP_MEDIA_URL = '/insp/media';
+
+/** 灵感收藏允许上传的类型：图片（视觉 / 封面）+ 音频（本地歌曲） */
+const INSP_ALLOWED_EXT = new Set([
+  'jpg',
+  'jpeg',
+  'png',
+  'webp',
+  'avif',
+  'gif',
+  'mp3',
+  'm4a',
+  'flac',
+  'wav',
+  'ogg',
+  'aac',
+]);
 
 /** 生成文件的开头（保持不变，生成器每次整份重写）。 */
 const HEADER = `/**
@@ -115,6 +144,22 @@ function parseSlot(raw: string | null): number | null {
   return Number.isInteger(n) && n >= 0 && n < 64 ? n : null;
 }
 
+/**
+ * 上传文件名里塞了用户给的文件名（便于在 public/ 里一眼认出），
+ * 所以必须做一次清洗：只留 ASCII 的字母数字和 `. _ -`，其余一律换成 `_`。
+ * 否则 `../../evil.ts` 这类名字会写出项目目录之外。
+ * 中文也换成 `_` —— 部署到部分对象存储 / CDN 上时，非 ASCII 文件名容易被二次编码成死链。
+ */
+function safeStem(raw: string): string {
+  const base = raw
+    .replace(/\.[^.]+$/, '')
+    .replace(/[\\/]/g, '_')
+    .replace(/[^A-Za-z0-9._-]+/g, '_')
+    .replace(/^[._]+|[._]+$/g, '')
+    .slice(0, 40);
+  return base || 'file';
+}
+
 export function studioWriter(): Plugin {
   return {
     name: 'dreamcore-studio-writer',
@@ -133,7 +178,112 @@ export function studioWriter(): Plugin {
 
         // ---- 探活：前端用它判断"能不能写回代码" ----
         if (url.pathname === '/__studio/ping' && req.method === 'GET') {
-          sendJson(res, 200, { ok: true, file: OVERRIDES_FILE, uploadUrlBase: UPLOAD_URL_BASE });
+          sendJson(res, 200, {
+            ok: true,
+            file: OVERRIDES_FILE,
+            uploadUrlBase: UPLOAD_URL_BASE,
+            insp: { ok: true, file: INSP_DATA_FILE, uploadUrlBase: INSP_MEDIA_URL },
+          });
+          return;
+        }
+
+        /* ================= 灵感收藏 ================= */
+
+        // ---- 链接识别：服务端抓目标页抠 og；网易云 / QQ / GitHub 走平台 API ----
+        if (url.pathname === '/__studio/link-meta' && req.method === 'GET') {
+          const raw = (url.searchParams.get('url') ?? '').trim();
+          if (!raw) {
+            sendJson(res, 400, { ok: false, error: '缺少 url 参数。' });
+            return;
+          }
+          const target = normalizeUrl(raw);
+          let host = '';
+          try {
+            host = new URL(target).hostname;
+          } catch {
+            sendJson(res, 400, { ok: false, error: '链接格式不正确。' });
+            return;
+          }
+          // 别让这个接口变成任意内网探测器：只允许公网 http(s)
+          if (/^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|::1|0\.0\.0\.0)/i.test(host)) {
+            sendJson(res, 400, { ok: false, error: '只支持公网链接。' });
+            return;
+          }
+          void resolveLinkMeta(target)
+            .then((meta) => sendJson(res, 200, { ok: true, meta }))
+            .catch((err: unknown) =>
+              sendJson(res, 502, {
+                ok: false,
+                error: err instanceof Error ? err.message : '抓取失败。',
+              }),
+            );
+          return;
+        }
+
+        // ---- 整份灵感收藏落盘（public/insp/data.json） ----
+        if (url.pathname === '/__studio/save-insp' && req.method === 'POST') {
+          void readBody(req)
+            .then((buf) => {
+              const parsed: unknown = JSON.parse(buf.toString('utf8') || '{}');
+              if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                throw new Error('请求体必须是一个对象。');
+              }
+              const env = parsed as { savedAt?: unknown; store?: unknown };
+              if (!env.store || typeof env.store !== 'object' || Array.isArray(env.store)) {
+                throw new Error('请求体缺少 store 对象。');
+              }
+              // 只允许六个白名单集合键，避免往 JSON 里塞进奇怪的东西
+              const KEYS = ['vision', 'music', 'projects', 'skills', 'cases', 'knowledge'];
+              const store = env.store as Record<string, unknown>;
+              const clean: Record<string, unknown> = {};
+              for (const k of KEYS) {
+                if (Array.isArray(store[k])) clean[k] = store[k];
+              }
+              const payload = {
+                savedAt: typeof env.savedAt === 'number' ? env.savedAt : Date.now(),
+                store: clean,
+              };
+              const source = `${JSON.stringify(payload, null, 2)}\n`;
+              const abs = path.join(root, INSP_DATA_FILE);
+              writeAtomic(abs, source);
+              sendJson(res, 200, { ok: true, file: INSP_DATA_FILE, bytes: source.length });
+            })
+            .catch((err: unknown) => {
+              sendJson(res, 400, {
+                ok: false,
+                error: err instanceof Error ? err.message : '写入失败。',
+              });
+            });
+          return;
+        }
+
+        // ---- 灵感收藏的媒体上传（图片 / 音频） ----
+        if (url.pathname === '/__studio/insp-upload' && req.method === 'POST') {
+          const ext = (url.searchParams.get('ext') ?? '').toLowerCase().replace(/^\./, '');
+          const kind = url.searchParams.get('kind') === 'audio' ? 'audio' : 'image';
+          const name = url.searchParams.get('name') ?? '';
+          if (!INSP_ALLOWED_EXT.has(ext)) {
+            sendJson(res, 400, { ok: false, error: `不支持的扩展名：${ext || '(空)'}` });
+            return;
+          }
+          void readBody(req)
+            .then((buf) => {
+              if (!buf.length) throw new Error('文件内容为空。');
+              const file = `${kind}-${safeStem(name)}-${Date.now().toString(36)}.${ext}`;
+              const abs = path.join(root, INSP_MEDIA_DIR, file);
+              writeAtomic(abs, buf);
+              sendJson(res, 200, {
+                ok: true,
+                url: `${INSP_MEDIA_URL}/${file}`,
+                bytes: buf.length,
+              });
+            })
+            .catch((err: unknown) => {
+              sendJson(res, 400, {
+                ok: false,
+                error: err instanceof Error ? err.message : '上传失败。',
+              });
+            });
           return;
         }
 

@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>后台 · 留言与访客</title>
+    <style>
+      :root {
+        --ink: #2b2b2b;
+        --ink-soft: #6b6b6b;
+        --line: #e6e0d4;
+        --paper: #fbf9f4;
+        --card: #ffffff;
+        --accent: #b9772e;
+        --accent-soft: #f6efe4;
+        --red: #c2453b;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 28px 18px 64px;
+        background: var(--paper);
+        color: var(--ink);
+        font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei",
+          "Segoe UI", sans-serif;
+        line-height: 1.7;
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrap { max-width: 860px; margin: 0 auto; }
+      h1 { font-size: 21px; margin: 0 0 4px; letter-spacing: .02em; }
+      .sub { color: var(--ink-soft); font-size: 13px; margin: 0 0 22px; }
+
+      .gate {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 22px;
+        margin-bottom: 22px;
+      }
+      .gate label { display: block; font-size: 13px; color: var(--ink-soft); margin-bottom: 6px; }
+      .row { display: flex; gap: 10px; flex-wrap: wrap; }
+      input[type="password"], input[type="text"] {
+        flex: 1 1 240px;
+        min-width: 0;
+        padding: 10px 12px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        font-size: 14px;
+        background: #fff;
+        color: var(--ink);
+        font-family: inherit;
+      }
+      input:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+      button {
+        padding: 10px 16px;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        background: #fff;
+        color: var(--ink);
+        font-size: 14px;
+        cursor: pointer;
+        font-family: inherit;
+      }
+      button:hover { border-color: var(--accent); color: var(--accent); }
+      button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+      button.primary:hover { filter: brightness(1.06); color: #fff; }
+      button.danger { color: var(--red); border-color: #e8cdc9; }
+      button:disabled { opacity: .5; cursor: not-allowed; }
+
+      .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 22px; }
+      .stat { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; }
+      .stat .n { font-size: 28px; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; }
+      .stat .t { font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
+
+      .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; margin-bottom: 14px; }
+      .card .head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+      .card .who { font-weight: 600; }
+      .card .meta { font-size: 12px; color: var(--ink-soft); }
+      .card .mail { font-size: 12px; color: var(--accent); }
+      .card .body { word-break: break-word; }
+      .card .body img { max-width: 100%; }
+      .card .body a { color: var(--accent); }
+
+      .empty { color: var(--ink-soft); font-size: 14px; padding: 6px 2px; }
+      .note { font-size: 12px; color: var(--ink-soft); margin-top: 12px; }
+      .msg { font-size: 13px; padding: 10px 0; }
+      .msg.err { color: var(--red); }
+      .msg.ok { color: #2f7a4d; }
+      hr { border: none; border-top: 1px solid var(--line); margin: 22px 0; }
+      .toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+      .spacer { flex: 1 1 auto; }
+      @media (max-width: 520px) {
+        body { padding: 20px 14px 48px; }
+        .stat .n { font-size: 24px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>留言与访客</h1>
+      <p class="sub">同一个页面里看留言内容、邮箱、访客数和浏览量。</p>
+
+      <div id="gate" class="gate">
+        <label for="key">后台口令（Vercel 环境变量里的 ADMIN_KEY）</label>
+        <div class="row">
+          <input id="key" type="password" placeholder="输入口令后回车" autocomplete="current-password" />
+          <button id="login" class="primary">进去看</button>
+        </div>
+        <p class="msg err" id="gateMsg" hidden></p>
+      </div>
+
+      <div id="main" hidden>
+        <div class="stats">
+          <div class="stat"><div class="n" id="uv">–</div><div class="t">累计访客（去重）</div></div>
+          <div class="stat"><div class="n" id="pv">–</div><div class="t">累计浏览量</div></div>
+          <div class="stat"><div class="n" id="gbCount">–</div><div class="t">留言总数</div></div>
+        </div>
+
+        <div class="toolbar">
+          <button id="refresh">刷新一下</button>
+          <button id="testVisit">自己测一下访客数</button>
+          <span class="spacer"></span>
+          <button id="export">导出数据</button>
+          <button id="clear" class="danger">清空留言</button>
+        </div>
+        <p class="msg" id="msg" hidden></p>
+
+        <hr />
+
+        <h1 style="font-size: 16px; margin-bottom: 12px;">全部留言</h1>
+        <div id="list"></div>
+        <p class="note">
+          留言最多保留最近 500 条，新的在最上面。清空后不可恢复，先点「导出数据」留个备份。
+        </p>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        var $ = function (id) { return document.getElementById(id); };
+        var keyInput = $('key');
+
+        // 口令只存在 sessionStorage：关掉标签页就没了
+        var saved = sessionStorage.getItem('dc.admin.key');
+        if (saved) { keyInput.value = saved; }
+
+        function setMsg(el, text, kind) {
+          el.textContent = text || '';
+          el.hidden = !text;
+          el.className = 'msg' + (kind ? ' ' + kind : '');
+        }
+
+        function getKey() {
+          var k = keyInput.value.trim();
+          if (!k) { setMsg($('gateMsg'), '先填口令。', 'err'); return ''; }
+          sessionStorage.setItem('dc.admin.key', k);
+          return k;
+        }
+
+        // 和前台留言板同一套白名单，后台展示也先洗一遍
+        var ALLOWED_TAGS = new Set(['B','STRONG','I','EM','U','S','STRIKE','SPAN','A','BR','DIV','P','FONT']);
+        var DROPPED_TAGS = new Set(['SCRIPT','STYLE','IFRAME','OBJECT','EMBED','LINK','META','SVG','MATH','FORM','INPUT','TEXTAREA','BUTTON']);
+        var ALLOWED_STYLE = new Set(['color','font-size','font-weight','font-style','text-decoration']);
+
+        function sanitize(raw) {
+          if (typeof DOMParser === 'undefined') return String(raw).replace(/[<>]/g, '');
+          var doc = new DOMParser().parseFromString('<div>' + raw + '</div>', 'text/html');
+          var root = doc.body.firstElementChild;
+          if (!root) return '';
+          (function walk(node) {
+            Array.prototype.slice.call(node.children).forEach(function (child) {
+              if (DROPPED_TAGS.has(child.tagName)) { child.remove(); return; }
+              walk(child);
+              if (!ALLOWED_TAGS.has(child.tagName)) {
+                var frag = doc.createDocumentFragment();
+                while (child.firstChild) frag.appendChild(child.firstChild);
+                child.replaceWith(frag);
+                return;
+              }
+              Array.prototype.slice.call(child.attributes).forEach(function (attr) {
+                var name = attr.name.toLowerCase();
+                if (name === 'href' && child.tagName === 'A') {
+                  var url = attr.value.trim();
+                  if (/^(https?:|mailto:|\/)/i.test(url)) {
+                    child.setAttribute('href', url);
+                    child.setAttribute('target', '_blank');
+                    child.setAttribute('rel', 'noopener noreferrer');
+                  } else { child.removeAttribute('href'); }
+                  return;
+                }
+                if (name === 'style') {
+                  var keep = attr.value.split(';').map(function (d) {
+                    var i = d.indexOf(':');
+                    var k = (i < 0 ? '' : d.slice(0, i)).trim().toLowerCase();
+                    return ALLOWED_STYLE.has(k) ? d.trim() : '';
+                  }).filter(Boolean).join('; ');
+                  if (keep) child.setAttribute('style', keep); else child.removeAttribute('style');
+                  return;
+                }
+                child.removeAttribute(attr.name);
+              });
+            });
+          })(root);
+          return root.innerHTML;
+        }
+
+        function timeText(ts) {
+          if (!ts) return '';
+          var d = new Date(ts);
+          var p = function (n) { return n < 10 ? '0' + n : '' + n; };
+          return d.getFullYear() + '.' + p(d.getMonth() + 1) + '.' + p(d.getDate()) + ' ' +
+                 p(d.getHours()) + ':' + p(d.getMinutes());
+        }
+
+        var currentData = null;
+
+        function render(data) {
+          currentData = data;
+          $('uv').textContent = data.uv;
+          $('pv').textContent = data.pv;
+          $('gbCount').textContent = data.guestbook.length;
+          var list = $('list');
+          if (!data.guestbook.length) {
+            list.innerHTML = '<p class="empty">还没有留言。</p>';
+            return;
+          }
+          list.innerHTML = data.guestbook.map(function (e) {
+            var mail = e.email ? ' · <span class="mail">' + escapeHtml(e.email) + '</span>' : '';
+            return '<div class="card">' +
+              '<div class="head"><span class="who">' + escapeHtml(e.name || '匿名') + '</span>' +
+              '<span class="meta">' + timeText(e.ts) + '</span>' + mail + '</div>' +
+              '<div class="body">' + sanitize(e.html) + '</div></div>';
+          }).join('');
+        }
+
+        function escapeHtml(s) {
+          return String(s).replace(/[&<>"']/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+          });
+        }
+
+        function load() {
+          var key = keyInput.value.trim();
+          if (!key) return;
+          $('refresh').disabled = true;
+          // 口令只放请求头：放网址里会被浏览器历史 / 日志记下来
+          fetch('/api/admin', { headers: { 'x-admin-key': key }, cache: 'no-store' })
+            .then(function (r) {
+              return r.json().then(function (j) { return { status: r.status, data: j }; });
+            })
+            .then(function (out) {
+              if (out.status === 401) {
+                sessionStorage.removeItem('dc.admin.key');
+                setMsg($('gateMsg'), '口令不对。', 'err');
+                $('main').hidden = true;
+                return;
+              }
+              if (out.status === 503) {
+                setMsg($('gateMsg'), '服务端还没配好：' + (out.data.reason || '') + '（要配 ADMIN_KEY 和存储）', 'err');
+                return;
+              }
+              if (!out.data || out.data.ok !== true) {
+                setMsg($('gateMsg'), '读不出来：' + (out.data && out.data.reason || out.status), 'err');
+                return;
+              }
+              $('gate').hidden = true;
+              $('main').hidden = false;
+              render(out.data);
+            })
+            .catch(function (e) { setMsg($('gateMsg'), '网络错误：' + e.message, 'err'); })
+            .finally(function () { $('refresh').disabled = false; });
+        }
+
+        // 「自己测一下访客数」：直接打网站的统计接口，看数字有没有涨
+        $('testVisit').addEventListener('click', function () {
+          var btn = this;
+          btn.disabled = true;
+          fetch('/api/visit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ unique: true }),
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (j) {
+              setMsg($('msg'), '刚记了一次：你是第 ' + j.count + ' 位访客，累计浏览量 ' + j.pv + '。', 'ok');
+              setTimeout(load, 600);
+            })
+            .catch(function (e) { setMsg($('msg'), '测试失败：' + e.message, 'err'); })
+            .finally(function () { btn.disabled = false; });
+        });
+
+        $('login').addEventListener('click', function () { if (getKey()) load(); });
+        keyInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') { if (getKey()) load(); } });
+        $('refresh').addEventListener('click', load);
+
+        $('export').addEventListener('click', function () {
+          var payload = {
+            exportedAt: new Date().toISOString(),
+            uv: $('uv').textContent,
+            pv: $('pv').textContent,
+            guestbook: currentData ? currentData.guestbook : [],
+          };
+          var blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+          var a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = 'dreamcore-guestbook-' + timeText(Date.now()).replace(/[ .:]/g, '-') + '.json';
+          a.click();
+          URL.revokeObjectURL(a.href);
+        });
+
+        $('clear').addEventListener('click', function () {
+          var key = keyInput.value.trim();
+          if (!window.confirm('清空全部留言？这一步不能撤销。')) return;
+          var btn = this;
+          btn.disabled = true;
+          fetch('/api/guestbook', {
+            method: 'DELETE',
+            headers: { 'x-admin-key': key },
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (j) { setMsg($('msg'), j.ok ? '已清空。' : ('失败：' + (j.reason || '')), j.ok ? 'ok' : 'err'); load(); })
+            .catch(function (e) { setMsg($('msg'), '失败：' + e.message, 'err'); })
+            .finally(function () { btn.disabled = false; });
+        });
+
+        if (saved) load();
+      })();
+    </script>
+  </body>
+</html>

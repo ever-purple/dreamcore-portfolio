@@ -7,7 +7,7 @@ export type StudioMenuId = 'about' | 'works' | 'lab' | 'contact' | 'resume';
 type Props = {
   open: boolean;
   onClose: () => void;
-  /** 点某一条菜单项。目前只有 'about' 有落地页，其余保持占位。 */
+  /** 点某一条菜单项。about / contact 已接落地页；works / lab 走物件同款转场；resume 直接下载简历。 */
   onSelect?: (id: StudioMenuId) => void;
   onHoverChange?: (hovering: boolean) => void;
 };
@@ -15,7 +15,7 @@ type Props = {
 const MENU_ITEMS: { id: StudioMenuId; en: string; zh: string }[] = [
   { id: 'about', en: 'About Me', zh: '关于我' },
   { id: 'works', en: 'Works', zh: '策划项目' },
-  { id: 'lab', en: 'Creative Lab', zh: 'AI及视频' },
+  { id: 'lab', en: 'Creative Lab', zh: '文案&视频' },
   { id: 'contact', en: 'Contact', zh: '联系方式' },
   { id: 'resume', en: 'Resume', zh: '简历' },
 ];

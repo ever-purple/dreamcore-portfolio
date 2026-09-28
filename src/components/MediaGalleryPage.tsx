@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { EASE } from '@/lib/ease';
 import gsap from 'gsap';
-import { SplitText } from 'gsap/SplitText';
 import { CursorLabel } from '@/components/CursorLabel';
 import { PageDecor } from '@/components/PageDecor';
 import { StudioChrome } from '@/components/StudioChrome';
@@ -10,7 +9,8 @@ import {
   CHANNEL_LABEL,
   CHANNEL_WORD,
   MEDIA_PAGE_COPY,
-  MEDIA_WORKS,
+  orderedWorks,
+  startIndexFor,
   type MediaChannel,
   type MediaWork,
 } from '@/data/mediaWorks';
@@ -46,10 +46,15 @@ import {
  *   ④ **侧转**：离中心越远的卡片固定侧转 3.5°/格（很小；主作用是给边上的卡一点厚度）。
  *   ⑤ **多层视差**：卡片 1×／背景大字 0.042×（横竖都跟着 `--cur` 慢移）／标题块与刻度尺
  *      反向小幅摆（跟 `--speed`）。
- *   ⑥ **标题逐字符 3D 翻转**：SplitText 拆 chars，从 rotateX(-90) 依次翻入
- *      （transformOrigin 50% 50% -25px + perspective 200px）；切视频时翻的是下方标题。
- *   ⑦ **点击无缝放大**：FLIP —— 记下卡片矩形，播放器先贴合上去再撑满全屏，退出原路收回。
- *   ⑧ 播放器控件整行**贴画面中线**（左标题 / 中进度 / 右 Mute·Full），Credits 在最左下。
+ *   ⑥ **标题逐字符 3D 翻转**：**标题由 React 拆成逐字符 `<span>`**，从 rotateX(**+90**) 依次翻入
+ *      （transformOrigin 50% 50% -10px + perspective 200px）；切视频时旧标题挂到一层"幽灵"
+ *      翻去 -90，新标题同时翻入 —— 方向照参考站 activate / deactivate。
+ *      ⚠️ 别改回 GSAP SplitText，理由见 VideoInfo 顶部那段。
+ *   ⑦ **原地播放（2026-09-21）**：不再有全屏播放器/FLIP 放大 —— 点当前卡就地播完整版
+ *      （带声音），再点暂停；换卡自动退回静音循环预览。控件（播放/暂停 + 进度条 + 时间）
+ *      挂在视频正下方（PlaybackBar）。
+ *   ⑧ **循环片单（2026-09-21）**：三个设备入口共用同一份片单（横屏 → AI → 竖屏），
+ *      渲染三份做成无缝循环，越过头尾继续滑；频道只决定进门定位在第几条。
  *
  * 注：它本人是把视频贴成 WebGL 纹理来渲染的；这里用 DOM + CSS 3D 达到接近的观感，
  * 不引 WebGL —— 这套页面已经在 three.js 的报刊亭场景隔壁，再开一个 GL 上下文不划算。
@@ -64,8 +69,6 @@ import {
 
 import { prefersReduced } from '@/lib/motion-pref';
 import { cylinderFrom, drawBentCard, type CylinderParams } from '@/lib/gallery/bend';
-
-gsap.registerPlugin(SplitText);
 
 /**
  * poster 图缓存 —— 画布需要一个**能 drawImage 的**图像源。
@@ -86,8 +89,12 @@ function posterFor(url?: string): HTMLImageElement | null {
   return img;
 }
 
+/** 播放状态机：idle = 静音预览循环 / playing = 完整版 / paused = 停在完整版当前帧 */
+type PlayState = 'idle' | 'playing' | 'paused';
+
 type Props = {
-  /** 片单频道 —— 由报刊亭里点的那台设备决定；不传 = 列出全部作品 */
+  /** 进入入口的频道 —— **只决定初始定位**（DVD→第一条横屏 / DV→第一条 AI / MP3→第一条竖屏），
+      不再过滤列表：三个入口看到的是同一份全量循环片单（2026-09-21）。 */
   channel?: MediaChannel;
   onClose: () => void;
 };
@@ -122,21 +129,47 @@ const WHEEL_NOTCH = 100;
 const STEP_DELTA = WHEEL_NOTCH * 5;
 const BURST_MS = 160;
 
+/** 秒 → mm:ss（进度条时间显示用） */
+const fmt = (s: number) =>
+  `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+
 export function MediaGalleryPage({ channel, onClose }: Props) {
   /**
    * 片单 = 属于当前频道的作品。
    * **没标 `channel` 的作品在任何频道都显示** —— 现在 AI 频道还没有片子（第二条频道），
    * 所以它先退回全部作品，免得点第二台设备开天窗；等数据补上 `channel: 'ai'` 就自动分流。
    */
-  const list = useMemo(() => {
-    if (!channel) return MEDIA_WORKS;
-    const own = MEDIA_WORKS.filter((w) => w.channel === channel);
-    if (!own.length) return MEDIA_WORKS; // 该频道还没片子 → 先列全部
-    return MEDIA_WORKS.filter((w) => !w.channel || w.channel === channel);
-  }, [channel]);
+  /** 全量循环片单（横屏 → AI → 竖屏）。频道**只决定起点**，不再过滤（2026-09-21）。 */
+  const list = useMemo(() => orderedWorks(), []);
   const total = list.length;
-  const [index, setIndex] = useState(0);
-  const [playing, setPlaying] = useState(false);
+  /**
+   * 循环画廊：把片单渲染**三份**（前 / 中 / 后），绝对下标 a ∈ [0, 3n)。
+   * 落位后由 apply() 把位置整体平移回中间那份 —— 三份布局逐像素相同，
+   * 平移一个周期画面不变，肉眼看到的就是一条首尾相接的循环片。
+   */
+  const copies = 3;
+  const nodes = total * copies;
+  /** 进门位置：DVD→第一条横屏 / DV→第一条 AI(没有就落插入点) / MP3→第一条竖屏 */
+  const startIndex = useMemo(() => startIndexFor(channel), [channel]);
+  /** 逻辑下标（0..n-1：信息块 / 刻度尺用） */
+  const [index, setIndex] = useState(startIndex);
+  /** 绝对下标（0..3n-1：哪一格在屏幕中间 / 哪一格在播） */
+  const [absIndex, setAbsIndex] = useState(startIndex + total);
+  /**
+   * 播放状态机（2026-09-21）：
+   *   idle    → 静音循环预览（进门默认）
+   *   playing → 播完整版（带声音）
+   *   paused  → **停在完整版的当前帧**（换回来的还是同一个 src，所以只是 el.pause()）
+   * ⚠️ 暂停**不能**退回预览：那会把已经看到的时间线丢掉，画面还会继续动 ——
+   *    用户说的"暂停"就是定格。只有换片才回 idle。
+   */
+  const [playState, setPlayState] = useState<PlayState>('idle');
+  /** playState 的镜像 —— togglePlay 要用"上一个状态"决定要不要从头播，
+      而 setState 的更新函数里读不到它（闭包里的 playState 是旧值） */
+  const playStateRef = useRef<PlayState>('idle');
+  playStateRef.current = playState;
+  const [progress, setProgress] = useState(0);
+  const [timeText, setTimeText] = useState('00:00');
   const [entered, setEntered] = useState(false);
   const reduced = useMemo(reduce, []);
 
@@ -147,19 +180,36 @@ export function MediaGalleryPage({ channel, onClose }: Props) {
   const itemRefs = useRef<(HTMLElement | null)[]>([]);
   /** 每条片子居中时，wrapper 需要退到的距离（实测，因为宽高比不同没法用固定步长推算） */
   const centers = useRef<number[]>([]);
-  /** 被点击卡片的屏幕矩形 —— 给展开动画当起点 */
-  const flipRect = useRef<DOMRect | null>(null);
-  /** 滚动状态：target = 目标停在第几条（浮点），current = 阻尼后的实际位置 */
-  const sr = useRef({ current: 0, target: 0, last: 0, speed: 0 });
-  const indexRef = useRef(0);
+  /**
+   * 滚动状态：target / current 都是**绝对下标**（浮点，可越出 [n,2n) 由 apply() 回中）。
+   * 初始就站在进门位置对应的中间副本上，这样第一帧就是用户该看到的那条片子。
+   */
+  const sr = useRef({ current: startIndex + total, target: startIndex + total, last: startIndex + total, speed: 0 });
+  /** 最近一次落位的绝对下标（兼作 setState 去重） */
+  const indexRef = useRef(startIndex + total);
   const snapTimer = useRef(0);
   /* ---- 滚轮"手感"的三个量（2026-09-15 第七轮）----
      accRef  : 这一"推"里累计的 deltaY 零头
      baseRef : 这一"推"开始时锁定的整格位置（零头都相对它算）
      burstRef: 上一次滚轮事件的时刻，用来切分"一次推" */
   const accRef = useRef(0);
-  const baseRef = useRef(0);
+  /**
+   * 棘轮锚点 —— **必须和 `sr` 的初始位置一致**（2026-09-21 修）。
+   * 它原来是 `useRef(0)`，而 `sr.current/target` 从 `startIndex + total` 起步（进门那条所在格）；
+   * 于是**第一次滚轮**会走 `target = baseRef.current` 这支，把 target 从 8 拉回 0 ——
+   * 整条片子瞬移到第一份副本、再由 apply() 的回中平移 +8 拉回来，
+   * 表现为「第一次滚动就跳了好几条 / 刻度尺数字乱掉」（实测 current 8 → 15.28、index 8 → 15）。
+   * ⚠️ 以后改进门定位逻辑时，这两个初值必须一起改。
+   */
+  const baseRef = useRef(startIndex + total);
   const burstRef = useRef(0);
+  /**
+   * 这一"推"是否已经换过条（2026-09-21 用户：「滚动容易跳过视频，划多」）。
+   * 换过之后，同一推里再来的滚轮增量（包括触控板惯性那长串小 delta）**全部吞掉**，
+   * 直到松手 160ms（BURST_MS）或反向拨才开新的一推 —— 一次手势 = 至多换一条，
+   * 这正是参考站录屏里的节奏（9 秒的录制从头到尾只从 01 切到 02）。
+   */
+  const committedRef = useRef(false);
 
   /* ---- 圆柱面绘制（2026-09-16 第九轮）----
      卡片可见的那一层不再是 <video>，而是一块 canvas：每帧把视频帧按圆柱面投影重画一遍。
@@ -183,13 +233,22 @@ export function MediaGalleryPage({ channel, onClose }: Props) {
    *    实测差到 0.034（阈值 0.02）。统一从一个来源取值就永远同步。
    */
   const bulgeRef = useRef(0);
+  /**
+   * 左下角 ticker 中间那格标尺的 canvas（2026-09-21 照参考站实现）。
+   * 参考站它是一把 96×12 的**滚动标尺**（`<canvas class="videos__ticker__canvas">`），
+   * 不是"每格一条的进度刻度"；绘制逻辑见 `drawTicker()`。
+   */
+  const tickRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     const raf = requestAnimationFrame(() => setEntered(true));
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  const clampIdx = (v: number) => (total <= 0 ? 0 : Math.min(total - 1, Math.max(0, v)));
+  /** 绝对下标夹到 [0, nodes) —— posAt 取相邻格用（三份副本都在数组里） */
+  const clampNode = (v: number) => (nodes <= 0 ? 0 : Math.min(nodes - 1, Math.max(0, v)));
+  /** 绝对下标 → 逻辑下标（0..n-1） */
+  const logical = (a: number) => (total <= 0 ? 0 : ((Math.round(a) % total) + total) % total);
 
   /**
    * 每条居中的距离表 + 每格画布的尺寸同步。
@@ -224,14 +283,28 @@ export function MediaGalleryPage({ channel, onClose }: Props) {
   const posAt = useCallback((v: number) => {
     const c = centers.current;
     if (!c.length) return 0;
-    const f = clampIdx(Math.floor(v));
-    const t = clampIdx(Math.ceil(v));
+    const f = clampNode(Math.floor(v));
+    const t = clampNode(Math.ceil(v));
     return c[f] + (c[t] - c[f]) * (v - f);
   }, []);   // eslint-disable-line react-hooks/exhaustive-deps
 
   /** 把 current / speed 落到 DOM 上（每帧调用，不进 React 渲染，避免每帧 setState） */
   const apply = useCallback(() => {
     const s = sr.current;
+    /**
+     * 循环回中：落位绝对下标一旦漂出中间那份 [n, 2n)，把 current/target/棘轮锚点
+     * 整体平移一份的距离。三份副本的 centers 逐格相同（布局完全一样），
+     * 平移一个周期画面逐像素不变 —— 用户只看到"循环"，看不到接缝。
+     */
+    let near = Math.round(s.current);
+    if (nodes > 0 && (near < total || near >= 2 * total)) {
+      const shift = near < total ? total : -total;
+      s.current += shift;
+      s.target += shift;
+      baseRef.current += shift;
+      indexRef.current += shift;
+      near += shift;
+    }
     if (wrapRef.current) {
       wrapRef.current.style.transform = `translate(${-posAt(s.current)}px, -50%)`;
     }
@@ -260,31 +333,95 @@ export function MediaGalleryPage({ channel, onClose }: Props) {
       root.style.setProperty('--cur', s.current.toFixed(4)); // 浮点位置 → 各层不同倍率的视差
     }
     /**
-     * 鱼眼/曲线透视：跨格时把透视距离从 1900px 收到 1000px ——
-     * 透视越"近"，画面边缘的压缩越强，整条片子就像隔着一枚凸透镜在看（参考站 6~12s 那段）。
-     * 落位后恢复 1900px，卡片回到平整状态。
+     * ⚠️ 2026-09-21：这里原来还有一发"鱼眼"—— `perspective = 1900 - bulge*900`，
+     * 配合 CSS 那张卡朝观众推 72px，效果是**整张卡随滚动放大一下**（约 +8%）。
+     * 用户指出不对（「像一张幕布一样，除了凸起来的地方其他地方的边缘会向里收」）：
+     * 参考站的相机是固定的，它没有这种整体缩放；"凸"完全是顶点着色器的屏幕空间场，
+     * 表现为局部顶出去 + 其余边缘往里收。所以这里不再改 perspective，
+     * 形变全部交给 canvas 的圆柱面绘制（bend.ts）。perspective 由 CSS 静态给定。
      */
-    if (vpRef.current) {
-      vpRef.current.style.perspective = `${Math.round(1900 - bulge * 900)}px`;
-    }
     /**
      * 每张卡到"当前位置"的距离 → --off。CSS 拿它算卡片在**圆柱面**上的角度与进深
      * （离中心越远越往后倒、转得越多），整条片子看着就是一张被拱起来的曲面，
      * 而不是贴在同一平面上的一排方块。夹在 ±2.2 —— 更远的卡已经出屏，再转会翻过头。
      */
+    /**
+     * 斜向错位的**屏幕空间公式**（2026-09-21 照参考站源码改，替换原来的 `--off × --mjp-stagger`）。
+     *
+     * 参考站视频页媒体 mesh 的 `updatePosition()` 里写着：
+     *     this.mesh.position.x = …
+     *     const r = map(this.mesh.position.x, -e, e, 0.1 * area.y, -0.1 * area.y);
+     *     this.mesh.position.y = r;
+     * 也就是「卡片中心离屏幕中轴多远，就上/下偏多少」，**到屏幕边缘时正好 ±10% 视口高**，
+     * 中间线性。换到 CSS 就是对每格写一个像素位移：
+     *     --shift = 0.2 · vh · dx / vw      （dx = 卡片中心 − 视口中心，px；正值向下）
+     *   · 左邻 dx < 0 → --shift 为负 → 抬起来 ✓（与参考站同向）
+     *   · 落位静止时当前格 dx≈0 → 0，卡片正对观众 ✓
+     *
+     * ⚠️ **别改回 `--off × --mjp-stagger`**（每格固定 0.232×卡高）：
+     *    形状是一回事，但那是个**常量斜率**，而参考站是**随屏幕位置线性**的；
+     *    两者只在"恰好一整格"处相等。而且那个 0.232 是从 1280 宽的录屏上量的，
+     *    在 1920×1000 下比参考站小约 7%（我们要的是 tan 斜率 0.2·vh/vw = 0.104，
+     *    它给的是 0.232/(1.778+0.78) = 0.091）。改成公式后，斜度自动随视口走。
+     */
+    const vw = vpRef.current?.clientWidth || window.innerWidth || 1;
+    const vh = window.innerHeight || 1;
+    const curPos = posAt(s.current);
     for (let i = 0; i < itemRefs.current.length; i += 1) {
       const el = itemRefs.current[i];
       if (!el) continue;
       const off = Math.max(-2.2, Math.min(2.2, i - s.current));
       el.style.setProperty('--off', off.toFixed(3));
+      // 斜向错位（见上）：卡片中心相对视口中心的像素位移 → 上下偏移
+      const dx = (centers.current[i] ?? 0) - curPos;
+      el.style.setProperty('--shift', ((0.2 * vh * dx) / vw).toFixed(2) + 'px');
+      /**
+       * **只露左边，藏右边（2026-09-21 用户：「只显示左边的视频，右边的不要出现」）**。
+       * 参考站静止时只有**左侧**露出上一条的一条边，右侧是全空的；
+       * 但我们的片单横竖版宽度不一样，纯靠间距调不出来（竖版居中时右邻会探出一大截），
+       * 所以改成**滚动联动**：右侧卡片（off > 0.12）静止时藏掉，滚动一半再淡入。
+       *   · bell  ：中心钟形 —— 用来做"静止时当前格 1 / 邻格 0.34"这个剖面；
+       *   · hideR ：右侧隐藏系数，off 越大越藏；
+       *   · settle：**"是不是静止"的门**（落定 1 / 在飞 0），见下面 ⚠️；
+       * opacity 每帧在这里算好直接写 inline —— CSS 那边**不再**挂 opacity / transition
+       *（transition 会追着每帧的值跑，变成半秒的滞后拖影，见 index.css 的 .mjp__media 注释）。
+       * 隐掉时顺手 pointer-events:none —— 看不见的按钮不能还能点。
+       *
+       * ⚠️ 2026-09-21 修正（用户：「滚动过渡时影片不要变白」）：上一版把剖面直接按 `|off|` 算，
+       *    漏了 **|off| 在过渡途中本来就会离开 0** —— 条子刚走半格，原来"当前那条"的 off
+       *    就变成 −0.5，钟形算出 0.5，于是**正在飞的那两张一起掉到 ~0.67 透明度**；
+       *    半透明压在**白底**上就是"影片变白"（过渡截图里整幅画面发灰发白，就是这么来的）。
+       *    本质上 `|off|` 混淆了两件事：「静止时邻格的固定偏移（±1，该压暗）」和
+       *    「过渡中当前格的**临时**偏移（0→±0.5，不该压暗）」。
+       *    修法：整层压暗/隐藏挂在 `settle` 门上 ——
+       *      · settle=1（落定）→ 完全按静止剖面（当前 1 / 左邻 0.34 / 右邻藏）；
+       *      · settle=0（在飞）→ **所有卡一律不透明**，画面全程满色，不再被白底冲淡。
+       *    过渡只在**最后 15% 行程**（bulge<0.3）里把"即将退成邻格"那张收回 0.34 ——
+       *    也就是"退到边上才暗下来"，而不是"一动就白"；而那张此时已经被移出视口大半，
+       *    1920 下只露 ~33px，看不出收的过程。
+       * ⚠️ bell 给 |off|<0.15 一段平台（而不是直接从 0 往下掉）：落定的当前卡 off 是个
+       *    浮点小数（实测 9.991 → off=−0.009），没有平台的话它自己就先被扣掉几个百分点。
+       */
+      const bell = Math.max(0, 1 - Math.max(0, Math.abs(off) - 0.15) * 3);
+      const rest = 0.34 + 0.66 * bell;
+      const hideR = off > 0.12 ? Math.min(1, (off - 0.12) * 8) : 0;
+      const settle = Math.max(0, Math.min(1, 1 - bulge / 0.3));
+      const o = 1 - (1 - rest * (1 - hideR)) * settle;
+      el.style.opacity = o.toFixed(3);
+      el.style.pointerEvents = o < 0.05 ? 'none' : '';
     }
     // 实时高亮最近的一条（只在真的变了才 setState）
-    const nearest = Math.round(s.current);
+    const nearest = near;
     if (nearest !== indexRef.current) {
       indexRef.current = nearest;
-      setIndex(nearest);
+      setAbsIndex(nearest);
+      setIndex(logical(nearest));
+      // 换片子 → 回到静音预览循环、进度归零
+      setPlayState('idle');
+      setProgress(0);
+      setTimeText('00:00');
     }
-  }, [posAt]);
+  }, [posAt]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
    * 每帧把每一格重画到自己的 canvas 上 —— 这就是「顶点着色器弯曲」那一层的落点。
@@ -305,14 +442,46 @@ export function MediaGalleryPage({ channel, onClose }: Props) {
     // 用 apply() 写下的那一份，保证画布弧度与 CSS 的 --bulge 严格同步
     const bulge = bulgeRef.current;
     const dpr = dprRef.current || 1;
+    /**
+     * **屏幕空间的弯曲场（2026-09-21，扒参考站着色器拿到的真值）**。
+     * 参考站（mattjinn.com/videos）的顶点着色器是：
+     *     vec2 screen = (ndc.xy/ndc.w)*0.5+0.5;              // 顶点在**视口**里的归一化位置
+     *     float speed = uSpeed*0.01;
+     *     pos.z += mix(0.0, parabola(screen.x, 3.0), speed);  // parabola(x,k)=pow(4x(1-x),k)
+     *     pos.z += mix(0.0, parabola(screen.y, 1.0), speed);
+     * 也就是说**弯曲是屏幕空间的场、峰值钉在视口正中**，不是"每张卡各自鼓一个桶"：
+     *   · 卡片跨过屏幕中心 → 它最鼓；
+     *   · 卡片在边上（比如只露一条边的那张）→ 几乎不弯 —— 实测参考站静止时
+     *     卡片顶边 sag 只有 3px（平的），过渡中才鼓到 39~73px（≈卡片高的 13%）。
+     * 我们这边没有逐顶点的着色器，就在**每张卡**上近似这个场：用卡片最靠近屏幕中心
+     * 的那条边（跨过中心就用中心）代入 parabola(x,3) 当作这张卡的 bend 系数。
+     * 于是两次相邻卡的内缘同时落在峰值区 → 两张画布**一起朝观众鼓出来**，
+     * 就是用户说的"两块视频画布之间被拉扯过来"的感觉。
+     * ⚠️ 下限 0.08 是留一点微弯 —— 全场归零的话边上那张会成硬直的刀片边，反而突兀。
+     */
+    const curPos = posAt(s.current);
+    const vw = vpRef.current?.clientWidth || window.innerWidth || 1;
+    const fieldAt = (x: number) => {
+      const t = Math.max(0, Math.min(1, x));
+      return Math.pow(4 * t * (1 - t), 3);
+    };
 
-    for (let i = 0; i < list.length; i += 1) {
+    for (let i = 0; i < nodes; i += 1) {
       const cv = canvasRefs.current[i];
       const size = cellSize.current[i];
       if (!cv || !size || size.w <= 0 || size.h <= 0) continue;
       const off = Math.max(-2.2, Math.min(2.2, i - s.current));
       if (Math.abs(off) > 2.6) continue; // 已经出屏，别浪费
-      const p: CylinderParams = cylinderFrom(bulge, off);
+      // 屏幕空间弯曲场（见上）：卡片最靠近视口中心的那条边决定它的弯曲强度
+      const cxFrac = 0.5 + (centers.current[i] - curPos) / vw;
+      const halfWFrac = size.w / 2 / vw;
+      const xField = Math.abs(cxFrac - 0.5) <= halfWFrac
+        ? 0.5
+        : off > 0
+          ? cxFrac - halfWFrac
+          : cxFrac + halfWFrac;
+      const prox = Math.max(0.08, fieldAt(xField));
+      const p: CylinderParams = cylinderFrom(bulge * prox, off);
 
       const vid = videoRefs.current[i];
       const live = i === nearest && !!vid && vid.readyState >= 2 && vid.videoWidth > 0;
@@ -339,7 +508,7 @@ export function MediaGalleryPage({ channel, onClose }: Props) {
         sw = vid.videoWidth;
         sh = vid.videoHeight;
       } else {
-        const img = posterFor(list[i]?.poster);
+        const img = posterFor(list[i % total]?.poster);
         if (img && img.complete && img.naturalWidth > 0) {
           source = img;
           sw = img.naturalWidth;
@@ -359,7 +528,58 @@ export function MediaGalleryPage({ channel, onClose }: Props) {
         state.live = live;
       }
     }
-  }, [list]);
+  }, [list, posAt]);   // eslint-disable-line react-hooks/exhaustive-deps -- nodes/total 由 list 派生且恒定
+
+  /**
+   * 左下角 ticker 中间那把标尺 —— **逐行照抄参考站**（bundle.js 里 `[data-ticker]` 组件的 onLoop）：
+   *
+   *     onScroll(t){ this.value = 75e-5 * t }                       // 滚一格 → value += 0.00075
+   *     onLoop(){
+   *       this.timeline.progress(this.value % .5 + .5)               // 相位：0.5~1
+   *       const {height:t, width:e} = this.element                   // 备用存储 24 / 192
+   *       this.context.clearRect(0,0,e,t); this.context.fillStyle='black'
+   *       const i = e/2                                              // 96
+   *       for(let n=0;n<18;n++){
+   *         const r = 16*n - this.progress
+   *         const s = r < i ? map(r,0,i,0,t) : map(r,i,e,t,0)        // 三角剖面：中间最高
+   *         this.context.fillRect(r, t/2-s/2, 1, s)
+   *         this.context.globalAlpha = r < i ? map(r,0,i,0,1) : map(r,i,e,1,0)
+   *       }
+   *     }
+   *   （那个 `timeline.to(this,{progress:32})` 的时长是 gsap 默认 0.5s，所以
+   *     timelineProgress 0.5→1 对应 `progress` 16→32。）
+   *
+   * **一句话**：18 条 16px 间距的竖刻度，高度与透明度都是"两端 0 / 正中拉满"的三角剖面，
+   * 整把标尺随滚动推一个很小的相位。它**不表示第几条** —— 序号由两侧数字负责
+   * （参考站同一份代码里 `elements.length.innerHTML = '0'+(index+1)` 就是在写左边那个数）。
+   *
+   * ⚠️ 我们原来是 `list.map()` 出 N 条 `<span class="mjp__tick">`、把当前那条点亮拉长，
+   *    那是"进度刻度"、不是标尺 —— 参考站没有这个形态。塔形标尺 + 两侧数字才是它。
+   * ⚠️ 颜色用 `--mjp-ink`（参考站硬编码 'black'；本站的"墨"是 #31261c，硬黑会跳出调色板）。
+   */
+  const drawTicker = useCallback(() => {
+    const cv = tickRef.current;
+    if (!cv) return;
+    const ctx = cv.getContext('2d');
+    if (!ctx) return;
+    const w = cv.width;   // 192（备用存储，固定 2×）
+    const h = cv.height;  // 24
+    const map = (v: number, a: number, b: number, c: number, d: number) =>
+      c + ((v - a) / (b - a)) * (d - c);
+    // 相位：照抄 `32 * (value % 0.5 + 0.5)`，value = 0.00075 × 滚动位置（单位：格）
+    const value = sr.current.current * 0.00075;
+    const progress = 32 * ((value % 0.5) + 0.5);
+    const mid = w / 2;
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = getComputedStyle(cv).color || '#000';
+    for (let n = 0; n < 18; n += 1) {
+      const r = 16 * n - progress;
+      const bar = r < mid ? map(r, 0, mid, 0, h) : map(r, mid, w, h, 0);
+      ctx.globalAlpha = r < mid ? map(r, 0, mid, 0, 1) : map(r, mid, w, 1, 0);
+      ctx.fillRect(r, h / 2 - bar / 2, 1, bar);
+    }
+    ctx.globalAlpha = 1;
+  }, []);
 
   /* ---- 画布循环 ----
      ⚠️ 已经并入下面那条**统一的帧循环**（先 apply 再 drawCards），
@@ -402,13 +622,15 @@ export function MediaGalleryPage({ channel, onClose }: Props) {
   useLayoutEffect(() => {
     measure();
     apply();
+    drawTicker(); // 标尺不靠 rAF 也能先画上（total<=1 时帧循环会 early-return）
     const onResize = () => {
       measure();
       apply();
+      drawTicker();
     };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
-  }, [measure, apply]);
+  }, [measure, apply, drawTicker]);
 
   /* ---- 统一的帧循环：推进惯性 → 落 DOM（apply）→ 重画画布 ----
    *
@@ -444,30 +666,37 @@ export function MediaGalleryPage({ channel, onClose }: Props) {
         s.last = s.current;
         s.speed += (Math.min(1, delta / 0.13) - s.speed) * 0.5;
       }
-      apply(); // 先落 DOM（含 --bulge / --off / perspective）
+      apply(); // 先落 DOM（含 --bulge / --off / shift）
       drawCards(); // 再按同一份 bulge 重画画布
+      drawTicker(); // 左下角标尺（相位跟着当前格位置走）
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [apply, drawCards, reduced, total]);
+  }, [apply, drawCards, drawTicker, reduced, total]);
 
-  const go = useCallback(
-    (dir: number) => {
-      const next = clampIdx(Math.round(sr.current.target) + dir);
+  /** 滑到某个绝对下标（不设边界 —— 循环片单，apply() 会把落位回中到中间副本） */
+  const goTo = useCallback(
+    (next: number) => {
       sr.current.target = next;
       // 键盘 / 触摸 / 降级分支都走这里 —— 必须把滚轮的棘轮锚点一起挪过去，
       // 否则下一轮滚轮的零头会相对一个**过期的整格**去算（baseRef 是滚轮的唯一基准）
       baseRef.current = next;
       accRef.current = 0;
       indexRef.current = next;
-      setIndex(next);
+      setAbsIndex(next);
+      setIndex(logical(next));
+      setPlayState('idle');
+      setProgress(0);
+      setTimeText('00:00');
       if (reduced) {
         sr.current.current = next;
         apply();
       }
     },
-    [apply, reduced],
+    [apply, reduced],   // eslint-disable-line react-hooks/exhaustive-deps
   );
+
+  const go = useCallback((dir: number) => goTo(Math.round(sr.current.target) + dir), [goTo]);
 
   /* ---- 滚轮：累计"推"的力度，推满 STEP 才走一格，松手吸附 ----
    *
@@ -501,40 +730,45 @@ export function MediaGalleryPage({ channel, onClose }: Props) {
         // 换了一次"推"：上一轮没推满的零头作废，画面先回到棘轮锁住的那一整格
         // （⚠️ 别写成 `round(target)` —— 那是"四舍五入"，2.5 格就会被抬成一格，又变灵敏了）
         accRef.current = 0;
-        sr.current.target = clampIdx(baseRef.current);
+        committedRef.current = false;
+        sr.current.target = baseRef.current;
       }
       burstRef.current = now;
+      // 这一推已经换过条：剩下的增量（惯性滚轮的长尾）一律吞掉，不再累积零头
+      if (committedRef.current) return;
       accRef.current += d;
 
       window.clearTimeout(snapTimer.current);
       if (reduced) {
-        // 降级：不制造位移（也就不产生任何运动），只按"推满一格"来换
+        // 降级：不制造位移（也就不产生任何运动），只按"推满一格"来换；同一推同样只换一条
         if (Math.abs(accRef.current) >= STEP_DELTA) {
           const dir = accRef.current > 0 ? 1 : -1;
-          accRef.current -= dir * STEP_DELTA;
-          baseRef.current = clampIdx(baseRef.current + dir);
+          accRef.current = 0;
+          baseRef.current += dir;
+          committedRef.current = true;
           go(dir);
         }
         return;
       }
       /*
-       * **棘轮**：凑满一格就立刻在 base 上落一格、把零头留下来接着算。
-       * 这一步是为了让"划满 5 格"成为**唯一的提交条件** ——
-       * 如果只在松手时按 `Math.round()` 收尾，2.5 格就会被四舍五入成 1 格（实测 3 格就换走了），
-       * 又变回"太灵敏"。棘轮之后：4 格 = 不换（画面推出去 0.8 格再弹回来），5 格 = 稳稳换一格，
-       * 10 格 = 连换两格。多出来的零头不会被吞掉。
+       * **棘轮（2026-09-21 收紧）**：凑满一格就立刻在 base 上落一格。
+       * ⚠️ 原来"10 格 = 连换两格"的规则删掉了 —— 用户实测反馈「容易跳过视频，划多」；
+       *    现在一次推最多提交一格，多余的零头直接作废（不是留给下一格），
+       *    连滚再快也只能一条一条来。想要连着换，松手再滚 —— 和参考站一致。
+       * 循环片单：base/target **不设边界**，越过首尾继续走，落位后由 apply() 回中。
        */
       const steps = Math.trunc(accRef.current / STEP_DELTA);
       if (steps !== 0) {
-        accRef.current -= steps * STEP_DELTA;
-        baseRef.current = clampIdx(baseRef.current + steps);
+        const dir = steps > 0 ? 1 : -1;
+        accRef.current = 0;
+        baseRef.current += dir;
+        committedRef.current = true;
       }
       const s = sr.current;
-      s.target = clampIdx(baseRef.current + accRef.current / STEP_DELTA);
+      s.target = baseRef.current + accRef.current / STEP_DELTA;
       snapTimer.current = window.setTimeout(() => {
         // 松手：零头一律抹掉（推不满 5 格就退回整格），落定到棘轮锁住的那一格
-        const snap = clampIdx(baseRef.current);
-        sr.current.target = snap;
+        sr.current.target = baseRef.current;
         accRef.current = 0;
       }, BURST_MS);
     };
@@ -557,37 +791,91 @@ export function MediaGalleryPage({ channel, onClose }: Props) {
     go(dy > 0 ? 1 : -1);
   };
 
-  /* ---- Esc：正在播就先退出播放，没在播就退回书架 ----
+  /* ---- Esc：原地播放中先停播，没在播就退回书架 ----
      走全站统一的 Esc 栈（@/lib/escape-stack）：这一页盖在书架之上，
      只有"栈"能保证一次按键只关最上面那层（旧版两页会一起关）。 */
   useEscape(() => {
-    if (playing) setPlaying(false);
+    if (playState !== 'idle') setPlayState('idle');
     else onClose();
   });
 
   /* ---- 键盘：←/→ 切换（非播放态）。这不是 Esc，照旧挂在普通监听上。 ---- */
   useEffect(() => {
-    if (playing) return;
+    if (playState !== 'idle') return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'ArrowRight' || e.key === 'ArrowDown') go(1);
       if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') go(-1);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [go, playing]);
+  }, [go, playState]);
 
-  const openAt = useCallback((i: number, el: HTMLElement) => {
-    flipRect.current = el.getBoundingClientRect();
-    indexRef.current = i;
-    setIndex(i);
-    setPlaying(true);
+  /**
+   * 播放/暂停（2026-09-21）：
+   *   idle → playing（**从头开始**）／ playing → paused（停在当帧）／ paused → playing（接着播）。
+   *
+   * ⚠️ idle 进入播放时要把时间线拨回 0 —— 现在静音循环和正式播放是**同一个文件**，
+   *    点播放时预览可能已经循环到任意位置了，不归零就会从半截开始（2026-09-21 用户反馈）。
+   *    从 paused 恢复则**不**归零，否则"暂停一下再继续"会跳回片头。
+   */
+  const togglePlay = useCallback(() => {
+    const prev = playStateRef.current;
+    if (prev === 'playing') {
+      playStateRef.current = 'paused';
+      setPlayState('paused');
+      return;
+    }
+    if (prev === 'idle') {
+      const el = videoRefs.current[indexRef.current];
+      if (el) {
+        try {
+          el.currentTime = 0;
+        } catch {
+          /* 还没加载出可 seek 的范围（readyState 0）就忽略 —— 反正它本来就从 0 起播 */
+        }
+      }
+      setProgress(0);
+      setTimeText('00:00');
+    }
+    playStateRef.current = 'playing';
+    setPlayState('playing');
+  }, []);
+
+  /**
+   * 进度条落点 → 跳时间线。
+   * idle 时点进度条 = 当作"开播"（这时还没有完整版可跳），playing / paused 才真的 seek。
+   */
+  const seekTo = useCallback(
+    (ratio: number) => {
+      const el = videoRefs.current[indexRef.current];
+      if (!el || !el.duration) return;
+      const r = Math.min(1, Math.max(0, ratio));
+      el.currentTime = Math.min(el.duration - 0.05, r * el.duration);
+      setProgress(r);
+      setTimeText(fmt(el.currentTime));
+    },
+    [],
+  );
+
+  /** 完整版 playing / paused 期间的时间回报（预览不回报，见 ReelItem）——只认当前那条 */
+  const onMediaTime = useCallback((a: number, t: number, d: number) => {
+    if (a !== indexRef.current || !(d > 0)) return;
+    setProgress(Math.min(1, t / d));
+    setTimeText(fmt(t));
+  }, []);
+
+  /** 完整版播完 → 退回静音预览循环 */
+  const onMediaEnded = useCallback(() => {
+    setPlayState('idle');
+    setProgress(0);
+    setTimeText('00:00');
   }, []);
 
   const current: MediaWork | undefined = list[index];
 
   const cls = useMemo(
-    () => ['mjp', entered ? 'is-in' : '', playing ? 'is-playing' : ''].filter(Boolean).join(' '),
-    [entered, playing],
+    () => ['mjp', entered ? 'is-in' : ''].filter(Boolean).join(' '),
+    [entered],
   );
 
   return (
@@ -606,6 +894,11 @@ export function MediaGalleryPage({ channel, onClose }: Props) {
           **物理上不可能盖住卡片与标题**（见 index.css 的 .pdecor 段）。
           这页卡片在 44% 高度横贯整屏，所以构图刻意只走"上带 + 下带"两条饰带。 */}
       <PageDecor variant="mjp" />
+      {/* 右下角原来那簇「烟花花 + 珠串椭圆」在 2026-09-17 第二轮被删，改成**淡紫 ASCII 彼岸花**。
+          ⚠️ 彼岸花现在挂在 PageDecor 的 mjp 变体里（`b('lycoris', …)`），不再往这页手写组件：
+             2026-09-17 晚另一个会话把「删掉这种风格」误读成删彼岸花，顺手删了这里的专用组件
+             和 `.ascii-lycoris` 类 —— 用户随后澄清要删的不是这个。并进 PageDecor 之后，
+             定位/浓度/窄屏规则和全站装饰共用一套，不会再出现"组件在、CSS 没了"这种半截状态。 */}
 
       {/* ---- 统一外壳（第一档改造 ①）----
           原来是 [← Back] …… [频道名] 两栏。现在左上那枚返回换成全站通用的
@@ -626,7 +919,7 @@ export function MediaGalleryPage({ channel, onClose }: Props) {
               白底上唯一的差别是"墨字压白"比"墨字压薄荷"对比更强 —— 只会更清楚，不用调。
            若改成 'light'，"Return to Archive" / Menu 会变成奶白字 + 黑影，白底上直接消失。 */
         tone="dark"
-        className={`mjp-chrome${playing ? ' is-faded' : ''}`}
+        className="mjp-chrome"
         extra={
           <span className="mjp__nav-title">
             {channel ? CHANNEL_LABEL[channel] : MEDIA_PAGE_COPY.title}
@@ -649,33 +942,61 @@ export function MediaGalleryPage({ channel, onClose }: Props) {
               {channel ? CHANNEL_WORD[channel] : MEDIA_PAGE_COPY.word}
             </div>
             <div className="mjp__wrapper" ref={wrapRef}>
-              {list.map((w, i) => (
-                <ReelItem
-                  key={w.id}
-                  elRef={(el) => {
-                    itemRefs.current[i] = el;
-                  }}
-                  canvasRef={(el) => {
-                    canvasRefs.current[i] = el;
-                  }}
-                  videoRef={(el) => {
-                    videoRefs.current[i] = el;
-                  }}
-                  work={w}
-                  index={i}
-                  isCurrent={i === index}
-                  onOpen={openAt}
-                />
-              ))}
+              {Array.from({ length: copies }, (_, c) =>
+                list.map((w, i) => {
+                  const a = c * total + i;
+                  const isActive = a === absIndex;
+                  return (
+                    <ReelItem
+                      key={`${c}-${w.id}`}
+                      elRef={(el) => {
+                        itemRefs.current[a] = el;
+                      }}
+                      canvasRef={(el) => {
+                        canvasRefs.current[a] = el;
+                      }}
+                      videoRef={(el) => {
+                        videoRefs.current[a] = el;
+                      }}
+                      work={w}
+                      absIndex={a}
+                      active={isActive}
+                      /* 只有屏幕中间那一格跟随播放状态，其余永远在预览态 */
+                      playState={isActive ? playState : 'idle'}
+                      onToggle={togglePlay}
+                      onGoTo={goTo}
+                      onTime={onMediaTime}
+                      onEnded={onMediaEnded}
+                    />
+                  );
+                }),
+              )}
             </div>
           </div>
 
-          {/* ---- 画面下方居中的信息块：标题 + 时长（+ 以后补的简介） ----
-              参考站（mattjinn.com/videos/）的位置：视频条居中在偏上，**文字在它下方居中**，
-              卡片本身不叠任何文字。2026-09-15 用户明确要求改成这样。
-              key 用 id 强制换节点 —— 否则 SplitText 的 revert 会把上一个标题的文字写回来。 */}
+          {/* ---- 画面下方：控制条（紧贴视频下沿） + 标题/时长 ----
+              2026-09-21：播放不再放大成全屏 —— 原地播，控制条就挂在视频正下方。 */}
           {current ? (
-            <VideoInfo key={current.id} work={current} reduced={reduced} />
+            <>
+              <PlaybackBar
+                playing={playState === 'playing'}
+                live={playState !== 'idle'}
+                progress={progress}
+                timeText={timeText}
+                length={current.length}
+                onToggle={togglePlay}
+                onSeek={playState === 'idle' ? togglePlay : seekTo}
+              />
+              {/* ⚠️ VideoInfo **不能**加 `key={current.id}`（2026-09-21 踩过，两次）：
+                  ① 加 key → React 每次换片都重新挂载 → 内部 `lastTitle` / `ghost` 全被重置
+                     → 出场分支的 `changing` 恒为 false → 幽灵标题永远不出现，旧标题是
+                     "啪"地消失、不是翻走（入场照常动，所以极难发现）。
+                  ② 但**不加 key 的前提是标题必须由 React 渲染**：原来用 GSAP SplitText
+                     拆字，它会直接改写 h2 里的 DOM（文本节点 → spans），React 下一次
+                     diff 时对不上，**标题干脆不更新**（实测切到第 10 条，标题还停在第 9 条）。
+                  所以现在改成 React 渲染逐字符 span（见 TitleChars），两边都成立。 */}
+              <VideoInfo work={current} reduced={reduced} />
+            </>
           ) : null}
 
           {/* ---- 左下角 ticker：序号 + 一列刻度线 + 序号（形态照参考站） ---- */}
@@ -683,24 +1004,26 @@ export function MediaGalleryPage({ channel, onClose }: Props) {
             <span className="mjp__ticker__num is-current">
               {String(index + 1).padStart(2, '0')}
             </span>
-            <span className="mjp__ticker__ticks">
-              {list.map((w, i) => (
-                <span key={w.id} className={`mjp__tick${i === index ? ' is-on' : ''}`} />
-              ))}
-            </span>
+            {/* 中间那格 = 96×12 的**滚动标尺** canvas（2026-09-21 照参考站实现）。
+                ⚠️ 参考站这里不是"每格一条的进度刻度"，而是一把固定 96×12 的标尺：
+                   18 条 16px 间距的刻度，高度与透明度都按"中间高、两端渐隐"的三角剖面画；
+                   `progress` 由滚动位置推一个极小的相位（视频页只有 2 条，几乎看不出来）。
+                   绘制见 MediaGalleryPage 的 drawTicker()。
+                备用存储固定 2×（192×24）—— 参考站也是硬编码 2×，不是 dpr。 */}
+            <canvas
+              ref={tickRef}
+              className="mjp__ticker__canvas"
+              width={192}
+              height={24}
+              aria-hidden="true"
+            />
             <span className="mjp__ticker__num">{String(total).padStart(2, '0')}</span>
           </div>
         </>
       )}
 
-      {playing && current ? (
-        <Player
-          work={current}
-          flipFrom={flipRect.current}
-          reduced={reduced}
-          onClose={() => setPlaying(false)}
-        />
-      ) : null}
+      {/* 2026-09-21：全屏播放器（FLIP 放大）已删 —— 播放就地在卡片上进行，
+          控件见下方 PlaybackBar；不再需要 is-playing 态盖层。 */}
     </div>
 
     {/* 手绘圈注式跟随标签（Play / Back / Sound / Focus …），系统光标保留。
@@ -714,52 +1037,111 @@ export function MediaGalleryPage({ channel, onClose }: Props) {
 }
 
 /**
+ * 把标题拆成**逐字符 `<span>`**，交给 React 渲染；GSAP 只负责给这些 span 设 transform / opacity。
+ *
+ * ⚠️ 2026-09-21 从 GSAP SplitText 换成这个，根源是 SplitText 和 React 抢同一个 DOM：
+ *    它把 h2 里的文本节点**直接换成**自己的 spans，而 React 并不知道；下一次 title 变化时
+ *    React 拿旧 fiber 去 diff 已经面目全非的 DOM，更新不上去 —— 症状是**标题永远停在第一条**
+ *    （实测切到第 10 条，标题还是第 9 条的字）。之前靠 `key={current.id}` 每次重新挂载绕开，
+ *    但那又让"幽灵标题出场"整段变成死代码（实例一换，lastTitle / ghost 全被重置）。
+ *    逐字符 span 一次解决这两件事，而且少一个插件依赖。
+ * ⚠️ 空格要写成 `\u00A0`：`display:inline-block` 的 span 里的普通空格会被折叠掉，标题会挤成一坨。
+ */
+function TitleChars({ text }: { text: string }) {
+  return (
+    <>
+      {Array.from(text).map((ch, i) => (
+        <span key={i} className="mjp__info__char">{ch === ' ' ? '\u00A0' : ch}</span>
+      ))}
+    </>
+  );
+}
+
+/**
  * 视频条下方的居中信息块（参考站的版式：卡片下面单独一行文字，不叠在画面上）。
- *   · 标题：display 衬线，逐字符 rotateX 翻入（SplitText）—— 参考站切视频时就是这段在翻；
+ *   · 标题：display 衬线，逐字符 rotateX 翻入 —— 参考站切视频时就是这段在翻；
  *   · 时长：同字族斜体，小一号；
  *   · 简介 `blurb`：给了才渲染（用户说「我会另外在视频下面加介绍」，先把槽位留着）。
  */
 function VideoInfo({ work, reduced }: { work: MediaWork; reduced: boolean }) {
   const titleRef = useRef<HTMLHeadingElement>(null);
+  const ghostRef = useRef<HTMLHeadingElement>(null);
+  /** 上一条标题（出场用）：换片子时把旧标题复制到一层"幽灵"上翻走再卸载 */
+  const [ghost, setGhost] = useState<{ text: string; key: number } | null>(null);
+  const lastTitle = useRef(work.title);
 
-  useEffect(() => {
+  /**
+   * 入场（照参考站 activate）：
+   *   fromTo(chars, {autoAlpha:0, rotateX:90, transformOrigin:'50% 50% -10px'},
+   *               {autoAlpha:1, rotateX:0, duration:1, ease:'power4.out', stagger:.01})
+   * 注意是 **+90 → 0**（从屏幕下方翻上来），不是 -90 —— 我们原来写的是 -90，方向反了。
+   * 缓动写 `EASE.world` 而不是字面量 `'power4.out'`：参考站的 power4.out 就是本站
+   * `--ease-world`（0.22, 1, 0.36, 1）那条曲线，js 侧只能用 token（见 src/lib/ease.ts）。
+   * ⚠️ 用 useLayoutEffect 不是 useEffect：逐字符 span 是被 React **原地改文字**的，
+   *    useEffect 在 paint 之后才跑，会先闪一帧"新标题已摆正"再翻；layout 阶段跑掉这个闪。
+   */
+  useLayoutEffect(() => {
     const el = titleRef.current;
     if (!el) return;
-    gsap.killTweensOf(el);
+    const chars = el.querySelectorAll<HTMLElement>('.mjp__info__char');
+    gsap.killTweensOf(chars);
+    const changing = lastTitle.current !== work.title;
+    if (changing) {
+      const prev = lastTitle.current;
+      lastTitle.current = work.title;
+      setGhost({ text: prev, key: Date.now() });   // 旧标题挂到幽灵层，走出场动画
+    }
+    gsap.set(el, { autoAlpha: 1 });
     if (reduced) {
-      gsap.set(el, { autoAlpha: 1 });
+      gsap.set(chars, { autoAlpha: 1, rotateX: 0 });
       return;
     }
-    let split: SplitText | null = null;
-    try {
-      // 参数照抄参考站：transformOrigin 的 z 位移 -25px 决定翻转半径，
-      // 配合父级 perspective:200px 才有"立起来又拍下去"的立体感。
-      split = new SplitText(el, { type: 'chars' });
-      gsap.set(el, { autoAlpha: 1 });
-      gsap.set(split.chars, {
-        autoAlpha: 0,
-        rotateX: -90,
-        transformOrigin: '50% 50% -25px',
-      });
-      gsap.to(split.chars, {
-        autoAlpha: 1,
-        rotateX: 0,
-        duration: 0.72,
-        stagger: 0.018,
-        ease: EASE.world,
-      });
-    } catch {
-      gsap.set(el, { autoAlpha: 1 }); // SplitText 不可用就直接显示
+    gsap.fromTo(
+      chars,
+      { autoAlpha: 0, rotateX: 90, transformOrigin: '50% 50% -10px' },
+      { autoAlpha: 1, rotateX: 0, duration: 1, stagger: 0.01, ease: EASE.world },
+    );
+  }, [work.title, reduced]);
+
+  /** 出场（照参考站 deactivate）：chars 到 rotateX:-90 + 淡出，1s / EASE.world / stagger .01 */
+  useLayoutEffect(() => {
+    const el = ghostRef.current;
+    if (!ghost || !el) return;
+    const chars = el.querySelectorAll<HTMLElement>('.mjp__info__char');
+    if (reduced) {
+      const t = window.setTimeout(() => setGhost(null), 0);
+      return () => window.clearTimeout(t);
     }
+    gsap.set(el, { autoAlpha: 1 });
+    gsap.to(chars, {
+      autoAlpha: 0,
+      rotateX: -90,
+      transformOrigin: '50% 50% -10px',
+      duration: 1,
+      stagger: 0.01,
+      ease: EASE.world,
+      onComplete: () => setGhost(null),
+    });
+    const timer = window.setTimeout(() => setGhost(null), 1600); // 兜底：动画没回调也要卸掉
     return () => {
-      split?.revert();
+      window.clearTimeout(timer);
+      gsap.killTweensOf(chars);
     };
-  }, [reduced]);
+  }, [ghost, reduced]);
 
   return (
     <div className="mjp__info">
+      {/* 幽灵层：上一版标题，绝对定位盖在同一位置（CSS 见 .mjp__info__title--ghost），只负责翻走。
+          ⚠️ 必须带 `key={ghost.key}`：不带的话 React 会**复用同一个 h2 节点**，
+             上一轮动画把它留在 rotateX:-90 / opacity:0 的状态，新一轮再往 -90 动画就等于没动 ——
+             表现是"第二次换片时旧标题不翻"。换 key 强制重新挂载，字符回到 0 位再翻走。 */}
+      {ghost ? (
+        <h2 key={ghost.key} className="mjp__info__title mjp__info__title--ghost" ref={ghostRef} aria-hidden="true">
+          <TitleChars text={ghost.text} />
+        </h2>
+      ) : null}
       <h2 className="mjp__info__title" ref={titleRef}>
-        {work.title}
+        <TitleChars text={work.title} />
       </h2>
       {work.length ? <p className="mjp__info__len">{work.length}</p> : null}
       {work.blurb ? <p className="mjp__info__blurb">{work.blurb}</p> : null}
@@ -767,23 +1149,49 @@ function VideoInfo({ work, reduced }: { work: MediaWork; reduced: boolean }) {
   );
 }
 
-/** 列表里的一格：静音循环预览，画面上不叠任何文字 */
+/**
+ * 列表里的一格。
+ *
+ * 2026-09-21 起这格**自己就是播放器**（全屏播放器已删）：
+ *   · 非当前格 → 暂停（多条同时解码太浪费）；
+ *   · 当前格 idle → **静音循环播完整版**（不再有那条低码率预览文件）；
+ *   · 当前格 playing → 解除静音、不循环；
+ *   · 当前格 paused → el.pause()，画面定格在当帧；
+ *   · 侧卡被点 → 不播放，先滑到它（onGoTo）。
+ * ⚠️ 全程**同一个 src**：切换播放态只动 muted/loop/paused，不换源 ——
+ *    换 src 会触发重新加载（旧版因此每次点播放都要重新缓冲一遍）。
+ *    这也是"取消 -preview.mp4"之后画质不再打折的前提。
+ * 画面仍然由父级的画布按圆柱面投影重画 —— video 只是藏在下面的帧源，
+ * 所以"原地播放"对弯曲/鱼眼那些动效零改动。
+ */
 function ReelItem({
   elRef,
   canvasRef,
   videoRef,
   work,
-  index,
-  isCurrent,
-  onOpen,
+  absIndex,
+  active,
+  playState,
+  onToggle,
+  onGoTo,
+  onTime,
+  onEnded,
 }: {
   elRef: (el: HTMLElement | null) => void;
   canvasRef: (el: HTMLCanvasElement | null) => void;
   videoRef: (el: HTMLVideoElement | null) => void;
   work: MediaWork;
-  index: number;
-  isCurrent: boolean;
-  onOpen: (i: number, el: HTMLElement) => void;
+  /** 绝对下标（三份副本里这是第几格） */
+  absIndex: number;
+  /** 是否是屏幕中间那一格（绝对下标匹配 —— 同一条片子有三份，只有中间那份能播） */
+  active: boolean;
+  /** 播放状态；**只对 active 的格子生效**（传入时侧卡一律得到 'idle'） */
+  playState: PlayState;
+  onToggle: () => void;
+  onGoTo: (absIndex: number) => void;
+  /** 完整版播放中的时间回报（秒 / 总时长秒）—— 预览不回报 */
+  onTime: (absIndex: number, time: number, duration: number) => void;
+  onEnded: () => void;
 }) {
   const btnRef = useRef<HTMLButtonElement>(null);
   const vid = useRef<HTMLVideoElement | null>(null);
@@ -796,21 +1204,38 @@ function ReelItem({
     [videoRef],
   );
 
-  /* 只有当前这一格在播，其余全暂停 —— 四条预览同时解码太浪费。
-     ⚠️ 视频现在**不可见**（opacity:0），它只是画布的帧源。所以**不能**用
-     `display:none` / `visibility:hidden` 藏它 —— 那会让浏览器停掉解码，
-     `drawImage` 再也拿不到新帧，卡片就死在第一帧上。 */
+  /** 只有一个文件：列表里循环的是它，正式播放的也是它（见数据文件的画质整改说明） */
+  const src = work.video ?? '';
+
+  /**
+   * 播放调度（全程同一个 src，只动 muted / loop / paused）：
+   *   · 非当前格 → 暂停（多条同时解码太浪费）；
+   *   · idle → 静音循环，一直在播（停了画布就拿不到新帧，卡片会死在第一帧）；
+   *   · playing → 解除静音继续播；
+   *   · paused → el.pause() 定格在当帧（src 不变，进度自然保住）。
+   * ⚠️ 视频不可见（opacity:0，见 CSS），**不能** display:none / visibility:hidden ——
+   *    那会让浏览器停掉解码，drawImage 再也拿不到新帧。
+   */
   useEffect(() => {
     const el = vid.current;
     if (!el) return;
-    if (isCurrent) void el.play().catch(() => {});
-    else el.pause();
-  }, [isCurrent]);
+    if (!active) {
+      el.pause();
+      return;
+    }
+    if (playState === 'paused') {
+      el.pause();
+      return;
+    }
+    void el.play().catch(() => {});
+  }, [active, playState, src]);
 
   return (
     <article
       ref={elRef}
-      className={`mjp__media${isCurrent ? ' is-current' : ''}`}
+      /* is-live 已随播放徽标一起删（2026-09-21）—— 卡片上不再有"是否在完整播放"的样式分支，
+         播放态只体现在 .mjp__ctrl 上（进度条 / 暂停键）。 */
+      className={`mjp__media${active ? ' is-current' : ''}`}
       /* 关键：格子按这条片子自己的宽高比撑开，竖版才不会被 cover 裁掉 */
       style={{ ['--ar' as string]: work.aspect ?? 16 / 9 }}
     >
@@ -818,264 +1243,134 @@ function ReelItem({
         ref={btnRef}
         type="button"
         className="mjp__media-btn"
-        onClick={() => onOpen(index, btnRef.current!)}
-        data-cursor="Play"
+        onClick={() => (active ? onToggle() : onGoTo(absIndex))}
+        data-cursor={active ? (playState === 'playing' ? 'Pause' : 'Play') : undefined}
         /* 卡片浮在白底上 → 浅底 → 墨色光标标签（同 .mjp__viewport） */
         data-cursor-tone="light"
-        aria-label={`播放：${work.title}`}
+        aria-label={
+          active ? (playState === 'playing' ? `暂停：${work.title}` : `播放：${work.title}`) : `查看：${work.title}`
+        }
       >
         {/* 可见的那一层：每帧按圆柱面投影重画的画布 ——
             拱起、两端后退、上下边成弧线都在这里（见 src/lib/gallery/bend.ts）。 */}
         <canvas ref={canvasRef} className="mjp__media-canvas" aria-hidden="true" />
-        {/* 帧源：藏在画布下面（opacity:0），只负责持续解码，
-            只有当前这条预取，其余等轮到它再拉 —— 否则一进页面就 4 条预览一起下，
-            紧接着被 pause() 掐掉，白白浪费带宽（实测 3 条 ERR_ABORTED）。 */}
+        {/* ⚠️ 这里原来有一枚 hover 播放徽标（圆形底 + 三角），2026-09-21 用户否掉：
+            「不要这个播放键」—— 参考站封面在 hover 时**只有画面放大**（`uv=scale(uv,0.1*uHover)`），
+            那个 /play.png 是混在**贴图**里的、且非常淡，不是一枚浮在画面上的实心按钮。
+            别再往回加：要提示可播，靠光标标签（data-cursor="Play"）就够。 */}
+        {/* 帧源：藏在画布下面（opacity:0）。只有当前格 preload="auto"，
+            其余等轮到它再拉 —— 否则一进页面十几条副本一起下，白白浪费带宽。 */}
         <video
           ref={setVid}
           className="mjp__media-video"
-          src={work.coverVideo ?? work.video}
+          src={src}
           poster={work.poster}
-          loop
-          muted
+          loop={playState === 'idle'}
+          muted={playState === 'idle'}
           playsInline
-          preload={isCurrent ? 'auto' : 'none'}
+          preload={active ? 'auto' : 'none'}
+          onTimeUpdate={() => {
+            const el = vid.current;
+            if (playState !== 'idle' && el && el.duration > 0) onTime(absIndex, el.currentTime, el.duration);
+          }}
+          onEnded={onEnded}
         />
       </button>
     </article>
   );
 }
 
-/** 全屏播放器：点画面播放/暂停 + 进度条 + 音量 + 全屏 + Credits */
-function Player({
-  work,
-  flipFrom,
-  reduced,
-  onClose,
+/**
+ * 视频正下方的控制条（2026-09-21 新增，替代全屏播放器）：
+ *   [播放/暂停] [进度条（可点可拖定位）] [时间]
+ * 只挂一条，跟随当前格 —— 内容随 progress 每帧变，但节点不换（别加 key=work.id，
+ * 拖动到一半切片子会闪）。窄屏时宽度收到和卡片近似的带宽。
+ */
+function PlaybackBar({
+  playing,
+  live,
+  progress,
+  timeText,
+  length,
+  onToggle,
+  onSeek,
 }: {
-  work: MediaWork;
-  flipFrom: DOMRect | null;
-  reduced: boolean;
-  onClose: () => void;
+  playing: boolean;
+  /** 是否已进入完整版（playing 或 paused）—— 未进入时进度条弱化，点了是"开播" */
+  live: boolean;
+  progress: number;
+  timeText: string;
+  length?: string;
+  onToggle: () => void;
+  onSeek: (ratio: number) => void;
 }) {
-  const rootRef = useRef<HTMLDivElement>(null);
-  const ref = useRef<HTMLVideoElement>(null);
-  const closing = useRef(false);
-  const [playing, setPlaying] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [time, setTime] = useState('00:00');
-  const [muted, setMuted] = useState(false);
-  const [credits, setCredits] = useState(false);
-  const [hover, setHover] = useState(false);
+  const barRef = useRef<HTMLDivElement>(null);
+  /** 按住拖动：pointermove 期间连续 seek，不触发文本选择 */
+  const dragging = useRef(false);
 
-  /* FLIP：先贴合到卡片矩形，再撑满全屏 */
-  useLayoutEffect(() => {
-    const el = rootRef.current;
-    if (!el || !flipFrom || reduced) return;
-    gsap.set(el, {
-      position: 'fixed',
-      left: flipFrom.left,
-      top: flipFrom.top,
-      width: flipFrom.width,
-      height: flipFrom.height,
-      borderRadius: 12,
-      overflow: 'hidden',
-    });
-    gsap.to(el, {
-      left: 0,
-      top: 0,
-      width: window.innerWidth,
-      height: window.innerHeight,
-      borderRadius: 0,
-      duration: 0.85,
-      ease: EASE.world,
-      onComplete: () =>
-        gsap.set(el, { clearProps: 'position,left,top,width,height,borderRadius,overflow' }),
-    });
-  }, [flipFrom, reduced]);
-
-  const doClose = useCallback(() => {
-    const el = rootRef.current;
-    if (!el || !flipFrom || reduced || closing.current) {
-      onClose();
-      return;
-    }
-    closing.current = true;
-    gsap.to(el, {
-      position: 'fixed',
-      left: flipFrom.left,
-      top: flipFrom.top,
-      width: flipFrom.width,
-      height: flipFrom.height,
-      borderRadius: 12,
-      duration: 0.5,
-      ease: EASE.in,
-      onComplete: onClose,
-    });
-  }, [flipFrom, onClose, reduced]);
-
-  useEffect(() => {
-    setPlaying(false);
-    setProgress(0);
-    setTime('00:00');
-    setCredits(false);
-  }, [work.id]);
-
-  const toggle = useCallback(() => {
-    const el = ref.current;
+  const seekFromEvent = (clientX: number) => {
+    const el = barRef.current;
     if (!el) return;
-    if (el.paused) void el.play().catch(() => {});
-    else el.pause();
-  }, []);
-
-  const fmt = (s: number) =>
-    `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
-
-  const onTime = useCallback(() => {
-    const el = ref.current;
-    if (!el || !el.duration) return;
-    setProgress(el.currentTime / el.duration);
-    setTime(fmt(el.currentTime));
-  }, []);
-
-  const seek = (e: React.MouseEvent<HTMLDivElement>) => {
-    const el = ref.current;
-    if (!el || !el.duration) return;
-    const r = e.currentTarget.getBoundingClientRect();
-    const ratio = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
-    el.currentTime = ratio * el.duration;
-    setProgress(ratio);
+    const r = el.getBoundingClientRect();
+    if (r.width <= 0) return;
+    onSeek((clientX - r.left) / r.width);
   };
 
-  const toggleMute = () => {
-    const el = ref.current;
-    if (!el) return;
-    el.muted = !el.muted;
-    setMuted(el.muted);
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    dragging.current = true;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    seekFromEvent(e.clientX);
   };
-
-  const fullscreen = () => {
-    const el = ref.current;
-    if (!el) return;
-    if (document.fullscreenElement) void document.exitFullscreen();
-    else void el.requestFullscreen?.().catch(() => {});
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (dragging.current) seekFromEvent(e.clientX);
   };
-
-  const pcls = ['mjp__player', hover ? 'is-hover' : '', credits ? 'is-credits' : '']
-    .filter(Boolean)
-    .join(' ');
+  const onPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    dragging.current = false;
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+  };
 
   return (
-    <div className={pcls} ref={rootRef}>
-      <video
-        ref={ref}
-        className="mjp__player-video"
-        src={work.video ?? work.coverVideo}
-        poster={work.poster}
-        playsInline
-        preload="auto"
-        autoPlay
-        onPlay={() => setPlaying(true)}
-        onPause={() => setPlaying(false)}
-        onTimeUpdate={onTime}
-        onEnded={() => setPlaying(false)}
-      />
-
-      {/* 点画面 = 播放/暂停（mattjinn 的手法） */}
+    <div className={`mjp__ctrl${live ? ' is-live' : ''}`}>
       <button
         type="button"
-        className="mjp__player-stage"
-        onClick={toggle}
-        onMouseEnter={() => setHover(true)}
-        onMouseLeave={() => setHover(false)}
+        className="mjp__ctrl-btn"
+        onClick={onToggle}
         data-cursor={playing ? 'Pause' : 'Play'}
-        data-cursor-tone="dark"
+        data-cursor-tone="light"
         aria-label={playing ? '暂停' : '播放'}
-      />
-
-      {/* 顶部居中：返回（参考站写的是 Back） */}
-      <button
-        type="button"
-        className="mjp__player-close"
-        onClick={doClose}
-        data-cursor="Back"
-        data-cursor-tone="dark"
       >
-        ← Back
+        {playing ? (
+          <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+            <rect x="3.5" y="2.5" width="3.2" height="11" rx="1" fill="currentColor" />
+            <rect x="9.3" y="2.5" width="3.2" height="11" rx="1" fill="currentColor" />
+          </svg>
+        ) : (
+          <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+            <path d="M4.5 2.6 L13 8 L4.5 13.4 Z" fill="currentColor" />
+          </svg>
+        )}
       </button>
-
-      {/* 垂直居中一行：左标题 / 中进度条 / 右图标 —— 参考站就是把控件放在画面中线上，
-          而不是常见的贴底。 */}
       <div
-        className="mjp__player-row"
-        onMouseEnter={() => setHover(true)}
-        onMouseLeave={() => setHover(false)}
+        ref={barRef}
+        className="mjp__ctrl-track"
+        style={{ ['--p' as string]: progress }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        role="slider"
+        aria-label="播放进度"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(progress * 100)}
       >
-        <p className="mjp__player-title">{work.title}</p>
-        <div
-          className="mjp__player-progress"
-          onClick={seek}
-          style={{ ['--p' as string]: progress }}
-          role="presentation"
-        >
-          <div className="mjp__player-bar">
-            <span className="mjp__player-bar-fill" />
-          </div>
-          <span className="mjp__player-time">{time}</span>
-        </div>
-        <div className="mjp__player-icons">
-          <button
-            type="button"
-            className="mjp__player-btn"
-            onClick={toggleMute}
-            data-cursor="Sound"
-            data-cursor-tone="dark"
-          >
-            {muted ? 'Unmute' : 'Mute'}
-          </button>
-          <button
-            type="button"
-            className="mjp__player-btn"
-            onClick={fullscreen}
-            data-cursor="Focus"
-            data-cursor-tone="dark"
-          >
-            Full
-          </button>
-        </div>
+        <span className="mjp__ctrl-rail" />
+        <span className="mjp__ctrl-fill" />
+        <span className="mjp__ctrl-knob" />
       </div>
-
-      {/* 左下角：Credits（参考站它在最左下，不在控制条里） */}
-      <div
-        className="mjp__player-foot"
-        onMouseEnter={() => setHover(true)}
-        onMouseLeave={() => setHover(false)}
-      >
-        <button
-          type="button"
-          className={`mjp__player-btn${credits ? ' is-on' : ''}`}
-          onClick={() => setCredits((v) => !v)}
-          data-cursor="Info"
-          data-cursor-tone="dark"
-        >
-          {credits ? 'Close' : 'Credits'}
-        </button>
-      </div>
-
-      {credits ? (
-        <div className="mjp__player-credits">
-          {work.blurb ? <p className="mjp__player-blurb">{work.blurb}</p> : null}
-          {work.credits?.length ? (
-            <ul className="mjp__player-creditlist">
-              {work.credits.map((c) => (
-                <li key={`${c.role}-${c.name}`}>
-                  <span className="mjp__player-role">{c.role}</span>
-                  <span className="mjp__player-name">{c.name}</span>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
-      ) : null}
+      <span className="mjp__ctrl-time">
+        {timeText}
+        {length ? <em> / {length}</em> : null}
+      </span>
     </div>
   );
 }

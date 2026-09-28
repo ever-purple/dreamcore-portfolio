@@ -4,38 +4,46 @@ import { Sparkles } from '@/components/Sparkles';
 /**
  * 页脚访客计数器。
  *
- * ⚠️ 现在是「本地计数」：编号存在 localStorage，每次新会话 +1。
- * 想做**全局真实人数**必须有个能自增的服务端（云函数 / KV / 边缘函数都行），
- * 只改下面 readVisitorNo 一处即可，界面不用动：
+ * 现在是**服务端计数**：数字由 Vercel 云函数 /api/visit 从 Redis 里读，
+ * 所有访客共用同一个数，于是「你到底是第几位」是真实答案。
  *
- *   const r = await fetch('/api/visit', { method: 'POST' });
- *   return (await r.json()).count as number;
- *
- * 之所以不直接怼一个公共计数器 API：那些服务大多要 key、会挂、还有 CORS，
- * 访客一多就白字一排，不如先本地跑通。
+ * 具体行为：
+ *  1. 组件一挂载就发请求，不等别的动作 —— 打开 About 页即可见，不用刷新。
+ *  2. 同一次会话（按 F5）只 +1 一次，靠 sessionStorage 记住。
+ *  3. 云函数不可用（没配存储 / 网络炸了）时退回本地计数，页脚不会空着。
  */
 
-const COUNT_KEY = 'dreamcore.visitor.no';
-const SESSION_KEY = 'dreamcore.visitor.counted';
+const FALLBACK_KEY = 'dreamcore.visitor.no';
+const COUNTED_KEY = 'dreamcore.visitor.counted';
 /** 起始编号：第一个访客就是 SEED + 1 */
 const SEED = 1024;
 /** 建站月份，页脚展示用 */
 const SINCE = '2026.09';
 
-function readVisitorNo(): number {
+function alreadyCounted(): boolean {
   try {
-    const prev = Number(window.localStorage.getItem(COUNT_KEY));
-    const base = Number.isFinite(prev) && prev > 0 ? prev : SEED;
-
-    // 同一次会话里刷新页面不重复计数（否则按 F5 就能把自己的编号刷上去）
-    if (window.sessionStorage.getItem(SESSION_KEY)) return base;
-
-    const next = base + 1;
-    window.localStorage.setItem(COUNT_KEY, String(next));
-    window.sessionStorage.setItem(SESSION_KEY, '1');
-    return next;
+    return window.sessionStorage.getItem(COUNTED_KEY) === '1';
   } catch {
-    // 隐私模式 / 禁用 storage：给个稳定值，别让页脚崩掉
+    return false;
+  }
+}
+
+function markCounted(): void {
+  try {
+    window.sessionStorage.setItem(COUNTED_KEY, '1');
+  } catch {
+    /* 隐私模式下忽略：最坏结果是同一会话多算一次 */
+  }
+}
+
+/** 降级用的本地编号：让页脚永远有个数字，而不是空白 */
+function localNo(): number {
+  try {
+    const prev = Number(window.localStorage.getItem(FALLBACK_KEY));
+    const n = Number.isFinite(prev) && prev > 0 ? prev : SEED + 1;
+    window.localStorage.setItem(FALLBACK_KEY, String(n));
+    return n;
+  } catch {
     return SEED + 1;
   }
 }
@@ -49,9 +57,46 @@ function scrollAboutToTop() {
 
 export function AboutVisitor() {
   const [no, setNo] = useState(0);
+  const [pv, setPv] = useState(0);
+  const [pending, setPending] = useState(true);
 
   useEffect(() => {
-    setNo(readVisitorNo());
+    let alive = true;
+
+    const unique = !alreadyCounted();
+    markCounted();
+
+    (async () => {
+      try {
+        const res = await fetch('/api/visit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ unique }),
+          cache: 'no-store',
+        });
+        const j = (await res.json()) as { ok?: boolean; count?: number; pv?: number };
+        if (alive && j.ok && typeof j.count === 'number') {
+          try {
+            window.localStorage.setItem(FALLBACK_KEY, String(j.count));
+          } catch {
+            /* 忽略 */
+          }
+          setNo(j.count);
+          if (typeof j.pv === 'number') setPv(j.pv);
+          return;
+        }
+        throw new Error('bad response');
+      } catch {
+        // 云函数没配好 / 网络失败：退回本地编号，界面照常
+        if (alive) setNo(localNo());
+      } finally {
+        if (alive) setPending(false);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
   }, []);
 
   const text = no ? String(no) : '···';
@@ -65,7 +110,11 @@ export function AboutVisitor() {
           ☆
         </span>
         欢迎第
-        <strong className="about-foot-no" aria-live="polite">
+        <strong
+          className="about-foot-no"
+          aria-live="polite"
+          style={{ opacity: pending ? 0.45 : 1, transition: 'opacity .3s ease' }}
+        >
           {text}
         </strong>
         位参观者
@@ -75,7 +124,8 @@ export function AboutVisitor() {
       </p>
 
       <p className="about-foot-note">
-        你的编号 <b>#{text}</b> · 本站自 {SINCE} 起记录
+        你的编号 <b>#{text}</b>
+        {pv > 0 ? <> · 累计浏览 {pv} 次</> : null} · 本站自 {SINCE} 起记录
       </p>
 
       <button type="button" className="about-foot-top" onClick={scrollAboutToTop}>

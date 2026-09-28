@@ -2,7 +2,8 @@
 """纳米老宋-A 子集化：收集网页 display 元素实际用字 → 生成 woff2。
 
 什么时候要跑：改了任何用 --wkp-display 的文案（heroLine / statement / stepsTitle /
-steps[].title / cols[].title / sections[].heading / title）之后 —— 子集里没有的字会回退到 Noto Serif。
+steps[].title / cols[].title / sections[].heading / title / 实习日记的 display 字段）之后
+—— 子集里没有的字会回退到 Noto Serif。
 
 用法：
   C:/Users/sunchenxi/.workbuddy/binaries/python/envs/default/Scripts/python.exe scripts/subset-nanooldsong.py
@@ -73,6 +74,25 @@ add_file(os.path.join(ROOT, "src/data/diary.ts"), [
     r"role:\s*'([^']*)'",
     r"date:\s*'([^']*)'",
     r"chips:\s*\[([^\]]*)\]",
+    # 2026-09-17 拼贴版式新增的 display 字段 —— 漏一个就静默回退 Noto Serif
+    # （同一行里两种宋体，肉眼能看出来但很容易归因错）：
+    #   板块卡 index（'01' / '项目一'）、便签与复盘胶带的 label（'核心挑战' / '复盘'）、
+    #   纸带上的 place（'北京' / '天津'）、数据表 caption（'老铁降温季 · 传播数据'）、
+    #   数字贴纸 value（'18.41亿+' —— 只有「亿」是中文，其余是阿拉伯数字）。
+    r"index:\s*'([^']*)'",
+    r"label:\s*'([^']*)'",
+    r"place:\s*'([^']*)'",
+    r"caption:\s*'([^']*)'",
+    r"value:\s*'([^']*)'",
+    # 2026-09-22 晚第三轮：正文改成「小标题单拎的块」，小标题 sub 走 NanoOldSongA；
+    #   篇首「核心工作」改两级结构（组号 no / 组名 title / 细目 items），都走 .dx-mm-*
+    #   —— 漏了就是小标题半行 Noto Serif。
+    #   ⚠️ core 是嵌套数组（[ { no, title, items: [...] } … ]），`core:\[([^\]]*)\]`
+    #      会在**第一个 `]`**（第一组的 items 结尾）就截断 —— 只收第一组的字。
+    #      所以按最内层的字段扫：no / title / items。
+    r"sub:\s*'([^']*)'",
+    r"no:\s*'([^']*)'",
+    r"items:\s*\[([^\]]*)\]",
 ])
 
 # 组件里写死的 display 文本。
@@ -107,6 +127,27 @@ HARDCODED_DISPLAY = [
     # 这两句必须收进来，否则"空/槽/位/等"会静默回退 Noto Serif（一行两种宋体）。
     "待提交项目",
     "空槽位 · 等待提交",
+    # 实习日记拼贴版式（2026-09-17）里写死在 JSX 的小标签：
+    #   DiaryPage.tsx 的板块卡「成果」行前缀。data/*.ts 扫不到，只能登记。
+    "成果",
+    # 实习日记「一个板块一页」改版（2026-09-17 第二轮）新增的写死 display 文案：
+    #   RunHead 的篇号「篇」、复盘页的「Review / 复盘」、篇首页的「核心挑战」便签、
+    #   页眉页序「第 n / m 页」的「第 / 页」，
+    #   以及 NotebookOverlay 进度胶囊的「封面 / 篇首 / 篇 NN / 第 n/m 页」。
+    #   漏了照旧是静默回退 Noto Serif —— 一行里两种宋体。
+    "篇",
+    "封面",
+    "篇首",
+    "复盘",
+    "核心挑战",
+    "第",
+    "页",
+    # 实习日记第三轮（2026-09-22 晚）新增的写死 display 文案（DiaryPage.tsx）：
+    #   篇首页两个块标签、板块页每页最上面的抬头（📌 是 emoji，走系统 emoji 字体，
+    #   不进子集；后面的汉字要收）。
+    "公司与项目介绍",
+    "核心工作",
+    "核心工作内容与实战成果",
 ]
 chars.update("".join(HARDCODED_DISPLAY))
 

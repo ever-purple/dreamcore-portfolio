@@ -1,6 +1,6 @@
 import { useCallback, useRef } from 'react';
 import { Sparkles } from '@/components/Sparkles';
-import { usePlayer } from '@/context/PlayerContext';
+import { platformLabel, usePlayer } from '@/context/PlayerContext';
 
 const fmt = (s: number) => {
   if (!Number.isFinite(s) || s < 0) s = 0;
@@ -17,11 +17,12 @@ const fmt = (s: number) => {
  * 这里的进度条可以拖动，反过来改变播放进度。
  */
 export function AboutPlayer() {
-  const { track, playing, time, duration, toggle, next, prev, seek } = usePlayer();
+  const { track, playing, time, duration, external, toggle, next, prev, seek } = usePlayer();
   const barRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef(false);
 
   const ratio = duration > 0 ? Math.min(1, time / duration) : 0;
+  const from = platformLabel(track?.platform);
 
   const seekFromClientX = useCallback(
     (clientX: number) => {
@@ -49,6 +50,22 @@ export function AboutPlayer() {
             <p className="about-player-now">
               <span className="about-player-now-label">NOW PLAYING</span>
               <span className="about-player-now-title">{track.title}</span>
+              {from ? <span className="about-player-now-from">来自 {from}</span> : null}
+              {external ? (
+                <span className="about-player-now-tag" title="由平台外链播放器播放，本站不存储音频文件">
+                  外链播放
+                </span>
+              ) : null}
+              {external && track.link ? (
+                <a
+                  className="about-player-now-link"
+                  href={track.link}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                >
+                  ↗ 去原站听完整版
+                </a>
+              ) : null}
             </p>
           ) : (
             <span className={`about-player-empty${playing ? ' is-on' : ''}`} aria-hidden="true">
@@ -88,14 +105,16 @@ export function AboutPlayer() {
 
         <div
           ref={barRef}
-          className="about-player-bar"
+          className={`about-player-bar${external ? ' is-external' : ''}`}
           role="slider"
-          tabIndex={0}
-          aria-label="播放进度，可拖动"
+          tabIndex={external ? -1 : 0}
+          aria-disabled={external || undefined}
+          aria-label={external ? '外链播放，进度由平台控制' : '播放进度，可拖动'}
           aria-valuemin={0}
           aria-valuemax={Math.round(duration)}
           aria-valuenow={Math.round(time)}
           onPointerDown={(e) => {
+            if (external) return;
             draggingRef.current = true;
             // 先 seek 再尝试捕获指针：即使 setPointerCapture 不可用也不影响拖动生效
             seekFromClientX(e.clientX);
@@ -121,14 +140,26 @@ export function AboutPlayer() {
             else if (e.key === 'ArrowLeft') seek(time - 5);
           }}
         >
-          <i style={{ width: `${ratio * 100}%` }} />
-          <span className="about-player-knob" style={{ left: `${ratio * 100}%` }} aria-hidden="true" />
+          {external ? (
+            <i className="about-player-bar-external" />
+          ) : (
+            <i style={{ width: `${ratio * 100}%` }} />
+          )}
+          {external ? null : (
+            <span className="about-player-knob" style={{ left: `${ratio * 100}%` }} aria-hidden="true" />
+          )}
         </div>
       </div>
 
       <p className="about-player-time" aria-hidden="true">
-        <span>{fmt(time)}</span>
-        <span>{duration > 0 ? fmt(duration) : '--:--'}</span>
+        {external ? (
+          <span className="about-player-time-external">♪ 平台外链播放中</span>
+        ) : (
+          <>
+            <span>{fmt(time)}</span>
+            <span>{duration > 0 ? fmt(duration) : '--:--'}</span>
+          </>
+        )}
       </p>
 
       <Sparkles count={4} seed={21} />

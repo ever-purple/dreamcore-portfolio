@@ -1,10 +1,10 @@
 /**
  * 报刊亭「第一排」—— 顶层三件设备（DVD 机 / DV 机 / MP3）对应的作品集。
  *
- * 规则（2026-09-15 定稿）：
- *   · 点第一排任意一件设备都进**同一个列表页**，不是每台设备一个页面。
- *   · 页面形态参考 mattjinn.com/videos/ —— 全屏视频播放 + 点击展开播放器。
- *   · 类别是「视频 / 音乐」两类：视频走全屏播放，音乐走音频播放。
+ * 规则（2026-09-21 修订，替代 09-15 的「每台设备一个频道片单」）：
+ *   · 点第一排任意一件设备都进**同一个列表页**，看到**全部**片子；
+ *   · 片单按 横屏 → AI → 竖屏 排列、首尾循环，设备只决定进门时定位在第几条；
+ *   · 播放不放大 —— 就在列表页原地播，视频下方有进度条可以播放/暂停/拖动。
  *
  * 现在只搭框架，内容是空的 —— 之后往 `MEDIA_WORKS` 里填条目即可。
  */
@@ -13,9 +13,10 @@
 export type MediaChannel = 'landscape' | 'ai' | 'portrait';
 
 /**
- * 设备序号 → 频道。报刊亭第一排点第 1/2/3 件设备，分别进这三个片单：
- *   0 DVD 机 → 横屏映像　1 DV 机 → AI 影像　2 MP3 → 竖屏短片
- * 三条频道共用同一个列表页组件，只是过滤条件不同。
+ * 设备序号 → 频道。报刊亭第一排点第 1/2/3 件设备（2026-09-21 规则反转）：
+ *   0 DVD 机 → 从第一条横屏起步　1 DV 机 → 从第一条 AI 影像起步　2 MP3 → 从第一条竖屏起步
+ * **三个入口进的是同一份片单**（横屏 → AI → 竖屏 排成一列，首尾相接循环），
+ * 频道只决定初始定位在第几条，不再过滤列表。
  */
 export const CHANNEL_BY_DEVICE: MediaChannel[] = ['landscape', 'ai', 'portrait'];
 
@@ -59,15 +60,13 @@ export type MediaWork = {
    * 留空 = 任何频道都显示（视频还没攒够时，三条频道会都看到同一批，等填了就自动分流）。
    */
   channel?: MediaChannel;
-  /**
-   * 封面预览视频（循环、静音、自动播放）—— mattjinn 的做法：
-   * 列表里每张卡片本身就是一段静音循环视频，悬停/进入视口即播。
-   * 留空则只显示 poster 图。
-   */
-  coverVideo?: string;
-  /** 封面静态图（coverVideo 加载前 / 不支持时兜底） */
+  /** 封面静态图（视频加载前 / 不支持时兜底） */
   poster?: string;
-  /** 点击后播放的完整视频（有声音） */
+  /**
+   * 视频本体 —— **只有一个文件，没有单独的"低码率预览"**。
+   * 2026-09-21：列表里循环播放的就是这一条（静音），点播放只是解除静音、不再换源。
+   * 以前另有 `-preview.mp4`（960 长边 + CRF 26），它是页面发糊的元凶之一，已取消。
+   */
   video?: string;
   /** 音乐作品：音频文件地址 */
   audio?: string;
@@ -78,15 +77,18 @@ export type MediaWork = {
 };
 
 /**
- * 作品列表 —— KSI 实习项目的四条片子（2026-09-15 填入）。
+ * 作品列表 —— KSI 实习项目的四条片子 + 一条 AI 影像 + 春山里三条（2026-09-21 补）。
  *
- * 素材已压好在 `public/media/`，每条三个文件：
- *   `<slug>.mp4`          完整版（1080 长边 / CRF 26 / 带音频）
- *   `<slug>-preview.mp4`  列表预览（540 长边 / CRF 32 / **无音轨**，静音循环用）
- *   `<slug>.jpg`          封面图
- * 生成脚本：`scripts/media-compress.py`（换片子时改里面的 JOBS 列表再跑一遍）。
+ * 素材在 `public/media/`，每条两个文件：
+ *   `<slug>.mp4`  正片（前五条走压缩流水线；春山里三条是**原片直拷**，见各自条目注释）
+ *   `<slug>.jpg`  封面图（前五条 1280 长边 / 春山里三条 1600 长边）
+ * 压缩脚本：`scripts/media-compress.py`（换片子时改里面的 JOBS 列表再跑一遍；
+ * 但「不压缩」的片子别进那个脚本，直接 cp）。
  *
- * ⚠️ 原始素材是 HEVC + 共 333MB，压完只有 29MB；**别把原片拷进 public/**。
+ * ⚠️ 2026-09-21 画质整改：**没有** `-preview.mp4` 了。旧版那条"960 长边 + CRF 26"
+ *    的静音预览是页面发糊的元凶（横版只有 540p，而画布背板要 1712px）。
+ *    现在列表里循环播放的就是完整版本身（静音），点播放只是解除静音、不换源。
+ * ⚠️ 原始素材是 HEVC + 共 500MB 上下；**别把原片拷进 public/**。
  * ⚠️ 改这里的中文标题后必须重跑 `scripts/subset-nanooldsong.py`，否则缺字回退系统字体。
  */
 const M = `${import.meta.env.BASE_URL}media/`;
@@ -99,7 +101,6 @@ export const MEDIA_WORKS: MediaWork[] = [
     kind: 'video',
     aspect: 16 / 9,
     channel: 'landscape',
-    coverVideo: `${M}qixi-preview.mp4`,
     poster: `${M}qixi.jpg`,
     video: `${M}qixi.mp4`,
   },
@@ -110,7 +111,6 @@ export const MEDIA_WORKS: MediaWork[] = [
     kind: 'video',
     aspect: 1020 / 1920, // 竖版
     channel: 'portrait',
-    coverVideo: `${M}yike-1020-preview.mp4`,
     poster: `${M}yike-1020.jpg`,
     video: `${M}yike-1020.mp4`,
   },
@@ -121,7 +121,6 @@ export const MEDIA_WORKS: MediaWork[] = [
     kind: 'video',
     aspect: 1360 / 2560, // 竖版
     channel: 'portrait',
-    coverVideo: `${M}yike-0814-preview.mp4`,
     poster: `${M}yike-0814.jpg`,
     video: `${M}yike-0814.mp4`,
   },
@@ -132,11 +131,100 @@ export const MEDIA_WORKS: MediaWork[] = [
     kind: 'video',
     aspect: 16 / 9,
     channel: 'landscape',
-    coverVideo: `${M}sanlitun-preview.mp4`,
     poster: `${M}sanlitun.jpg`,
     video: `${M}sanlitun.mp4`,
   },
+  {
+    // AI 影像频道第一条（2026-09-21）。原标题就是文件名「明天也一起回家吧」。
+    id: 'going-home',
+    title: '明天也一起回家吧',
+    length: '01:44',
+    kind: 'video',
+    aspect: 3874 / 2160, // 源片 3874x2160，略宽于 16:9
+    channel: 'ai',
+    poster: `${M}going-home.jpg`,
+    video: `${M}going-home.mp4`,
+  },
+  /* ---- 春山里三条（2026-09-21 补，**原片直拷、未压缩**）----
+   * 用户要求「横屏视频加上去，不压缩」→ 直接 `cp` 原文件到 public/media/，
+   * 没走 scripts/media-compress.py（那条流水线会重编码）。所以这三条的码率/分辨率
+   * 就是源片本身：蝴蝶振翅 1920×1080@9.7Mbps（76MB）、另两条 1280×720@1.7Mbps。
+   * 封面仍是抽帧 + 1600 长边 q3（静止图，不影响视频画质）。
+   * ⚠️ 蝴蝶振翅 76MB 是全场最重的单个文件，首屏那格的 preload=auto 会先拉它；
+   *    若以后嫌加载慢，要么压缩它、要么把它移出「横屏入口的第一条」。 */
+  {
+    id: 'chunshanli-intro',
+    title: '春山里 · 介绍',
+    length: '01:01',
+    kind: 'video',
+    aspect: 16 / 9,
+    channel: 'landscape',
+    poster: `${M}chunshanli-intro.jpg`,
+    video: `${M}chunshanli-intro.mp4`,
+  },
+  {
+    id: 'chunshanli-summer',
+    title: '春山里 · 暑假',
+    length: '01:02',
+    kind: 'video',
+    aspect: 16 / 9,
+    channel: 'landscape',
+    poster: `${M}chunshanli-summer.jpg`,
+    video: `${M}chunshanli-summer.mp4`,
+  },
+  {
+    id: 'butterfly',
+    title: '蝴蝶振翅',
+    length: '01:01',
+    kind: 'video',
+    aspect: 16 / 9,
+    channel: 'landscape',
+    poster: `${M}butterfly.jpg`,
+    video: `${M}butterfly.mp4`,
+  },
+  {
+    // 2026-09-21 补，**原片直拷、未压缩**（源 1920×1080@8.7Mbps / 74.7MB）。
+    id: 'hbn',
+    title: '摆脱巴掌的秘诀',
+    length: '01:07',
+    kind: 'video',
+    aspect: 16 / 9,
+    channel: 'landscape',
+    poster: `${M}hbn.jpg`,
+    video: `${M}hbn.mp4`,
+  },
 ];
+
+/* ---- 全量片单与入口起点（2026-09-21）----
+ * 三个设备入口共用**同一条片单**：横屏 → AI → 竖屏 依次排开、首尾相接成一个环。
+ * 频道不再过滤列表，只决定「进门时站在环上的哪个位置」：
+ *   · 有该频道的片子 → 定位到**第一条**那个频道的片子（横屏入口 → 第一条横屏）；
+ *   · 该频道还没有片子（比如 AI）→ 定位到它**应该出现的位置**（横屏全走完后的第一条），
+ *     现在就是第一条竖屏 —— 等补了 channel:'ai' 的数据会自动精准定位。
+ */
+/** 频道在循环片单里的先后顺序 */
+export const CHANNEL_ORDER: MediaChannel[] = ['landscape', 'ai', 'portrait'];
+
+const channelRank = (c: MediaChannel | undefined) => {
+  const i = c ? CHANNEL_ORDER.indexOf(c) : -1;
+  return i === -1 ? CHANNEL_ORDER.length : i;
+};
+
+/** 全量片单：按 横屏 → AI → 竖屏 稳定排序（同频道保持数据里的先后） */
+export function orderedWorks(): MediaWork[] {
+  return [...MEDIA_WORKS].sort((a, b) => channelRank(a.channel) - channelRank(b.channel));
+}
+
+/** 从某台设备（频道）进入时，初始应该定位到的下标 */
+export function startIndexFor(channel?: MediaChannel): number {
+  const list = orderedWorks();
+  if (!channel) return 0;
+  const exact = list.findIndex((w) => w.channel === channel);
+  if (exact !== -1) return exact;
+  // 该频道还没有片子 → 落在它语义上的插入点（前面频道全走完的位置）
+  const rank = channelRank(channel);
+  return list.filter((w) => channelRank(w.channel) < rank).length;
+}
 
 /** 页面标题 / 副标（列表页顶部大字） */
 export const MEDIA_PAGE_COPY = {

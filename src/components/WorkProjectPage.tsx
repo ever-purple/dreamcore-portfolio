@@ -8,6 +8,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
+  type CSSProperties,
 } from 'react';
 import { createPortal } from 'react-dom';
 import gsap from 'gsap';
@@ -18,6 +19,7 @@ import { WORK_PAGES } from '@/data/work-pages';
 import { CursorLabel } from '@/components/CursorLabel';
 import { ImageFocus, type ImageFocusHandle } from '@/components/ImageFocus';
 import { PageDecor } from '@/components/PageDecor';
+import { ASCII_BLOOM } from '@/components/bloomAsciiArt';
 import { initWkpMotion, type WkpMotion } from '@/components/wkp-motion';
 import { prefersReduced } from '@/lib/motion-pref';
 import { useEscape } from '@/lib/escape-stack';
@@ -63,6 +65,27 @@ type Props = {
  */
 /* slots / onSwitch：左栏数字导航已从「切换项目」改成「本页板块目录」，
    但页脚与首屏右侧的「下一个项目」箭头仍要用它们就地切换槽位（2026-09-14 加回）。 */
+
+/**
+ * 各项目 deck 图的**统一**宽高比（2026-09-17 实测 public/works/<dir> 全部图片：
+ * guanxia 1.333 / chiwei 1.444 / shenzhou 1.778 / kuaike 1.778 —— 每个目录内比例一致）。
+ * 用途：图片是懒加载的，加载前必须预留高度，否则每 load 一张就把下方内容顶一节
+ * （实测 30 张图初始只加载 7 张）。具体写法见 index.css 里 .wkp-figs img 的 aspect-ratio
+ * （`auto var(--deck-ar)`：加载前用这里的值占位，加载后以图片自然比例为准）。
+ * ⚠️ 新增项目目录后如比例不同，在这里补一条即可；没匹配到时 CSS 兜底 1.5。
+ */
+const DECK_AR: Record<string, number> = {
+  guanxia: 4 / 3,
+  chiwei: 1.444,
+  shenzhou: 16 / 9,
+  kuaike: 16 / 9,
+};
+/** 从图片 URL 里取出 `works/<dir>/` 的目录名，查上表得到占位比例 */
+const deckArOf = (url?: string): number | undefined => {
+  const m = url?.match(/\/works\/([^/]+)\//);
+  return m ? DECK_AR[m[1]] : undefined;
+};
+
 export function WorkProjectPage({
   project,
   slots,
@@ -398,6 +421,15 @@ export function WorkProjectPage({
       els.forEach((el) => el.classList.add('is-in'));
       return;
     }
+    /**
+     * threshold 用 **0**（2026-09-17 修复「两处行距完全不一样」）：
+     * 原来是 0.06 —— 一行 step 带两张图能有 2000+px 高，6% 就是要先滚进来 ~135px
+     * 才揭示，于是 0.72s 的 22px 上浮**刚好发生在用户正在读它的时候**：
+     * 整行在眼前往上爬，相邻两行的间距看着一直在变（不同机器/不同滚动速度截到的
+     * 中间态不同 → 观感上就是"行距完全不一样"）。
+     * 改成 0 后，元素一露头（再减去下方 10% 的 rootMargin）就开始揭示，
+     * 等它真正进入阅读区，动画早就走完了 —— 视觉上只剩"淡入"，不再有位移。
+     */
     const io = new IntersectionObserver(
       (entries) => {
         entries.forEach((en) => {
@@ -406,7 +438,7 @@ export function WorkProjectPage({
           io.unobserve(en.target);
         });
       },
-      { root, rootMargin: '0px 0px -10% 0px', threshold: 0.06 },
+      { root, rootMargin: '0px 0px -10% 0px', threshold: 0 },
     );
     els.forEach((el) => io.observe(el));
     return () => io.disconnect();
@@ -535,6 +567,20 @@ export function WorkProjectPage({
   const team = copy.team ?? [];
   const isEmpty = !project.filled;
 
+  /**
+   * 本项目 deck 图的占位比例（注入成 CSS 变量 --deck-ar，见文件头 DECK_AR）。
+   * 从本项目用到的**第一张**图里取目录名即可 —— 同一项目的图都在同一个目录下，
+   * 比例是一致的（实测各目录内无混杂）。
+   */
+  const deckAr = useMemo(() => {
+    const first =
+      blocks.find((b) => b.images?.[0])?.images?.[0] ??
+      blocks.find((b) => b.cols?.[0]?.images?.[0])?.cols?.[0]?.images?.[0] ??
+      steps.find((s) => s.images?.[0])?.images?.[0];
+    return deckArOf(first);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.slot]);
+
   return createPortal(
     <>
     <div
@@ -561,6 +607,22 @@ export function WorkProjectPage({
         onPointerDown={onRailPointerDown}
         onClick={onRailClick}
       >
+        {/* 2026-09-17 夜 / 用户「把莲花放置左边区域左上角」→ 追加「文字不要移动，
+            莲花在左上露出四分之三大小，放置文字下面」——
+            这朵 ASCII 莲花从右栏纸面（原来走 PageDecor 的 wkp 变体）挪到**左栏左上角**。
+            ⚠️ 它必须挂在 .wkp-rail **里面**、当左栏自己的背景层，不能走页面级 .pdecor：
+               那一层整体 z-index:-1，而左栏是实底深棕，装饰会被整块盖住。
+            ⚠️ 挂在里面还不够：index.css 里 `.wkp-rail > *:not(.wkp-rail-ghost)`
+               特异性 (0,2,0) 会压过 `.wkp-rail-bloom` (0,1,0)，把它改成
+               position:relative + z-index:1 —— 花就**留在文档流里顶动文字**、
+               并且**压到文字之上**（两个症状正好都是用户点名要修的那两条）。
+               所以那条规则里已经用第二个 `:not(.wkp-rail-bloom)` 把它排除掉。
+            位置与裁切（左上角 + 露出 3/4）都在 index.css 的 .wkp-rail-bloom 里，
+            颜色同理：深棕底上必须给亮色，用主薄荷（巧克力色在上面完全看不见）。 */}
+        <pre className="wkp-rail-bloom" aria-hidden="true">
+          {ASCII_BLOOM.lotus}
+        </pre>
+
         {/* 左栏的"背景层"：项目编号的巨型淡字，跟右栏滚动反向滞后（见 index.css ⑧ 段）。
             放在最前 = 画在最底；pointer-events:none，不挡整块 Back 热区。 */}
         <span className="wkp-rail-ghost" aria-hidden="true">
@@ -651,7 +713,14 @@ export function WorkProjectPage({
         data-cursor=""
         data-cursor-tone="light"
       >
-        <div className="wkp-inner" key={project.slot} data-cursor="" data-cursor-tone="light">
+        <div
+          className="wkp-inner"
+          key={project.slot}
+          data-cursor=""
+          data-cursor-tone="light"
+          /* --deck-ar：本项目 deck 图的占位比例（加载前预留高度，见文件头 DECK_AR） */
+          style={deckAr ? ({ '--deck-ar': String(deckAr) } as CSSProperties) : undefined}
+        >
           {/* ---- ① 背景层：页级环境层（网格 + 两团柔斑）----
                必须挂在 .wkp-inner 的**第一个**孩子：它 z-index:0，其余板块靠
                `.wkp-inner > *:not(.wkp-par){z-index:1}` 抬到它上面。

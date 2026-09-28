@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { getRoomEnv } from '@/lib/room-env';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
-import { BOOK_ROWS, createBook } from '@/lib/newsstandBooks';
+import { BOOK_ROWS, createBook, W as BOOK_W, D as BOOK_D } from '@/lib/newsstandBooks';
 import { StudioChrome } from '@/components/StudioChrome';
 import { useEscape } from '@/lib/escape-stack';
 
@@ -40,14 +40,21 @@ const ROTATE_LIMIT_X_DOWN = THREE.MathUtils.degToRad(3);
 /** 与环境融合的雾色（暖调暗色） */
 const FOG_COLOR = 0x17110b;
 
-/** 悬停时书籍抬起幅度（模型单位）——要足够让整本书高出上层搁板底面 */
-const HOVER_LIFT = 0.048;
-/** 悬停时同时向前抽出，避免抬升过程中与上层搁板穿模 */
-const HOVER_PULL = 0.065;
-/** 悬停时书籍放大倍数（位移 + 缩放双过渡） */
-const HOVER_SCALE = 1.12;
-/** 悬停抬升 / 复位的缓动速度（每秒趋近比例） */
+/* —— 书籍悬停（2026-09-22 第二轮重设计）——
+   ⚠️ 几何硬约束（?nsgeo=1 实测）：书所在层台面 0.548，上层搁板**底面 ≈0.714**
+   （台面 0.737、板厚约 0.02）。最高的书（book:4）静止顶已有 0.7089 —— 向上
+   的净空只有 ~0.005，原来的「抬升 0.048 + 放大 1.12」会把书顶顶到 0.769，
+   **穿进上层搁板 0.032**（用户录屏「穿模卡模」）。
+   所以书的悬停改成「**抽出来 + 向你倾倒**」：前抽为主 + 绕书脚前倾 10°
+   （后仰 4° → 前倾 6°，书顶高度几乎不变，还更正对镜头），不放大、几乎不抬。 */
+/** 悬停抬升 / 复位的缓动速度（每秒趋近比例）—— 书与设备共用 */
 const HOVER_EASE = 9;
+/** 书悬停前抽幅度 —— 视觉主体：整本书向你抽出来 */
+const BOOK_PULL = 0.09;
+/** 书悬停微抬（预算只有 ~0.003，再多就穿板底，见上） */
+const BOOK_LIFT = 0.003;
+/** 书悬停前倾角增量（度）：后仰 4° → 前倾 6°，书顶高度几乎不变 */
+const BOOK_TILT_FWD = 10;
 
 /**
  * 顶层搁板上的三件设备（从左到右：DVD 机 → DV 机 → MP3）。
@@ -315,6 +322,15 @@ export default function NewsstandScene({ open, covered = false, onClose, onPick 
       liftAmount: number;
       pullAmount: number;
       scaleAmount: number;
+      /**
+       * 拾取代理（可选）。书悬停时会抬升 ~1/3 书高 + 放大 —— 若直接拿书本体做
+       * 射线检测，「光标在下边缘 → 书弹起 → 脱靶 → 落回 → 再命中」会无限往复，
+       * 表现就是用户录屏里的「一直在抖」（2026-09-22）。
+       * 给书配一个**固定在架上静止位**的隐形代理盒：hover 判定只看光标 vs 书格，
+       * 与书的动画完全解耦。设备不配（它们的代理在 holder 内随动 + 位移小，无此问题）。
+       * hitsItem 里缺省回落到 group，设备行为不变。
+       */
+      pickObj?: THREE.Object3D;
     };
     const hoverItems: HoverItem[] = [];
     let hovered: THREE.Object3D | null = null;
@@ -480,6 +496,8 @@ export default function NewsstandScene({ open, covered = false, onClose, onPick 
             const nrm = new THREE.Vector3();
             const B = 0.012;
             const buckets = new Map<number, { n: number; zMin: number; zMax: number; xMin: number; xMax: number }>();
+            // 朝下的面（板底）：书悬停抬高的上限由「上层搁板底面」决定，光有台面高度不够标定
+            const downBuckets = new Map<number, { n: number; zMin: number; zMax: number }>();
             const ia = [0, 0, 0];
             for (let t = 0; t < triCount; t++) {
               for (let j = 0; j < 3; j++) ia[j] = idx ? idx.getX(t * 3 + j) : t * 3 + j;
@@ -491,21 +509,31 @@ export default function NewsstandScene({ open, covered = false, onClose, onPick 
               nrm.crossVectors(e1, e2);
               if (nrm.lengthSq() < 1e-14) continue;
               nrm.normalize();
-              if (nrm.y < 0.55) continue;
               const cx = (vA.x + vB.x + vC.x) / 3;
               const cy = (vA.y + vB.y + vC.y) / 3;
               const cz = (vA.z + vB.z + vC.z) / 3;
               const key = Math.round(cy / B);
-              let b = buckets.get(key);
-              if (!b) {
-                b = { n: 0, zMin: cz, zMax: cz, xMin: cx, xMax: cx };
-                buckets.set(key, b);
+              if (nrm.y > 0.55) {
+                let b = buckets.get(key);
+                if (!b) {
+                  b = { n: 0, zMin: cz, zMax: cz, xMin: cx, xMax: cx };
+                  buckets.set(key, b);
+                }
+                b.n++;
+                b.zMin = Math.min(b.zMin, cz);
+                b.zMax = Math.max(b.zMax, cz);
+                b.xMin = Math.min(b.xMin, cx);
+                b.xMax = Math.max(b.xMax, cx);
+              } else if (nrm.y < -0.55) {
+                let b = downBuckets.get(key);
+                if (!b) {
+                  b = { n: 0, zMin: cz, zMax: cz };
+                  downBuckets.set(key, b);
+                }
+                b.n++;
+                b.zMin = Math.min(b.zMin, cz);
+                b.zMax = Math.max(b.zMax, cz);
               }
-              b.n++;
-              b.zMin = Math.min(b.zMin, cz);
-              b.zMax = Math.max(b.zMax, cz);
-              b.xMin = Math.min(b.xMin, cx);
-              b.xMax = Math.max(b.xMax, cx);
             }
             const localBox = new THREE.Box3().setFromObject(model);
             (
@@ -514,6 +542,9 @@ export default function NewsstandScene({ open, covered = false, onClose, onPick 
               tris: triCount,
               box: { min: localBox.min, max: localBox.max },
               buckets: [...buckets.entries()]
+                .sort((a, b) => a[0] - b[0])
+                .map(([k, v]) => ({ y: +(k * B).toFixed(3), ...v })),
+              downBuckets: [...downBuckets.entries()]
                 .sort((a, b) => a[0] - b[0])
                 .map(([k, v]) => ({ y: +(k * B).toFixed(3), ...v })),
             };
@@ -553,8 +584,33 @@ export default function NewsstandScene({ open, covered = false, onClose, onPick 
               0,
             );
             model.add(book);
+            // 书本体不再参与射线检测 —— 拾取交给下面固定在静止位的代理盒
+            // （不然悬停弹起后光标脱靶 → 抖动，见 HoverItem.pickObj 注释）
+            book.traverse((o) => {
+              const m = o as THREE.Mesh;
+              if (m.isMesh) m.raycast = () => {};
+            });
+            // 静止位代理盒：尺寸 = 书的外包盒（createBook 里 W×spec.h×D*(thick)，
+            // 书 group 的本地 y=0 是**书底**，所以代理中心在 lipY + h/2）。
+            // 姿态与书的 rest 完全一致；挂在 model（架子）上，**不随悬停动画移动**。
+            const bw = BOOK_W;
+            const bh = spec.h;
+            const bd = BOOK_D * (spec.thick ?? 1);
+            const proxy = new THREE.Mesh(
+              new THREE.BoxGeometry(bw, bh, bd),
+              new THREE.MeshBasicMaterial({ visible: false }), // 与设备代理同款：材质不可见仍可拾取
+            );
+            proxy.position.set(spec.x, row.lipY + bh / 2, row.z);
+            proxy.rotation.set(
+              THREE.MathUtils.degToRad(-spec.tilt),
+              THREE.MathUtils.degToRad(spec.yaw),
+              0,
+            );
+            proxy.frustumCulled = false;
+            model.add(proxy);
             hoverItems.push({
               group: book,
+              pickObj: proxy,
               label: `book:${spec.cover}`,
               row: 'books', // 下层三本书 = 第二排 → 文案/AI 项目页
               deviceIndex: 0, // 书架不分流
@@ -563,15 +619,17 @@ export default function NewsstandScene({ open, covered = false, onClose, onPick 
               baseScale: 1,
               restPitch: book.rotation.x,
               restRoll: book.rotation.z,
-              // standUp=0 → 姿态始终停在 rest，这两个值不会被用到，填同值最安全
-              hoverPitch: book.rotation.x,
+              // 悬停 = 向你倾倒：绕书脚从「后仰 4°」转到「前倾 6°」（+10°），
+              // 书顶高度几乎不变（不穿上层搁板底面），封面反而更正对镜头。
+              // 复用设备的 standUp 姿态过渡机制（updateHover 按 standUp 插值）。
+              hoverPitch: book.rotation.x + THREE.MathUtils.degToRad(BOOK_TILT_FWD),
               hoverRoll: book.rotation.z,
-              standUp: 0, // 书本来就是竖的（只微微后仰），不参与「立正」
+              standUp: 1,
               lift: 0,
               target: 0,
-              liftAmount: HOVER_LIFT,
-              pullAmount: HOVER_PULL,
-              scaleAmount: HOVER_SCALE,
+              liftAmount: BOOK_LIFT,
+              pullAmount: BOOK_PULL,
+              scaleAmount: 1, // 不放大 —— 放大会把书顶顶进上层搁板底面（净空只有 ~0.005）
             });
           });
         });
@@ -669,7 +727,7 @@ export default function NewsstandScene({ open, covered = false, onClose, onPick 
             return {
               i,
               label: b.label,
-              kind: b.standUp > 0 ? 'device' : 'book',
+              kind: b.row === 'books' ? 'book' : 'device', // ⚠️ 别用 standUp 判断：书现在也用 standUp 做前倾过渡
               front: fv ? { x: +fv.x.toFixed(3), y: +fv.y.toFixed(3), z: +fv.z.toFixed(3) } : null,
               up: up ? { x: +up.x.toFixed(3), y: +up.y.toFixed(3), z: +up.z.toFixed(3) } : null,
               x: [+bb.min.x.toFixed(4), +bb.max.x.toFixed(4)],
@@ -698,10 +756,8 @@ export default function NewsstandScene({ open, covered = false, onClose, onPick 
        * 只给中心点不够用：设备在屏幕上只有几十像素，裁切框稍偏就拍不到，
        * 给整个投影矩形才能精确裁切放大。
        */
-      w.__NSAT = (idx: number) => {
-        const b = hoverItems[idx];
-        if (!b) return null;
-        const bb = new THREE.Box3().setFromObject(b.group);
+      const projectRect = (obj: THREE.Object3D) => {
+        const bb = new THREE.Box3().setFromObject(obj);
         const r = renderer.domElement.getBoundingClientRect();
         const v = new THREE.Vector3();
         let x0 = Infinity;
@@ -731,6 +787,19 @@ export default function NewsstandScene({ open, covered = false, onClose, onPick 
           w: Math.round(x1 - x0),
           h: Math.round(y1 - y0),
         };
+      };
+      w.__NSAT = (idx: number) => {
+        const b = hoverItems[idx];
+        if (!b) return null;
+        return projectRect(b.group);
+      };
+      /** __NSAT 的**拾取代理版**：投的是 pickObj（书的静止位代理盒）。
+          书悬停时会弹起，__NSAT 的矩形跟着动；要验证「光标 vs 代理盒」的命中
+          几何，必须投代理本身。无配代理的（设备）与 __NSAT 等价。 */
+      w.__NSATP = (idx: number) => {
+        const b = hoverItems[idx];
+        if (!b) return null;
+        return projectRect(b.pickObj ?? b.group);
       };
       /**
        * 运行时把第 idx 件绕 Y 转到指定角度 —— 只用于**确定模型正面朝哪边**：
@@ -790,9 +859,15 @@ export default function NewsstandScene({ open, covered = false, onClose, onPick 
       }, 200);
     }
 
-    /* Raycaster：命中某件物件（书 / 设备）→ 返回它的 group（用于 hover 抬起+放大+立正） */
+    /* Raycaster：命中某件物件（书 / 设备）→ 返回它的 group（用于 hover 抬起+放大+立正）
+       拾取目标用 pickObj（书的静止位代理盒）；没配代理的（设备）回落到 group 本体 ——
+       书若拿本体做检测，悬停弹起后光标脱靶，hover 反复横跳（用户录屏「一直在抖」）。
+       ⚠️ 命中代理后必须换算回**归属物件的 group** 返回：下游
+       `b.target = b.group === g ? …` 拿返回值和 group 严格相等比较，
+       返回代理本身会让 target 永远是 0（书永远抬不起来）——踩过。 */
     const raycaster = new THREE.Raycaster();
     const ndc = new THREE.Vector2();
+    const pickOf = (b: HoverItem) => b.pickObj ?? b.group;
     const hitsItem = (clientX: number, clientY: number): THREE.Group | null => {
       if (!hoverItems.length) return null;
       const rect = renderer.domElement.getBoundingClientRect();
@@ -801,13 +876,17 @@ export default function NewsstandScene({ open, covered = false, onClose, onPick 
       ndc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
       raycaster.setFromCamera(ndc, camera);
       const hits = raycaster.intersectObjects(
-        hoverItems.map((b) => b.group),
+        hoverItems.map(pickOf),
         true,
       );
       if (!hits.length) return null;
       let o: THREE.Object3D | null = hits[0].object;
-      while (o && !hoverItems.some((b) => b.group === o)) o = o.parent;
-      return (o as THREE.Group | null) ?? null;
+      while (o) {
+        const owner = hoverItems.find((b) => pickOf(b) === o);
+        if (owner) return owner.group;
+        o = o.parent;
+      }
+      return null;
     };
 
     /* 架子跟随鼠标：不按键，悬停移动时左右/上下小幅度转动；hover 探测同时进行 */
@@ -818,6 +897,12 @@ export default function NewsstandScene({ open, covered = false, onClose, onPick 
       currentX: 0,
       pointerInside: false,
     };
+
+    /* 悬停滞回：光标贴着书格边缘时，鼠标微噪声会让命中/脱靶高频翻转，
+       书就跟着反复弹（用户录屏「一直在抖」的另一来源）。连续 MISS_STREAK 次
+       脱靶才真正撤销悬停 —— 真移开（一连串 miss）几乎无感，单帧抖动被吃掉。 */
+    const HOVER_MISS_STREAK = 3;
+    let missStreak = 0;
 
     const onPointerMove = (e: PointerEvent) => {
       pointerInsideRef.current = true;
@@ -832,11 +917,21 @@ export default function NewsstandScene({ open, covered = false, onClose, onPick 
         rotateState.targetX = THREE.MathUtils.clamp(-ny * ROTATE_LIMIT_X_UP, -limitX, limitX);
       }
       const g = hitsItem(e.clientX, e.clientY);
-      if (g === hovered) return;
-      hovered = g;
-      renderer.domElement.style.cursor = g ? 'pointer' : '';
+      if (g) {
+        missStreak = 0;
+        if (g === hovered) return;
+        hovered = g;
+      } else if (hovered) {
+        missStreak += 1;
+        if (missStreak < HOVER_MISS_STREAK) return; // 滞回：偶发脱靶不掉 hover
+        missStreak = 0;
+        hovered = null;
+      } else {
+        return; // 本来就没悬停，也无命中
+      }
+      renderer.domElement.style.cursor = hovered ? 'pointer' : '';
       hoverItems.forEach((b) => {
-        b.target = b.group === g ? b.liftAmount : 0;
+        b.target = b.group === hovered ? b.liftAmount : 0;
       });
     };
     const onPointerLeave = () => {
@@ -967,10 +1062,6 @@ export default function NewsstandScene({ open, covered = false, onClose, onPick 
           <span className="newsstand-spinner" aria-hidden="true" />
           展架加载中…
         </div>
-      ) : null}
-
-      {!loading && !failed ? (
-        <p className="newsstand-hint">悬停物件 · 点击打开（上层设备 = 视频与音乐，下层档案 = 文案与 AI）</p>
       ) : null}
 
       {failed ? (

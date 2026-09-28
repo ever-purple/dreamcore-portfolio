@@ -239,11 +239,18 @@ export function initWkpMotion(scrollEl: HTMLElement): WkpMotion {
       const s = (i % 2 ? -1 : 1) * amp(22);
       track(el, 'card-stepfigs', { y: s }, { y: -s, scrollTrigger: pass(el.closest('.wkp-step')) });
     });
-    /* 五列卡：幅度按 i%3 递增（18/23/28），上下交替 —— 相邻两列永远不在同一条轨上 */
-    scrollEl.querySelectorAll<HTMLElement>('.wkp-col').forEach((el, i) => {
-      const s = (i % 2 ? -1 : 1) * amp(18 + (i % 3) * 5);
-      track(el, 'card-col', { y: s }, { y: -s, scrollTrigger: pass(el.closest('.wkp-cols')) });
-    });
+    /* 五列卡（全平台规划）：**2026-09-17 起不再做纵向交错位移** —— 用户要求
+       「全平台规划部分的图片要顶部对齐」。原来每列按 i%3 递增 ±(18/23/28)px 上下交错，
+       于是四列的标题和首图**不在同一条水平线上**，看上去就是"参差 / 乱"；
+       位移是 scrub 的，滚到哪儿错位到哪儿，方向还会翻转（+28 ↔ -23），
+       不同机器、不同滚动位置截出来的错乱程度都不一样。
+       现在这几列只保留横向滚动本身，纵向一律不位移 → 各列顶部永远对齐。
+       ⚠️ 别再把 card-col 轨道加回来；.wkp-cols 的 overflow-y:hidden 会把它裁掉
+       （index.css 里那段 34px 视差余量就是为它留的，留着当兜底，无害）。 */
+    // scrollEl.querySelectorAll<HTMLElement>('.wkp-col').forEach((el, i) => {
+    //   const s = (i % 2 ? -1 : 1) * amp(18 + (i % 3) * 5);
+    //   track(el, 'card-col', { y: s }, { y: -s, scrollTrigger: pass(el.closest('.wkp-cols')) });
+    // });
     /* 团队卡：纵向交错 + **一条横向斜轨**（相邻卡左右错开），是全页唯一的斜轨 */
     scrollEl.querySelectorAll<HTMLElement>('.wkp-person').forEach((el, i) => {
       const s = (i % 2 ? -1 : 1) * amp(12);
@@ -293,9 +300,39 @@ export function initWkpMotion(scrollEl: HTMLElement): WkpMotion {
     if (import.meta.env.DEV) (window as unknown as { __wkpPar?: unknown }).__wkpPar = parLayers;
   }, scrollEl);
 
+  /* ---- 图片 / 字体就绪后重新量一次触发器（2026-09-17 跨机器一致性修复）----
+     ⚠️ deck 图是**懒加载**的：ScrollTrigger 在挂载那一刻量下的 start/end，
+        会随着后面几十张图陆续 load 而整体失准（实测：详情页 30 张图初始只加载 7 张，
+        每滚一段布局就长高一截）。
+        触发器位置一偏，scrub 出来的位移就对不上当前滚动位置 —— 视差错位、
+        多列的标题被裁切、整体看着"排版乱了"，而且**机器越慢 / 图越多越明显**
+        （这正是用户"不同电脑上表现不一样"的机理）。
+     所以：每张图 load / error 后防抖刷一次；字体 swap 完成也刷一次
+        （字体一换行高和块高都会变，触发点同样要重量）。 */
+  let refreshTimer = 0;
+  const scheduleRefresh = () => {
+    window.clearTimeout(refreshTimer);
+    refreshTimer = window.setTimeout(() => ScrollTrigger.refresh(), 150);
+  };
+  const imgs = Array.from(content.querySelectorAll('img'));
+  imgs.forEach((img) => {
+    img.addEventListener('load', scheduleRefresh);
+    img.addEventListener('error', scheduleRefresh);
+  });
+  try {
+    void document.fonts.ready.then(scheduleRefresh);
+  } catch {
+    /* 字体 API 不可用就算了，触发点仍由下面 ScrollTrigger 自身的刷新兜底 */
+  }
+
   return {
     lenis,
     destroy: () => {
+      window.clearTimeout(refreshTimer);
+      imgs.forEach((img) => {
+        img.removeEventListener('load', scheduleRefresh);
+        img.removeEventListener('error', scheduleRefresh);
+      });
       gsap.ticker.remove(raf);
       ctx.revert();
       lenis.destroy();

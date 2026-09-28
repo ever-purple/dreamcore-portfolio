@@ -3,45 +3,62 @@ import { EASE } from '@/lib/ease';
 import gsap from 'gsap';
 
 interface LoadingScreenProps {
-  /** 序列帧是否预加载完成（与 0→100% 计时相互独立） */
+  /** 关键素材是否到齐（序列帧首窗 + 模型）。到齐才允许淡出 */
   ready: boolean;
+  /** 真实加载进度 0~1，由 App 按「已下载资源 / 应下载资源」算出来 */
+  progress: number;
   onEnter: () => void;
 }
 
-const DURATION = 3000; // 0% -> 100% 严格控制在 3 秒内
+/**
+ * 最短可见时间 = 3 秒。
+ *   3 秒内就下完 → 进度照样停在屏幕上走满 3 秒（不闪一下就过去）
+ *   超过 3 秒     → 按真实速度走，下完就走，不额外拖时间
+ * 所以实际停留时间 = max(3 秒, 真实加载耗时)，最短 3 秒。
+ */
+const MIN_VISIBLE = 3000;
 
-export function LoadingScreen({ ready, onEnter }: LoadingScreenProps) {
-  const [pct, setPct] = useState(0);
+export function LoadingScreen({ ready, progress, onEnter }: LoadingScreenProps) {
+  const [shown, setShown] = useState(0); // 屏幕上显示的百分比
   const [leaving, setLeaving] = useState(false);
   const [visible, setVisible] = useState(true);
-  const startRef = useRef<number | null>(null);
-  const rafRef = useRef<number>(0);
+  const [tick, setTick] = useState(0);
+  const [startDt] = useState(() => Date.now());
+  const targetRef = useRef(0);
   const rootRef = useRef<HTMLDivElement>(null);
   const counterRef = useRef<HTMLSpanElement>(null);
 
-  // 纯时间驱动的进度：0 -> 100% 在 3 秒内匀速走完
+  /**
+   * 进度不再靠计时器：target 就是 App 里按真实下载量算出来的百分比。
+   * 每帧朝 target 靠近一小步 —— 数字随资源起落，但不会一格一格地跳。
+   */
   useEffect(() => {
-    const step = (ts: number) => {
-      if (startRef.current === null) startRef.current = ts;
-      const elapsed = ts - startRef.current;
-      const value = Math.min(100, (elapsed / DURATION) * 100);
-      setPct(value);
-      if (elapsed < DURATION) {
-        rafRef.current = requestAnimationFrame(step);
-      } else {
-        setPct(100);
-      }
+    targetRef.current = ready ? 1 : Math.min(0.995, progress);
+    let raf = 0;
+    const step = () => {
+      const target = targetRef.current * 100;
+      setShown((s) => {
+        const next = s + (target - s) * 0.16;
+        return Math.abs(target - next) < 0.4 ? target : next;
+      });
+      raf = requestAnimationFrame(step);
     };
-    rafRef.current = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(rafRef.current);
-  }, []);
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [progress, ready]);
 
-  // 进度到 100% 且素材就绪后开始淡出
+  // 进度到 100% 且素材到齐、也过了最短可见时间，才开始淡出
   useEffect(() => {
-    if (pct >= 100 && ready && !leaving) {
+    if (ready && shown >= 99.5 && !leaving && Date.now() - startDt >= MIN_VISIBLE) {
       setLeaving(true);
     }
-  }, [pct, ready, leaving]);
+  }, [ready, shown, leaving, tick, startDt]);
+
+  // tick 只负责在最短可见时间到点后，把上面那个判断再跑一次
+  useEffect(() => {
+    const t = window.setTimeout(() => setTick((v) => v + 1), MIN_VISIBLE);
+    return () => window.clearTimeout(t);
+  }, []);
 
   // 淡出结束后进入首页
   useEffect(() => {
@@ -64,7 +81,9 @@ export function LoadingScreen({ ready, onEnter }: LoadingScreenProps) {
       repeat: -1,
       transformOrigin: 'center',
     });
-    return () => { tween.kill(); };
+    return () => {
+      tween.kill();
+    };
   }, []);
 
   // 离场：放大 + 模糊 + 淡出（dreamcore 的"呼出"转场），替代原 CSS opacity 过渡
@@ -81,15 +100,16 @@ export function LoadingScreen({ ready, onEnter }: LoadingScreenProps) {
 
   if (!visible) return null;
 
-  const shown = Math.round(pct);
-
   return (
     <div
       ref={rootRef}
       className={`fixed inset-0 z-[100] bg-wine ${leaving ? 'pointer-events-none' : ''}`}
     >
-      <span ref={counterRef} className="font-body font-bold text-8xl md:text-9xl text-cream tabular-nums absolute bottom-8 right-8">
-        {shown}%
+      <span
+        ref={counterRef}
+        className="font-body font-bold text-8xl md:text-9xl text-cream tabular-nums absolute bottom-8 right-8"
+      >
+        {Math.round(shown)}%
       </span>
     </div>
   );

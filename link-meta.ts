@@ -1,0 +1,541 @@
+/**
+ * 「粘贴链接 → 自动识别标题 / 封面」的**服务端**实现。
+ *
+ * 为什么不在浏览器里直接抓：目标页几乎都不给 CORS 头，浏览器 fetch 会被拦，
+ * 只能依赖 microlink / allorigins 这类公开代理（有额度、会挂、国内时快时慢）。
+ * 本地 `vite dev` 有 Node 进程，服务端抓就没有同源限制，成功率接近 100%，
+ * 而且能顺手做平台特化（网易云 / QQ 音乐 / GitHub 官方 API 比 og 标签准得多）。
+ *
+ * 只在 dev 下被 `studio-writer.ts` 挂到 `/__studio/link-meta`；生产构建不含此文件。
+ */
+
+export type LinkMeta = {
+  /** 规范化后的最终地址（跟随跳转后的） */
+  url: string;
+  title: string;
+  cover: string;
+  desc?: string;
+  site?: string;
+  /** 平台标识：netease / qqmusic / spotify / apple / github / bilibili / web */
+  platform?: string;
+  /** 可 iframe 嵌入的播放器地址（音乐类才有） */
+  embed?: string;
+  /** 平台结构化信息：歌手、仓库 topics、星级等 */
+  extra?: Record<string, unknown>;
+};
+
+const UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
+/**
+ * 单次抓取上限。整条链最多串三次（平台接口 → 直连 og → microlink），
+ * 所以别设太大 —— 9s 会让"网络不通"的链接卡上近半分钟。
+ */
+const TIMEOUT = 7000;
+
+async function timedFetch(url: string, init: RequestInit = {}, ms = TIMEOUT): Promise<Response> {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), ms);
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: ctl.signal,
+      redirect: 'follow',
+      headers: { 'user-agent': UA, accept: '*/*', ...(init.headers ?? {}) },
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* HTML 解析                                                          */
+/* ------------------------------------------------------------------ */
+
+const ENTITIES: Record<string, string> = {
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+  nbsp: ' ',
+  '#39': "'",
+  '#34': '"',
+  mdash: '—',
+  hellip: '…',
+};
+
+function decodeEntities(text: string): string {
+  return text.replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (whole, body: string) => {
+    if (body[0] === '#') {
+      const code =
+        body[1] === 'x' || body[1] === 'X'
+          ? parseInt(body.slice(2), 16)
+          : parseInt(body.slice(1), 10);
+      return Number.isFinite(code) ? String.fromCodePoint(code) : whole;
+    }
+    const key = body.toLowerCase();
+    return ENTITIES[key] ?? whole;
+  });
+}
+
+/** 按声明的 charset 把字节解成字符串（国内不少老站还是 gb18030 / gbk）。 */
+function decodeBody(buf: ArrayBuffer, html: string): string {
+  const m = /<meta[^>]+charset\s*=\s*["']?\s*([\w-]+)/i.exec(html.slice(0, 4096));
+  const charset = (m?.[1] ?? 'utf-8').toLowerCase();
+  if (charset === 'utf-8' || charset === 'utf8') return new TextDecoder('utf-8').decode(buf);
+  try {
+    return new TextDecoder(charset).decode(buf);
+  } catch {
+    return new TextDecoder('utf-8').decode(buf);
+  }
+}
+
+function metaContent(html: string, prop: string): string | undefined {
+  const esc = prop.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // 属性顺序两种都见：content 在前 / property 在前
+  const patterns = [
+    new RegExp(`<meta[^>]*?(?:property|name)\\s*=\\s*["']${esc}["'][^>]*>`, 'i'),
+    new RegExp(`<meta[^>]*?content\\s*=\\s*["']([^"']*)["'][^>]*?(?:property|name)\\s*=\\s*["']${esc}["'][^>]*>`, 'i'),
+  ];
+  const first = patterns[0].exec(html);
+  if (first) {
+    const c = /content\s*=\s*["']([^"']*)["']/i.exec(first[0]);
+    if (c) return decodeEntities(c[1]).trim();
+  }
+  const second = patterns[1].exec(html);
+  if (second) return decodeEntities(second[1]).trim();
+  return undefined;
+}
+
+function absoluteUrl(maybe: string, base: string): string | undefined {
+  if (!maybe) return undefined;
+  const v = decodeEntities(maybe).trim();
+  if (!v) return undefined;
+  if (v.startsWith('//')) return `https:${v}`;
+  try {
+    return new URL(v, base).href;
+  } catch {
+    return undefined;
+  }
+}
+
+/** 通用：抓 HTML 抠 og / twitter / title */
+async function genericMeta(url: string): Promise<LinkMeta> {
+  const res = await timedFetch(url);
+  const buf = await res.arrayBuffer();
+  const raw = new TextDecoder('utf-8').decode(buf);
+  const html = decodeBody(buf, raw);
+  const finalUrl = res.url || url;
+
+  const title =
+    metaContent(html, 'og:title') ??
+    metaContent(html, 'twitter:title') ??
+    /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1]?.trim() ??
+    '';
+
+  const cover =
+    absoluteUrl(
+      metaContent(html, 'og:image') ??
+        metaContent(html, 'og:image:url') ??
+        metaContent(html, 'twitter:image') ??
+        metaContent(html, 'twitter:image:src') ??
+        '',
+      finalUrl,
+    ) ?? '';
+
+  const desc = metaContent(html, 'og:description') ?? metaContent(html, 'description') ?? '';
+  const site = metaContent(html, 'og:site_name') ?? hostOf(finalUrl);
+
+  return {
+    url: finalUrl,
+    title: decodeEntities(title).trim(),
+    cover,
+    desc: decodeEntities(desc).trim() || undefined,
+    site,
+    platform: platformOf(finalUrl),
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* 平台识别                                                            */
+/* ------------------------------------------------------------------ */
+
+export function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return url.replace(/^https?:\/\//, '').split('/')[0] || 'link';
+  }
+}
+
+function platformOf(url: string): string | undefined {
+  const h = hostOf(url);
+  if (/music\.163\.com|163cn\.tv/.test(h)) return 'netease';
+  if (/y\.qq\.com|c\.y\.qq\.com|i\.y\.qq\.com/.test(h)) return 'qqmusic';
+  if (/spotify\.com/.test(h)) return 'spotify';
+  if (/music\.apple\.com/.test(h)) return 'apple';
+  if (/github\.com/.test(h)) return 'github';
+  if (/bilibili\.com|b23\.tv/.test(h)) return 'bilibili';
+  if (/xiaohongshu\.com|xhslink\.com/.test(h)) return 'xhs';
+  return undefined;
+}
+
+/* ------------------------------------------------------------------ */
+/* 网易云音乐                                                          */
+/* ------------------------------------------------------------------ */
+
+/** 从任意形态的网易云链接里抠 song id（#/song?id= / ?id= / /song/123） */
+function neteaseSongId(url: string): string | undefined {
+  const u = url.replace(/[#?&]/g, (c) => c);
+  const byQuery = /[?&#]id=(\d{1,20})/.exec(u);
+  if (byQuery) return byQuery[1];
+  const byPath = /\/song\/(\d{1,20})/.exec(u);
+  return byPath?.[1];
+}
+
+async function neteaseMeta(url: string): Promise<LinkMeta | null> {
+  const id = neteaseSongId(url);
+  if (!id) return null;
+  try {
+    // ⚠️ ids 必须是「纯数字数组」`[123]`，写成 `[{"id":123}]` 会被回一个 code:400
+    const api = `https://music.163.com/api/song/detail?ids=${encodeURIComponent(`[${id}]`)}`;
+    const res = await timedFetch(api, {
+      headers: { referer: 'https://music.163.com/', accept: 'application/json' },
+    });
+    if (!res.ok) return null;
+    const j = (await res.json()) as {
+      songs?: Array<{
+        name?: string;
+        artists?: Array<{ name?: string }>;
+        album?: { name?: string; picUrl?: string };
+      }>;
+    };
+    const song = j.songs?.[0];
+    if (!song) return null;
+    const artist = (song.artists ?? []).map((a) => a.name).filter(Boolean).join(' / ');
+    const cover = song.album?.picUrl ? `${song.album.picUrl}?param=500y500` : '';
+    return {
+      url: `https://music.163.com/#/song?id=${id}`,
+      title: song.name || '',
+      cover,
+      desc: artist ? `歌手：${artist}` : undefined,
+      site: '网易云音乐',
+      platform: 'netease',
+      // 官方外链播放器：VIP / 付费歌曲在站外只能听到可试听的那一段，行为与官方一致
+      embed: `https://music.163.com/outchain/player?type=2&id=${id}&auto=0&height=66`,
+      extra: {
+        artist: artist || undefined,
+        album: song.album?.name,
+        songId: id,
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* QQ 音乐                                                             */
+/* ------------------------------------------------------------------ */
+
+/** songmid 形如 001abcDE 或 003xxx；也可能在 query 里 */
+function qqSongMid(url: string): string | undefined {
+  const byQuery = /[?&]songmid=([0-9a-zA-Z]{6,40})/.exec(url);
+  if (byQuery) return byQuery[1];
+  const byPath = /songDetail\/([0-9a-zA-Z]{6,40})/.exec(url);
+  if (byPath) return byPath[1];
+  const tail = /\/([0-9a-zA-Z]{10,40})\.html/.exec(url);
+  return tail?.[1];
+}
+
+async function qqMusicMeta(url: string): Promise<LinkMeta | null> {
+  const mid = qqSongMid(url);
+  if (!mid) return null;
+  try {
+    const api = `https://c.y.qq.com/v8/fcg-bin/fcg_play_single_song.fcg?songmid=${mid}&format=json&platform=yqq`;
+    const res = await timedFetch(api, { headers: { referer: 'https://y.qq.com/' } });
+    if (!res.ok) return null;
+    const j = (await res.json()) as {
+      data?: Array<{ name?: string; singer?: Array<{ name?: string }>; album?: { mid?: string; name?: string } }>;
+    };
+    const song = j.data?.[0];
+    if (!song) return null;
+    const artist = (song.singer ?? []).map((s) => s.name).filter(Boolean).join(' / ');
+    const albumMid = song.album?.mid;
+    return {
+      url: `https://y.qq.com/n/ryqq/songDetail/${mid}`,
+      title: song.name || '',
+      cover: albumMid ? `https://y.gtimg.cn/music/photo_new/T002R500x500M000${albumMid}.jpg` : '',
+      desc: artist ? `歌手：${artist}` : undefined,
+      site: 'QQ音乐',
+      platform: 'qqmusic',
+      embed: `https://i.y.qq.com/v8/playsong.html?songmid=${mid}&source=yqq&new=1`,
+      extra: { artist: artist || undefined, album: song.album?.name, songMid: mid },
+    };
+  } catch {
+    return null;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Spotify                                                             */
+/* ------------------------------------------------------------------ */
+
+async function spotifyMeta(url: string): Promise<LinkMeta | null> {
+  const m = /\/track\/([A-Za-z0-9]{10,40})/.exec(url);
+  const id = m?.[1];
+  try {
+    const oembed = await timedFetch(
+      `https://open.spotify.com/oembed?url=${encodeURIComponent(url)}`,
+      { headers: { accept: 'application/json' } },
+    );
+    if (oembed.ok) {
+      const j = (await oembed.json()) as { title?: string; thumbnail_url?: string };
+      if (j.title || j.thumbnail_url) {
+        return {
+          url,
+          title: j.title ?? '',
+          cover: j.thumbnail_url ?? '',
+          site: 'Spotify',
+          platform: 'spotify',
+          embed: id ? `https://open.spotify.com/embed/track/${id}` : undefined,
+          extra: { songId: id },
+        };
+      }
+    }
+  } catch {
+    /* 掉到下面 */
+  }
+  return id
+    ? {
+        url,
+        title: '',
+        cover: '',
+        site: 'Spotify',
+        platform: 'spotify',
+        embed: `https://open.spotify.com/embed/track/${id}`,
+        extra: { songId: id },
+      }
+    : null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Apple Music                                                         */
+/* ------------------------------------------------------------------ */
+
+function appleMeta(url: string): LinkMeta | null {
+  if (!/music\.apple\.com/.test(url)) return null;
+  const embed = url.replace(/^https:\/\/(?:geo\.)?music\.apple\.com/, 'https://embed.music.apple.com');
+  return {
+    url,
+    title: '',
+    cover: '',
+    site: 'Apple Music',
+    platform: 'apple',
+    embed,
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* GitHub 仓库（AI 项目多是开源仓库，比 og 标签准）                        */
+/* ------------------------------------------------------------------ */
+
+function githubRepo(url: string): { owner: string; repo: string } | null {
+  try {
+    const u = new URL(url);
+    if (!/(^|\.)github\.com$/.test(u.hostname)) return null;
+    const segs = u.pathname.split('/').filter(Boolean);
+    if (segs.length < 2) return null;
+    const [owner, repo] = segs;
+    if (!owner || !repo) return null;
+    // 排除 github.com/topics / github.com/features 这类非仓库路径
+    const reserved = new Set(['topics', 'features', 'sponsors', 'about', 'pricing', 'search', 'marketplace', 'explore', 'collections', 'trending', 'notifications', 'new', 'login', 'settings', 'orgs', 'apps', 'users', 'events']);
+    if (reserved.has(owner.toLowerCase())) return null;
+    return { owner, repo: repo.replace(/\.git$/i, '') };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * `api.github.com` 偶尔不通（网络策略 / 未登录限流），这时退回抓仓库页 HTML：
+ * 仓库页的 `<title>` 形如「GitHub - owner/repo: 简介」，og:description 与 topic 标签
+ * 也都在，够填满一张卡片，只是拿不到 star 数。
+ */
+async function githubHtmlMeta(full: string): Promise<LinkMeta | null> {
+  try {
+    const res = await timedFetch(`https://github.com/${full}`);
+    if (!res.ok) return null;
+    const buf = await res.arrayBuffer();
+    const html = decodeBody(buf, new TextDecoder('utf-8').decode(buf));
+    const pageTitle = decodeEntities(
+      /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1]?.trim() ?? '',
+    );
+    // 「GitHub - owner/repo: 简介」→ 取冒号后面那段
+    const desc = pageTitle.includes(':') ? pageTitle.slice(pageTitle.indexOf(':') + 1).trim() : '';
+    const og = metaContent(html, 'og:image') ?? metaContent(html, 'og:description');
+    const topics: string[] = [];
+    const re = /<a[^>]+class="[^"]*topic-tag[^"]*"[^>]*>([\s\S]*?)<\/a>/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(html)) && topics.length < 4) {
+      const t = m[1].replace(/<[^>]+>/g, '').trim();
+      if (t && !topics.includes(t)) topics.push(`#${t}`);
+    }
+    const ogDesc = metaContent(html, 'og:description') ?? '';
+    return {
+      url: `https://github.com/${full}`,
+      title: full.split('/')[1] ?? full,
+      cover: og && og.startsWith('http') ? og : `https://opengraph.githubassets.com/1/${full}`,
+      desc: desc || ogDesc || undefined,
+      site: 'GitHub',
+      platform: 'github',
+      extra: { topics, fullName: full, owner: full.split('/')[0] },
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function githubRepoMeta(url: string): Promise<LinkMeta | null> {
+  const hit = githubRepo(url);
+  if (!hit) return null;
+  const { owner, repo } = hit;
+  const full = `${owner}/${repo}`;
+  try {
+    const res = await timedFetch(`https://api.github.com/repos/${full}`, {
+      headers: { accept: 'application/vnd.github+json' },
+    });
+    if (res.ok) {
+      const j = (await res.json()) as {
+        name?: string;
+        description?: string | null;
+        topics?: string[];
+        stargazers_count?: number;
+        language?: string | null;
+        homepage?: string | null;
+        html_url?: string;
+        owner?: { login?: string; avatar_url?: string };
+        fork?: boolean;
+        parent?: { full_name?: string };
+      };
+      const topics = (j.topics ?? []).slice(0, 4).map((t) => `#${t}`);
+      return {
+        url: j.html_url ?? `https://github.com/${full}`,
+        title: j.name ?? repo,
+        // GitHub 官方 social preview：仓库没自定义封面时也能出一张像样的卡
+        cover: `https://opengraph.githubassets.com/1/${full}`,
+        desc: j.description ?? undefined,
+        site: 'GitHub',
+        platform: 'github',
+        extra: {
+          stars: j.stargazers_count ?? 0,
+          language: j.language ?? undefined,
+          topics,
+          homepage: j.homepage || undefined,
+          fullName: full,
+          owner: j.owner?.login ?? owner,
+          avatar: j.owner?.avatar_url,
+          isFork: !!j.fork,
+          source: j.parent?.full_name,
+        },
+      };
+    }
+  } catch {
+    /* 掉到下面 */
+  }
+  const html = await githubHtmlMeta(full);
+  if (html) return html;
+  return {
+    url: `https://github.com/${full}`,
+    title: repo,
+    cover: `https://opengraph.githubassets.com/1/${full}`,
+    site: 'GitHub',
+    platform: 'github',
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* 入口                                                                */
+/* ------------------------------------------------------------------ */
+
+/** 传进来的可能是「music.163.com/#/song?id=1」这种没协议的，先补 https。 */
+export function normalizeUrl(raw: string): string {
+  const v = raw.trim();
+  if (!v) return v;
+  return /^https?:\/\//i.test(v) ? v : `https://${v}`;
+}
+
+/**
+ * 最后一道：让 microlink 代抓。它自己有浏览器集群，
+ * 目标站直连不通（比如某些网络下 github.com 握手超时）时仍然能拿到 title / image。
+ */
+async function microlinkMeta(url: string): Promise<LinkMeta | null> {
+  try {
+    const res = await timedFetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}`, {
+      headers: { accept: 'application/json' },
+    });
+    if (!res.ok) return null;
+    const j = (await res.json()) as {
+      data?: { title?: string; description?: string; image?: { url?: string }; logo?: { url?: string } };
+    };
+    const d = j.data;
+    const cover = d?.image?.url || d?.logo?.url || '';
+    const title = (d?.title || '').trim();
+    if (!title && !cover) return null;
+    return {
+      url,
+      title,
+      cover,
+      desc: d?.description || undefined,
+      site: hostOf(url),
+      platform: platformOf(url),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function resolveLinkMeta(rawUrl: string): Promise<LinkMeta> {
+  const url = normalizeUrl(rawUrl);
+  const platform = platformOf(url);
+
+  // 1) 平台特化：网易云 / QQ 音乐 / Spotify / GitHub 的官方接口比 og 标签准得多
+  const specialized: Record<string, () => Promise<LinkMeta | null>> = {
+    netease: () => neteaseMeta(url),
+    qqmusic: () => qqMusicMeta(url),
+    spotify: () => spotifyMeta(url),
+    github: () => githubRepoMeta(url),
+  };
+  const fn = platform ? specialized[platform] : undefined;
+  if (fn) {
+    const got = await fn();
+    if (got && (got.title || got.cover)) {
+      if (platform === 'apple' && !got.embed) {
+        const apple = appleMeta(url);
+        if (apple) got.embed = apple.embed;
+      }
+      return got;
+    }
+  }
+
+  // 2) 直连目标页抠 og 标签
+  let generic: LinkMeta | null = null;
+  try {
+    generic = await genericMeta(url);
+  } catch {
+    /* 直连不通，掉到 3 */
+  }
+  if (!generic || (!generic.title && !generic.cover)) {
+    // 3) microlink 代抓
+    const viaProxy = await microlinkMeta(url);
+    if (viaProxy) generic = viaProxy;
+  }
+  if (!generic) generic = { url, title: '', cover: '', site: hostOf(url), platform };
+
+  // Apple Music：og 拿不到播放器，自己拼一个 embed 域的子页面
+  if (platform === 'apple' && !generic.embed) {
+    const apple = appleMeta(url);
+    if (apple) return { ...generic, embed: apple.embed, site: 'Apple Music' };
+  }
+  return generic;
+}

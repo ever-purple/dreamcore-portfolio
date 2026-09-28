@@ -148,7 +148,23 @@ export function createCarousel(
   }
   controls.enableDamping = true;
   controls.enablePan = false;
-  controls.minDistance = 4;
+  /* ⚠️ 这两档距离**必须联动**，改动前先读这段：
+     · 全景：minDistance 限住相机别拉太近；
+     · 聚焦相框：focus() 要把相机摆到离相框 FOCUS_DIST 处看那张图。
+     坑（2026-09-17 用户「点开旋转木马模型不进入项目」的真因）：
+       原来看图距离写死 2.15，而 minDistance = 4 —— OrbitControls.update() 每帧把
+       半径夹回 [4, 20]，相机**永远到不了** targetPos（实测 dist 停在 1.89 就再不动），
+       于是 transition 的收敛判据 `distanceTo(targetPos) < 0.008` 永不成立 →
+       transition 恒为 true → up() 里 `if (active >= 0 && !transition)` 那一整支
+       （放大态点这张图 → 进详情页，2026-09-14 用户点名要的功能）永远进不去：
+       点下去只是又 focus() 一次，页面纹丝不动。
+     解法：聚焦时把 minDistance 让到 FOCUS_DIST 之下，等回全景收敛后再收回
+       （不能在 reset() 当场收回 —— 那时半径才 2.15，会被瞬间顶到 4，画面跳一下）。 */
+  const FOCUS_DIST = 2.15;
+  const OVERVIEW_MIN_DISTANCE = 4;
+  /** 过渡"停稳"阈值：每帧位移小于它就算没动（世界单位，相机在 2~13 的量级） */
+  const TRANSITION_SETTLE_EPS = 2e-4;
+  controls.minDistance = OVERVIEW_MIN_DISTANCE;
   controls.maxDistance = 20;
   controls.minPolarAngle = Math.PI * 0.22;
   controls.maxPolarAngle = Math.PI * 0.445;
@@ -257,7 +273,11 @@ export function createCarousel(
     night = savedView?.night ? 1 : 0,
     nightTarget = savedView?.night ? 1 : 0,
     rotating = savedView?.spinning ?? false,
-    transition = false;
+    transition = false,
+    /* 过渡期的「停稳」计数器：< 0 表示刚设完目标、相机还没起步（跳过，别误判） */
+    settleFrames = 0;
+  /** 上一帧过渡结束时的相机位置，用来测"这一帧到底动了多少" */
+  const prevCam = new THREE.Vector3();
   function texture(path: string) {
     const t = loader.load(
       path,
@@ -1086,8 +1106,11 @@ export function createCarousel(
     const normal = new THREE.Vector3(0, 0, 1).transformDirection(
       face.matrixWorld,
     );
-    targetPos.copy(targetLook).addScaledVector(normal, 2.15);
+    targetPos.copy(targetLook).addScaledVector(normal, FOCUS_DIST);
     targetPos.y += 0.04;
+    /* 让出 minDistance：不然控制器会把相机顶回 4（见 controls 配置处注释） */
+    controls.minDistance = FOCUS_DIST - 0.25;
+    settleFrames = -2;
     transition = true;
     controls.enabled = false;
     highlight();
@@ -1105,6 +1128,7 @@ export function createCarousel(
     motion.play(true);
     targetLook.copy(homeTarget);
     targetPos.copy(home);
+    settleFrames = -2;
     transition = true;
     controls.enabled = false;
     highlight();
@@ -1430,14 +1454,31 @@ export function createCarousel(
       }
     });
     if (transition) {
+      /* 收敛判据**不是**「有没有精确走到 targetPos」。
+         OrbitControls 每帧用自己的 minDistance / min-maxPolarAngle 把相机夹回可视区间
+         （见 controls 配置处那段注释），targetPos **可能根本不可达** —— 实测聚焦时相机
+         被夹在 radius 4、极角 0.445π 上，与 targetPos 永远差 1.89（改完 minDistance 后
+         仍差 0.29），于是 `distanceTo(targetPos) < 0.008` 永不成立、transition 恒为 true，
+         点击判定就永远交不回来。
+         改成看「相机这一帧动了多少」：被夹住之后它每帧都被拉回同一个点，帧间位移趋于 0，
+         这就是"停稳了"。判据与任何夹取无关，改夹取参数也不会把它改坏。 */
+      const moved = camera.position.distanceTo(prevCam);
+      prevCam.copy(camera.position);
+      /* 刚设完目标的前两帧相机还没起步，别把"没动"误判成"已停稳" */
+      if (settleFrames < 0) settleFrames += 1;
+      else if (moved < TRANSITION_SETTLE_EPS) settleFrames += 1;
+      else settleFrames = 0;
+
       // 收敛比原版（×4）快一档：放大/回全景后尽快交还点击判定，
       // 拖太久的 transition 会让"点哪里都回全景"晚几秒才生效。
       const alpha = reduced ? 1 : 1 - Math.exp(-dt * 5.5);
       camera.position.lerp(targetPos, alpha);
       controls.target.lerp(targetLook, alpha);
-      if (camera.position.distanceTo(targetPos) < 0.008) {
+      if (settleFrames >= 3 || camera.position.distanceTo(targetPos) < 0.008) {
         transition = false;
         controls.enabled = active < 0;
+        /* 已回到全景 → 把 minDistance 收回默认档（聚焦时让出去的那一档，见 controls 配置处） */
+        if (active < 0) controls.minDistance = OVERVIEW_MIN_DISTANCE;
       }
     }
     faces.forEach((face, index) => {
@@ -1470,6 +1511,7 @@ export function createCarousel(
     onError('画面暂时中断，请刷新页面重新打开。');
   };
   renderer.domElement.addEventListener('webglcontextlost', contextLost);
+
   return {
     ready: Promise.resolve(),
     focus,

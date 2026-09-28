@@ -3,10 +3,14 @@ import { EASE } from '@/lib/ease';
 import gsap from 'gsap';
 
 interface HomeSectionProps {
+  /** 稀疏数组：没加载到的位置是空槽，绘制端自行跳过并「停住不动」 */
   images: HTMLImageElement[];
-  complete: boolean;
+  /** 首个窗口就绪。滚动动画用它当门禁 —— 不能用「全部下完」，那要等 64MB 才动 */
+  ready: boolean;
   entered: boolean;
   onOpen: () => void;
+  /** 通知外层「我滚到第几帧了」，用于驱动窗口式预加载 */
+  onFrameFocus: (frame: number) => void;
   setDownBlocked: (blocked: boolean) => void;
 }
 
@@ -28,7 +32,14 @@ function getBell(): HTMLAudioElement {
   return sharedBell;
 }
 
-export function HomeSection({ images, complete, entered, onOpen, setDownBlocked }: HomeSectionProps) {
+export function HomeSection({
+  images,
+  ready,
+  entered,
+  onOpen,
+  onFrameFocus,
+  setDownBlocked,
+}: HomeSectionProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number>(0);
@@ -38,6 +49,7 @@ export function HomeSection({ images, complete, entered, onOpen, setDownBlocked 
   const dimsRef = useRef({ width: 0, height: 0, dpr: 1 });
   const atEndRef = useRef(false);
   const wasAtThresholdRef = useRef(false);
+  const lastFocusRef = useRef(-1);
   const bellRef = useRef<HTMLAudioElement | null>(null);
   const portfolioRef = useRef<HTMLDivElement>(null);
   const openBtnRef = useRef<HTMLButtonElement>(null);
@@ -131,7 +143,7 @@ export function HomeSection({ images, complete, entered, onOpen, setDownBlocked 
 
   // 滚动驱动：逻辑用原始进度（响应即时），视觉用帧率无关指数平滑（丝滑）
   useEffect(() => {
-    if (!entered || !complete || !containerRef.current) return;
+    if (!entered || !ready || !containerRef.current) return;
 
     const container = containerRef.current;
 
@@ -170,6 +182,11 @@ export function HomeSection({ images, complete, entered, onOpen, setDownBlocked 
       updatePortfolio(raw);
 
       const targetFrame = Math.floor(raw * (TOTAL_FRAMES - 1));
+      // 告诉预加载器「我大概在第几帧」，它据此展开前后窗口
+      if (targetFrame !== lastFocusRef.current) {
+        lastFocusRef.current = targetFrame;
+        onFrameFocus(targetFrame);
+      }
       const atEnd = targetFrame >= TOTAL_FRAMES - 1;
       if (atEnd !== atEndRef.current) {
         atEndRef.current = atEnd;
@@ -208,11 +225,11 @@ export function HomeSection({ images, complete, entered, onOpen, setDownBlocked 
       window.removeEventListener('resize', resizeCanvas);
       cancelAnimationFrame(rafRef.current);
     };
-  }, [entered, complete, images, setDownBlocked]);
+  }, [entered, ready, images, setDownBlocked, onFrameFocus]);
 
   // 待机呼吸：房间在静止时也缓慢缩放，像在"呼吸"，消除死板感
   useEffect(() => {
-    if (!entered || !complete || !canvasRef.current) return;
+    if (!entered || !ready || !canvasRef.current) return;
     const tween = gsap.to(canvasRef.current, {
       scale: 1.02,
       duration: 6,
@@ -222,7 +239,7 @@ export function HomeSection({ images, complete, entered, onOpen, setDownBlocked 
       transformOrigin: 'center center',
     });
     return () => { tween.kill(); };
-  }, [entered, complete]);
+  }, [entered]);
 
   // OPEN 按钮：GSAP 弹性入场 + 磁吸跟随
   useEffect(() => {

@@ -122,7 +122,11 @@ type Pop = 'color' | 'emoji' | 'link' | null;
 
 /**
  * 「留言板」内容区：上方留言表单（姓名 / 电子邮件 / 富文本 + 表情），下方最近 3 条留言。
- * 无后端 → 存在 localStorage；姓名留空即匿名；电子邮件只收不展示。
+ *
+ * 留言存在服务端（Vercel 云函数 + Redis）：打开页面就拉「最近 3 条」，
+ * 别人刚发的也会一起出来；自己发完，服务端回什么就显示什么，别人刷新也能看到。
+ * 服务端不可用时自动退回 localStorage，功能不至于中断（只是只有本机看得到）。
+ * 姓名留空即匿名；电子邮件只收不展示。
  */
 export function AboutGuestbook() {
   const editorRef = useRef<HTMLDivElement>(null);
@@ -145,6 +149,10 @@ export function AboutGuestbook() {
   const [linkUrl, setLinkUrl] = useState('');
   const [error, setError] = useState('');
   const [flash, setFlash] = useState('');
+  /** 服务端留言总数；null 表示还不知道（本地模式只有 entries.length 条） */
+  const [total, setTotal] = useState<number | null>(null);
+  /** true = 连不上服务端，退回本地保存，功能不中断 */
+  const [offline, setOffline] = useState(false);
 
   const save = useCallback((next: Entry[]) => {
     try {
@@ -153,6 +161,15 @@ export function AboutGuestbook() {
       /* 隐私模式下写不进去就只在内存里留着 */
     }
   }, []);
+
+  /** 服务端字段补齐，避免老数据缺字段时渲染炸掉 */
+  const normalize = useCallback((e: Entry): Entry => ({
+    id: e?.id || `e${Date.now()}`,
+    name: typeof e?.name === 'string' ? e.name : '匿名',
+    email: typeof e?.email === 'string' ? e.email : '',
+    html: typeof e?.html === 'string' ? e.html : '',
+    ts: Number(e?.ts) || Date.now(),
+  }), []);
 
   useEffect(() => {
     try {
@@ -167,6 +184,30 @@ export function AboutGuestbook() {
     const t = window.setTimeout(() => setFlash(''), 2600);
     return () => window.clearTimeout(t);
   }, [flash]);
+
+  /** 一打开就问服务端要「最近 3 条」，别人刚发的也会一起出来 */
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch('/api/guestbook', { cache: 'no-store' });
+        if (!res.ok) throw new Error(String(res.status));
+        const j = (await res.json()) as { ok?: boolean; list?: Entry[]; total?: number };
+        if (!alive) return;
+        if (j.ok && Array.isArray(j.list)) {
+          setEntries(j.list.map(normalize));
+          if (typeof j.total === 'number') setTotal(j.total);
+          return;
+        }
+        throw new Error('bad payload');
+      } catch {
+        if (alive) setOffline(true); // 服务端不可用 → 仍按本地模式跑
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [normalize]);
 
   const syncMark = useCallback(() => {
     try {
@@ -217,7 +258,15 @@ export function AboutGuestbook() {
     setPop(null);
   }, [cmd, linkUrl]);
 
-  const submit = (event: React.FormEvent) => {
+  const clearForm = () => {
+    if (editorRef.current) editorRef.current.innerHTML = '';
+    setName('');
+    setEmail('');
+    setError('');
+    syncMark();
+  };
+
+  const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     const html = sanitize(editorRef.current?.innerHTML ?? '');
     const plain = textOf(html);
@@ -236,15 +285,36 @@ export function AboutGuestbook() {
       html,
       ts: Date.now(),
     };
+
+    // 先试服务端：发出去之后所有人都能看到
+    if (!offline) {
+      try {
+        const res = await fetch('/api/guestbook', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: entry.name, email: entry.email, html: entry.html }),
+        });
+        const j = (await res.json()) as { ok?: boolean; list?: Entry[]; total?: number };
+        if (j.ok && Array.isArray(j.list)) {
+          setEntries(j.list.map(normalize));
+          if (typeof j.total === 'number') setTotal(j.total);
+          clearForm();
+          setFlash('留言已发出 · 现在所有人都能看到');
+          return;
+        }
+      } catch {
+        /* 网络断了 → 下面走本地兜底 */
+      }
+    }
+
+    // 兜底：只存在这台设备上，别人看不到
     const next = [entry, ...entries];
     setEntries(next);
     save(next);
-    if (editorRef.current) editorRef.current.innerHTML = '';
-    setName('');
-    setEmail('');
-    setError('');
-    setFlash('留言已发送 · 谢谢来访');
-    syncMark();
+    setTotal(null);
+    setOffline(true);
+    clearForm();
+    setFlash('已存在本机（暂时连不上服务器，别人看不到）');
   };
 
   const recent = entries.slice(0, RECENT);
@@ -475,7 +545,10 @@ export function AboutGuestbook() {
       <section className="about-gb-sec">
         <h4 className="about-gb-sec-title">
           <span aria-hidden="true">📮</span> 最近留言 <em>RECENT</em>
-          <i>近 {RECENT} 条 · 共 {entries.length} 条</i>
+          <i>
+            近 {RECENT} 条 · 共 {total ?? entries.length} 条
+            {offline ? ' · 当前为本机模式' : ''}
+          </i>
         </h4>
 
         {recent.length === 0 ? (

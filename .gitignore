@@ -27,6 +27,10 @@ Thumbs.db
 # 本地 CDP / 构建临时目录
 _edgetmp*/
 _dist_old*/
+# 构建临时输出目录（本地验证用，别推上去）
+_buildcheck/
+_buildcheck*/
+_bc*/
 _shots/
 _park/
 _replay/
@@ -40,9 +44,24 @@ scripts/_probe_out.txt
 scripts/_pdftext.mjs
 scripts/_pdftext_out.txt
 
+# 对照参考站时的一次性产物（探针脚本 / 抓下来的第三方 bundle / 日志 / 诊断截图）
+# ⚠️ 都用下划线前缀 + 仓库根锚定，别写成不带斜杠的 `_*.mjs`（那会连带忽略 scripts/ 下的文件）
+/_*.mjs
+/_ref/
+/_ref*.json
+/_ref*.err
+/_shot-*.jpg
+
 # 策划案 deck：58MB 超过 GitHub REST API 上限，推不上去，先留本地。
 # 需要入库时用 git add -f。详见 public/works/README.md
 public/works/*.pdf
+
+# 视频压缩前的原件（约 300MB，只留本地，不要推上去）
+/_media_originals/
+
+# GLB 压缩产物 / 压缩前的原件备份
+/_glb_old*/
+/_glb_out*/
 
 # 本地工作记忆与技能数据（不进公开仓库）
 .workbuddy/

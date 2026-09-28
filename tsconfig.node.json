@@ -2,7 +2,9 @@
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
     "target": "ES2023",
-    "lib": ["ES2023"],
+    // link-meta.ts 用的是 Node 18+ 内置的 undici fetch，但类型（fetch / Response /
+    // AbortController / RequestInit）仍挂在 DOM lib 上，所以这里要带上 DOM。
+    "lib": ["ES2023", "DOM"],
     "module": "ESNext",
     "types": ["node"],
     "skipLibCheck": true,
@@ -22,5 +24,6 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true
   },
-  "include": ["vite.config.ts", "studio-writer.ts"]
+  // api/ 是 Vercel 云函数，跟前端是两套环境（Node + 无 DOM），单独用这个配置检查
+  "include": ["vite.config.ts", "studio-writer.ts", "link-meta.ts", "api/**/*.ts"]
 }

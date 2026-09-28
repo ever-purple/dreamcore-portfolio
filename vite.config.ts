@@ -3,12 +3,38 @@ import react from "@vitejs/plugin-react"
 import { defineConfig } from "vite"
 import { studioWriter } from "./studio-writer"
 
+/**
+ * 分享卡绝对地址的来源。
+ *
+ * 社交平台（Facebook / X / LinkedIn）要求 og:image 必须是**绝对地址**，
+ * 但本站 base 是 './'、上线域名又由部署平台决定，没法在 index.html 里写死。
+ * 于是配了 VITE_SITE_URL（如 https://www.example.com）就在构建时把
+ * og:image / twitter:image 换成绝对地址，并把 og:url 指向首页；
+ * 没配就保留 index.html 里的相对路径兜底（国内平台与站内 link-meta 都能自己补全）。
+ */
+const SITE_URL = (process.env.VITE_SITE_URL || '').replace(/\/+$/, '');
+const shareCard = `${SITE_URL}/og/card-share-wide.png`.replace(/^\/og\//, '');
+
+/** 分享卡元信息：见 index.html 里「社交分享卡」一段 */
+const shareCardPlugin = {
+  name: 'share-card',
+  transformIndexHtml(html: string) {
+    if (!SITE_URL) {
+      // 没有域名：摘掉 og:url（相对地址对 crawlers 无意义），相对路径的 og:image 原样保留
+      return html.replace(/^[ \t]*<meta property="og:url"[^>]*>\n/gm, '');
+    }
+    return html
+      .replace('__OG_URL__', `${SITE_URL}/`)
+      .replace(/og\/card-share-wide\.png/g, shareCard);
+  },
+};
+
 // https://vite.dev/config/
 export default defineConfig({
   base: './',
   // studioWriter 只在 vite dev 下生效：给「作者模式」提供写回源码文件的通道
   // （/__studio/save-work、/__studio/upload）。构建产物里不含任何写入能力。
-  plugins: [react(), studioWriter()],
+  plugins: [react(), studioWriter(), shareCardPlugin],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
@@ -35,12 +61,18 @@ export default defineConfig({
       "pdfjs-dist",
     ],
   },
+  // ⚠️ 端口从 PORT 环境变量读（部署沙箱 / 云平台都靠注入它指定端口）：
+  //     直接在 startCmd 里写 `--port $PORT` 不稳 —— 命令不是经 shell 执行的，
+  //     `$PORT` 展开成空串，vite 会报 "option `--port <port>` value is missing" 起不来。
+  //     读环境变量则由 vite 自己解析，与执行方式无关。本地没设 PORT 就回退 5173。
   server: {
     host: true,
+    port: process.env.PORT ? Number(process.env.PORT) : 5173,
     allowedHosts: true,
   },
   preview: {
     host: true,
+    port: process.env.PORT ? Number(process.env.PORT) : 4173,
     allowedHosts: true,
   },
 });

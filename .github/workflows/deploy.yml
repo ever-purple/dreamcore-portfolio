@@ -1,0 +1,58 @@
+# 部署到 GitHub Pages：推 main 自动构建并发布。
+#
+# 为什么需要它：dist 在 .gitignore 里（不该把 500MB+ 产物提交进仓库，仓库会翻倍），
+# 所以 Pages 必须由 Actions 在服务端 build 再发布，而不是从某个分支读静态文件。
+#
+# 首次启用：仓库 Settings → Pages → Source 选 **GitHub Actions**（不是 "Deploy from a branch"）。
+# 之后每次 push main 都会自动重新发布，构建约 2–4 分钟。
+
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  # 允许在 Actions 页手动触发
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同一时间只允许一个部署；新推送会取消还在跑的旧构建
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

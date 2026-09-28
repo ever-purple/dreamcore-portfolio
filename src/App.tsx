@@ -4,7 +4,8 @@ import { LoadingScreen } from '@/components/LoadingScreen';
 import { ModeSwitch } from '@/components/ModeSwitch';
 import { HomeSection } from '@/sections/HomeSection';
 import { StudioSection } from '@/sections/StudioSection';
-import { useImagePreloader } from '@/hooks/useImagePreloader';
+import { useWindowedFrames } from '@/hooks/useWindowedFrames';
+import { useAssetPreload } from '@/hooks/useAssetPreload';
 import type { StudioObject } from '@/data/studio';
 import 'lenis/dist/lenis.css';
 import './App.css';
@@ -15,6 +16,26 @@ const frameUrls = Array.from(
   { length: TOTAL_FRAMES },
   (_, i) => `/frames/${String(i + 1).padStart(4, '0')}.jpg`,
 );
+
+/**
+ * 模型预热：进工作室才用得上的大件，先默默下进缓存，不计进进度条、也不卡加载页。
+ * rack.glb 一个人 9MB（贴图转 WebP 无损后从 17.9MB 降到 9.1MB），是全套最重的一件，
+ * 绝不能让它等在加载页里 —— 首页压根用不到它。
+ * 省流量模式 / 2G/3G 下会自动跳过预热（见 useAssetPreload 的 worthPrefetching）。
+ */
+const PREFETCH_MODELS: string[] = [`${import.meta.env.BASE_URL}newsstand/rack.glb`];
+
+const WAIT_ASSETS = [
+  ...frameUrls, // 全部序列帧 = 首页本体
+  `${import.meta.env.BASE_URL}about/mascot.glb`,
+  `${import.meta.env.BASE_URL}newsstand/dvd.glb`,
+  `${import.meta.env.BASE_URL}newsstand/dv.glb`,
+  `${import.meta.env.BASE_URL}newsstand/mp3.glb`,
+  `${import.meta.env.BASE_URL}newsstand/tape.glb`,
+];
+
+/** 同时最多下 8 个：120 张帧一起发会把带宽打满，关键资源反而被挤到后面 */
+const PRELOAD_CONCURRENCY = 8;
 
 function App() {
   // ?studio=1 / ?about=1 / ?greenos=1 预览模式：视为已过加载页，便于直接测试
@@ -33,7 +54,17 @@ function App() {
     }
     return window.location.hash === '#about' ? 'studio' : 'home';
   });
-  const { complete, images } = useImagePreloader(frameUrls, true);
+  // 序列帧改为窗口式加载：开局只等前 12 张（≈4MB）就放行，其余按滚动位置后台补。
+  // 帧保持原始 2560×1443 不变清晰，只改变「同时下载多少」。
+  const { images, ready: framesReady, focus: focusFrame } = useWindowedFrames(frameUrls);
+
+  /** 加载页的 0→100%：已下完的资源 / 该下的总数，纯真实值 */
+  const { done, total, ready: assetsReady } = useAssetPreload({
+    wait: WAIT_ASSETS,
+    prefetch: PREFETCH_MODELS,
+    concurrency: PRELOAD_CONCURRENCY,
+  });
+  const progress = total > 0 ? done / total : 1;
 
   const lenisRef = useRef<Lenis | null>(null);
   const downBlockedRef = useRef(false);
@@ -136,11 +167,14 @@ function App() {
     <div className="relative min-h-screen bg-[#0a0a0a]">
       {stage === 'home' ? (
         <>
-          {!entered && <LoadingScreen ready={complete} onEnter={handleEnter} />}
+          {!entered && (
+            <LoadingScreen ready={assetsReady} progress={progress} onEnter={handleEnter} />
+          )}
           <HomeSection
             images={images}
-            complete={complete}
+            ready={framesReady}
             entered={entered}
+            onFrameFocus={focusFrame}
             onOpen={handleOpen}
             setDownBlocked={setDownBlocked}
           />
@@ -153,11 +187,12 @@ function App() {
         <div className={`flash-burst${flash === 'fading' ? ' is-fading' : ''}`} />
       )}
 
-      {/* 作者 / 访客模式切换徽标：进入站点后常驻，全站唯一开关 */}
-      {entered && <ModeSwitch />}
-
-      {/* 全局胶片颗粒叠层 */}
-      <div className="noise-overlay" />
+      {/*
+        作者 / 访客模式徽标：常驻渲染，但它自己会判断——没解锁时什么都不显示，
+        所以访客在页面上根本看不到它；另外隐藏入口（连按 5 次 M）也要在加载页
+        期间就能用，所以这里不能挂在 entered 后面。
+      */}
+      <ModeSwitch />
     </div>
   );
 }

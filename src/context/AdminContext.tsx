@@ -6,7 +6,8 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { IS_ADMIN } from '@/config';
+import { IS_ADMIN, urlAdminOverride } from '@/config';
+import { GATE_ENABLED, checkKey, isUnlocked } from '@/lib/authorAuth';
 
 /**
  * 作者 / 访客 模式的唯一来源（Single Source of Truth）。
@@ -28,12 +29,16 @@ export type AdminState = {
   mode: AdminMode;
   setMode: (next: boolean) => void;
   toggle: () => void;
+  /** 输口令开作者模式。口令不对返回 false */
+  unlock: (key: string) => boolean;
 };
 
 function readInitialMode(): boolean {
   if (typeof window === 'undefined') return IS_ADMIN;
-  const url = new URLSearchParams(window.location.search).get('admin');
-  if (url !== null) return url !== '0';
+  // 开了口令门：只认 cookie，别的都不认（生产里 ?admin=1 也被 config 挡掉了）
+  if (GATE_ENABLED) return isUnlocked();
+  const override = urlAdminOverride();
+  if (override !== null) return override;
   try {
     const saved = window.localStorage.getItem(STORAGE_KEY);
     if (saved === '1') return true;
@@ -60,12 +65,15 @@ const AdminCtx = createContext<AdminState>({
   mode: IS_ADMIN ? 'author' : 'guest',
   setMode: () => {},
   toggle: () => {},
+  unlock: () => false,
 });
 
 export function AdminProvider({ children }: { children: ReactNode }) {
   const [isAdmin, setIsAdmin] = useState<boolean>(readInitialMode);
 
   const setMode = useCallback((next: boolean) => {
+    // 开了口令门、又还没解锁：不许绕过口令直接切过去
+    if (next && GATE_ENABLED && !isUnlocked()) return;
     setIsAdmin(next);
     persistMode(next);
   }, []);
@@ -78,14 +86,23 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  /** 口令校验 + 进入。口令不对就保持访客模式 */
+  const unlock = useCallback((key: string) => {
+    if (!checkKey(key)) return false;
+    setIsAdmin(true);
+    persistMode(true);
+    return true;
+  }, []);
+
   const value = useMemo<AdminState>(
     () => ({
       isAdmin,
       mode: isAdmin ? 'author' : 'guest',
       setMode,
       toggle,
+      unlock,
     }),
-    [isAdmin, setMode, toggle],
+    [isAdmin, setMode, toggle, unlock],
   );
 
   return <AdminCtx.Provider value={value}>{children}</AdminCtx.Provider>;

@@ -1,144 +1,600 @@
 /**
- * 实习日记（2026-09-16）—— 工作室笔记本物件的翻页本内容。
+ * 实习日记（2026-09-17 第二轮重写：一篇 = 多页）—— 工作室笔记本物件的翻页本内容。
  *
- * 结构：封面（组件内画）+ 五篇日记（按时间倒序，最新在最前）。
- * 交互是「翻页」（绕左书脊 rotateY），所以一篇日记 = 一页，不做长滚动。
+ * 内容来源：用户真实简历《实习经历手账日记》，四段实习一段一篇，按时间从新到旧。
  *
- * 字体分工（改文案前必读）：
- *  · `title / org / role / date / chips` 走 NanoOldSongA（display 宋体）
- *    —— ⚠️ 这些字段的中文字必须收进子集：scripts/subset-nanooldsong.py
- *    已经按字段名收集本文件，**新增字段名要记得去脚本里补 pattern 并重跑**。
- *  · `titleEn` / 页码 / 进度胶囊走 Caveat（手写英文）。
- *  · `body` 正文走站点正文字体（Noto Sans SC），不进子集。
+ * ## 分页口径（用户 2026-09-17 原话）
+ *   「现在的排版字太小了，不需要一个实习一页，改成一段实习中的一个板块一页，
+ *     但篇数是按照实习段数」
+ * 于是：**篇的个数 = 实习段数（4 篇）**，而**每篇内部按「板块」分页**：
  *
- * 配图占位：全部复用站内已有图（works 策划案内页 / media 视频封面），
- * 作者之后直接换 `src` 即可，尺寸不限（拍立得框会按 4/5 裁）。
+ *   封面（1 页）
+ *   └ 篇 01 ─ 篇首页 ×1 ─ 板块页 ×N ─ 复盘页 ×1
+ *   └ 篇 02 ─ 篇首页 ×1 ─ 板块页 ×N ─ 复盘页 ×1
+ *   └ …（共 4 篇）
+ *
+ * 页数分配（DIARY_SHEETS 长度 = 1 + (1+3+1) + (1+2+1) + (1+3+1) + (1+2+1) = 19）：
+ *   新白文化 5 页 · 行行行 4 页 · 氪星创服 5 页 · 春山里 4 页。
+ *
+ * ## 2026-09-22 晚 第三轮改版（用户提供全文，原话「你不要改我的文案」）
+ *   · 正文模型改成**小标题单拎的块**（`blocks: { sub, text }[]`）—— 用户
+ *     「注意小标题单拎出来」；sub 为空就只渲染正文段。
+ *   · 篇首页时间改成**月份圈选行**（`months: number[]`）—— 参考「电子手帐」截图：
+ *     1–12 排开、实习月份手写圈起来，右侧「地点：北京」走手写体。
+ *   · 板块页最上面加「📌 核心工作内容与实战成果」抬头（用户原话）。
+ *   · 篇 01 文案按用户给的全文逐字重录（含标点），小标题切法经用户逐条确认：
+ *       - 「团队共创与线下打卡落地」做小标题，正文从「节日线下活动落地（…）」起；
+ *       - 「节点营销全案策划参与」做小标题，「妇女节营销策划案：…」留在正文；
+ *       - 「AI 提效」后的「操盘」两字删掉；复盘「阶段复盘」做小标题。
+ *   · 篇 02–04 未给新文案：points 按「首个『：』前是小标题」机械切块，内容一字未改。
+ *
+ * ## 字体分工（改文案前必读）
+ *  · `date / org / role / place / title /（板块）index / title / blocks.sub /
+ *    review.sub / core` 走 NanoOldSongA（display 宋体）。
+ *    ⚠️ 这些字段的字必须收进子集：scripts/subset-nanooldsong.py 按**字段名**收集本文件，
+ *       **新增 display 字段名要去脚本里补 pattern 再重跑**，否则新字静默回退 Noto Serif。
+ *  · 月份圈选行 / 篇首右上角手写抬头走 PFHuTu-Meta 子集（0-9 . — · ： 北京 天津 地点）。
+ *  · 其余全部（blocks.text / summary / result / review.text / intro）走站点正文字体，不进子集。
+ *
+ * ## 单页容量（硬约束，改文案前必看）
+ * 翻页层把一张纸切成 12 条竖带、每条渲染一份完整内容（见 NotebookOverlay）。
+ * 所以**每一页**都必须塞进一页高度：一旦某页溢出，12 条带会各出一个滚动条。
+ * 改长文案后跑 `node verify-diary.mjs`（无头 Edge）：它逐页量 scrollHeight 并查字体回退。
  */
 
-export type DiaryPhoto = {
-  src: string;
-  /** 拍立得下方的手写小字（Caveat），可空 */
-  caption?: string;
-  /** 照片微旋转（deg），不传就按序号取默认摆动 */
-  rot?: number;
+/**
+ * 一篇的色调。**现在它是「每篇一套配色」的唯一来源**：
+ * DiaryPage 把 tone 映射成 --di-accent / --di-accent-deep 注入到 .diary-entry 上。
+ * 加一档 tone 要同时改三处：这里、DiaryPage 的 TONES 映射、index.css 的 .is-xxx 底色。
+ */
+export type DiaryTone = 'mint' | 'yellow' | 'blue' | 'rose' | 'plain';
+
+/** 板块页侧栏的「剪贴件」—— 2026-09-22 清爽版式起不再渲染，字段只为不丢素材引用 */
+export type DiaryClip =
+  | { kind: 'photo'; caption?: string; hint?: string; src?: string; tall?: boolean; wide?: boolean; rot?: number }
+  | { kind: 'table'; caption?: string; head: string[]; rows: string[][]; rot?: number }
+  | { kind: 'stat'; value: string; label: string; rot?: number };
+
+/** 小标题单拎的一个正文块：sub 为空 → 只渲染正文段 */
+export type DiaryBlock = { sub: string; text: string };
+
+/** 一个板块 = 一页（篇内分页的最小单位） */
+export type DiarySection = {
+  /** 板块序号（NanoOldSongA），例：'01' / '项目一' */
+  index: string;
+  /** 板块标题（NanoOldSongA） */
+  title: string;
+  /** 一句话定位（可选；篇 02–04 旧内容保留，篇 01 新文案没有这一层） */
+  summary?: string;
+  /** 正文块：小标题单拎（2026-09-22 用户「注意小标题单拎出来」） */
+  blocks: DiaryBlock[];
+  /** 成果行（可选，accent 底色高亮）—— 篇 01 新文案没有，篇 02–04 保留 */
+  result?: string;
+  /** 数字高亮（可选） */
+  highlights?: { value: string; label: string }[];
+  /** 剪贴件（photo / table / stat）—— 不再渲染，字段保留不丢素材引用 */
+  clips?: DiaryClip[];
 };
 
+/** 篇 = 一段实习 */
 export type DiaryEntry = {
   id: string;
-  /** 纸带标签上的时间（NanoOldSongA），例：'26.01 – 04' */
+  /** 板块/复盘页右上角手写抬头里的时间（NanoOldSongA + 手写体），例：'2026.01 - 2026.04' */
   date: string;
-  /** 纸带标签上的公司（NanoOldSongA） */
+  /**
+   * 篇首页的**月份圈选行**：1–12 排开、圈出实习月份（参考用户给的电子手帐截图）。
+   * 篇 02–04 是暑期实习 → [7, 8]。
+   */
+  months: number[];
+  /** 公司（NanoOldSongA；篇 01 用户指定全称「北京新白文化传播有限公司」） */
   org: string;
-  /** 岗位 chip（NanoOldSongA） */
+  /** 公司简写 —— 封面跳转按钮名 = short ＋ 岗位（用户 2026-09-22 晚） */
+  short: string;
+  /** 岗位（NanoOldSongA） */
   role: string;
-  /** 手写编号标题（NanoOldSongA，短句） */
+  /** 地点（手写体，篇首页渲染成「地点：北京」） */
+  place: string;
+  /** 手写大标题（NanoOldSongA，短句） */
   title: string;
-  /** 标题下的英文手写注（Caveat） */
+  /** 大标题下的英文手写注（Caveat；2026-09-22 清爽版式起不再渲染） */
   titleEn: string;
-  /** 正文段落（正文字体，一页 2~3 段） */
-  body: string[];
-  photos: DiaryPhoto[];
-  /** 纸片 chips（NanoOldSongA） */
+  /** 篇首页的引子（正文；清爽版式不再渲染） */
+  lead: string;
+  /**
+   * 篇首页的「公司与项目介绍」—— 2026-09-22 晚用户给的标签名就叫这个。
+   */
+  intro?: string;
+  /**
+   * 篇首页「核心工作」目录（2026-09-22 晚第三轮用户给的两级结构）：
+   *   一级 = 组号 + 组名（对应后面的板块页），二级 = 该组的细目（「小标题：内容」）。
+   * 不给就回退成各板块的 index + title（篇 02–04）。
+   */
+  core?: { no: string; title: string; items: string[] }[];
+  /** 篇首页「核心挑战」便签（正文；清爽版式不再渲染） */
+  challenge: string;
+  challengeTone?: DiaryTone;
+  /** 篇首页的数字贴纸（value 走 NanoOldSongA；清爽版式不再渲染，数据保留） */
+  stats?: { value: string; label: string }[];
+  /** 篇首页的纸片标签（NanoOldSongA；不再渲染，数据保留） */
   chips: string[];
-  /** 涂鸦款式，页面按它摆一支手绘 scribble */
+  /** 复盘页正文：小标题单拎的块（用户「阶段复盘」单独做小标题） */
+  review: DiaryBlock[];
+  /** 涂鸦款式；页面上摆在**复盘页**（篇的收尾页） */
   doodle: 'black' | 'blue' | 'yellow' | 'loop';
-  /** 进行中：本篇用虚线「待续」样式（仿参考站没收集完的 note） */
-  current?: boolean;
+  /** 板块页，一板块一页 */
+  sections: DiarySection[];
 };
 
 export const DIARY_ENTRIES: DiaryEntry[] = [
-  {
-    id: 'ksi-hk',
-    date: '2026 · 进行中',
-    org: 'KSI 翼氪计划',
-    role: '视频与内容',
-    title: '在香港的第三个月',
-    titleEn: 'To be continued…',
-    body: [
-      '这一页先留一半。翼氪计划的四条片子刚剪完，从三里屯到七夕节，每一条都在学着把「品牌想说的话」翻译成「用户想看的内容」。',
-      '香港的节奏很快，快到来不及写长日记。等这一站结束，回来把这里补满。',
-    ],
-    photos: [
-      { src: '/media/yike-1020.jpg', caption: 'on air', rot: -2.4 },
-      { src: '/media/sanlitun.jpg', caption: 'sanlitun', rot: 1.8 },
-    ],
-    chips: ['短视频全链路', '多平台运维'],
-    doodle: 'yellow',
-    current: true,
-  },
+  /* ============================================================
+     篇 01 · 北京新白文化传播有限公司 —— 用户 2026-09-22 晚提供全文，逐字重录。
+     三个板块（原「视频创意」并入活动板块，用户口径）：
+       ① 活动策划与落地营销（踏春 / 妇女节 / 上海店开业 / 视频传播与 UGC）
+       ② 矩阵账号搭建、达人拓展与 AI 提效（54 人分级 + 素人矩阵 + 视频方向）
+       ③ 广告投放与数据ROI复盘（多平台操盘 / 阶梯投放 / 闭环调优）
+     ⚠️ 「你不要改我的文案」—— 下面 blocks 的每个字（含标点、引号形态）都照用户原稿，
+        别"顺手"把直引号换成「」、把 - 换成 —。
+     ============================================================ */
   {
     id: 'xinbai',
-    date: '26.01 – 04',
-    org: '北京新白文化',
-    role: '市场部',
-    title: '矩阵账号的日常',
-    titleEn: 'Daily posting, daily learning',
-    body: [
-      '在新白文化的四个月，每天睁开眼第一件事是看后台数据。矩阵账号像一群性格不同的孩子：有的吃内容、有的吃投放、有的只吃热点。',
-      '学会了三件事：达人对接要提前留缓冲、投放分析要看趋势不要看单点、AI 提效是给流程减负而不是替你思考。',
+    date: '2026.01 - 2026.04',
+    months: [1, 2, 3, 4],
+    org: '北京新白文化传播有限公司',
+    short: '新白文化',
+    role: '市场部实习生',
+    place: '北京',
+    /* 2026-09-22 用户定的放大标题，保留。 */
+    title: '袖珍世界 | 市场部实习生',
+    titleEn: 'Xinzhen World · Marketing intern',
+    lead: '',
+    intro:
+      '公司旗下"袖珍世界"是全国独家的裸眼 3D 投影动画餐厅，也是国内首个沉浸式桌面美食剧场。实习期间，我全面深度参与了品牌的新媒体矩阵搭建、达人投放、活动策划与全链路数据复盘。',
+    /* 核心工作（用户 2026-09-22 晚给的原文，逐字照录 —— 含「」与中文引号形态） */
+    core: [
+      {
+        no: '01',
+        title: '活动策划',
+        items: [
+          '踏春主题落地：“把春天吃进梦里”室内野餐场景共创与线下互动落地',
+          '节点与新店策划：参与妇女节“非袖珍人生”及上海店“米拉的入沪奇遇”全案策划',
+        ],
+      },
+      {
+        no: '02',
+        title: '矩阵账号搭建与达人运营',
+        items: [
+          '抖音矩阵（云剪协同）：协同云剪团队，完成 54 人带货达人的等级规划与合作文案撰写',
+          '小红书矩阵（AI提效）：应用 AI 批量剪辑与封面制作，高效操盘小红书素人矩阵号',
+          '蒲公英精准种草：在小红书蒲公英平台筛选并推进优质到店达人合作，把控选题与封面',
+        ],
+      },
+      {
+        no: '03',
+        title: '广告投放与复盘',
+        items: [
+          '多平台商业化操盘：熟练运用巨量引擎、聚光等工具进行本地生活投流',
+          '漏斗测试与 ROI 调优：执行多周期 AB 测试与数据复盘，实现高效转化闭环',
+        ],
+      },
     ],
-    photos: [
-      { src: '/works/kuaike/p03-insight-w640.jpg', caption: 'insight', rot: 2.2 },
-      { src: '/works/kuaike/p02-brief-w640.jpg', caption: 'brief', rot: -1.6 },
+    challenge: '',
+    challengeTone: 'yellow',
+    stats: [
+      { value: '54', label: '位达人分级推进' },
+      { value: '9.60%', label: 'W10 点击率' },
+      { value: '8904', label: '单周成交额(元)' },
+      { value: '2.89', label: '单周 ROI' },
     ],
-    chips: ['矩阵账号', '投放分析', '达人对接'],
+    chips: ['活动策划落地', '视频创意与 UGC', '达人矩阵与 AI 提效', '投放与 ROI 复盘'],
+    review: [
+      {
+        sub: '阶段复盘',
+        text: '工具提效与分级规划是矩阵跑通的底气：面对繁杂的达人对接和内容产出，通过云剪团队协同、54 人带货等级精细化规划，以及利用 AI 工具实现矩阵视频与封面的批量化生产，让我深刻体会到"技术与流程协同"在现代新媒体运营中的杠杆效应。',
+      },
+      {
+        sub: '投流是内容的放大镜',
+        text: '数据报表不会骗人，前端文案的一个钩子、封面的一张图，都会直接反映在投流的 CTR 和 CVR 上。用数据倒逼内容迭代，才能让本地生活的每一分预算都产生复利。',
+      },
+    ],
     doodle: 'black',
+    sections: [
+      {
+        index: '01',
+        title: '活动策划与落地营销',
+        blocks: [
+          {
+            sub: '团队共创与线下打卡落地',
+            text: '节日线下活动落地（踏春主题："把春天吃进梦里"室内野餐）：与团队共同讨论并协作落地了店内踏春主题活动，在店内精心布置室内野餐场景，准备了草帽、泡泡机、捕梦网、水果模型等丰富的拍照打卡道具，有效带动了用户的现场打卡与线上话题分享。',
+          },
+          {
+            sub: '节点营销全案策划参与',
+            text: '妇女节营销策划案：围绕宝妈、职场女性与年轻群体，参与撰写了"非袖珍人生 不止今天"主题策划案。规划了线上"她！好耀眼"与"一声姐妹大过天"的内容方向，以及线下"魔法避雷针留言板"与"经验贴展板"的互动构想。',
+          },
+          {
+            sub: '上海店开业全案策划（"米拉的入沪奇遇"专题）',
+            text: '参与上海新店开业全案策划，搭建"精灵落沪预热期—误入奇遇爆发期—长尾打卡"三阶段传播链路。预热期以"米拉的入沪申请书"晒出央视背书，在安福路、武康大楼投放"全城通缉紫色行李箱"悬念并发起"米拉的搬家清单"；爆发期落地亲子寻宝集章、闺蜜"米拉的衣橱"换装打卡与情侣"魔法门"装置；长尾期把四季微缩模型藏进老弄堂墙角、发起"全城寻找精灵踪迹"，以月更"米拉生活近照"与微缩摆件文创延续热度。',
+          },
+          {
+            sub: '视频传播创意与UGC引导',
+            text: '围绕餐厅精灵主题，策划并输出多套高互动视频传播方向，如"精灵施展魔法开头（点亮星星音效）"、"化身精灵（借位拍照与抠图）"、"精灵视角下的鱼眼镜头"及利用 AI 生成专属精灵形象的互动玩法，有效激发顾客的 UGC 创作欲。',
+          },
+        ],
+      },
+      {
+        index: '02',
+        title: '矩阵账号搭建、达人拓展与 AI 提效',
+        blocks: [
+          {
+            sub: '达人分级规划与拓展',
+            text: '对接并协同云剪团队，对带货达人进行了系统性的等级规划与人数划分（共计推进 54 人），精准匹配不同层级的合作策略；同时独立撰写合作文案，全流程跟进脚本与执行。',
+          },
+          {
+            sub: '小红书素人矩阵号操盘（AI 批量提效）',
+            text: '独立负责小红书素人矩阵账号的视频与封面制作。为打破多账号、高频次的产能瓶颈，引入并熟练运用 AI 批量剪辑工具进行视频生产，大幅提升了矩阵号的内容输出效率。',
+          },
+          {
+            sub: '达人视频方向把控',
+            text: '深入剖析餐厅核心特色（8K 裸眼3D、一景一菜、情绪价值），针对亲子遛娃、情侣约会等不同客群规划视频选题，严控吸睛"钩子"与文案，规避广告法绝对化用语，确保展现出真实"活人感"。',
+          },
+        ],
+      },
+      {
+        index: '03',
+        title: '广告投放与数据ROI复盘（精细化投放逻辑）',
+        blocks: [
+          {
+            sub: '多平台商业化操盘',
+            text: '熟练运用巨量引擎、聚光平台以及抖音来客、小红书蒲公英、大众点评等本地生活商业化工具，每日输出精细化日报与周报。',
+          },
+          {
+            sub: '阶梯式投放与漏斗逻辑',
+            text: '建立"测试—放大—收割"的投放链路。贯彻"优质博主视频才进行小红书和抖音投流"的原则，对新合作素材先以小额预算进行冷启动测试，监测 CTR、CVR 及点击成本；当数据跑通后迅速追加预算，放大优质自然流量。',
+          },
+          {
+            sub: '数据复盘与闭环调优',
+            text: '持续监控各周期的曝光量、点击率及早鸟预售成交数据，形成"前端内容创意—中端投流放大—后端核销转化"的完整数据复盘闭环。',
+          },
+        ],
+      },
+    ],
   },
+
+  /* ============================================================
+     篇 02 · 北京行行行广告 —— 数字驱动（2 个项目 = 2 页）
+     2026-09-22 晚：points 机械切块（首个「：」前做小标题），内容一字未改。
+     ============================================================ */
   {
     id: 'hanghanghang',
-    date: '25.07 – 08',
+    date: '2025.07 - 2025.08',
+    months: [7, 8],
     org: '北京行行行广告',
-    role: '整合营销',
-    title: '亿级曝光是怎么炼成的',
-    titleEn: 'Make it loud, make it right',
-    body: [
-      '服务快手和神州租车的那两个月，第一次离「亿级曝光」这么近。方案改到第十一版才明白：大客户的 brief 里每个字都有预算。',
-      '整合营销就是把一颗火花铺成一片草原——线上话题、线下物料、达人矩阵，缺一角都会漏气。',
+    short: '行行行广告',
+    role: '整合营销部',
+    place: '北京',
+    title: '18.41 亿的那一夜',
+    titleEn: 'The 1.84-billion night',
+    lead: '广告公司里同时扛两个不同类型的项目：一个拼对热点的即时反应，一个拼对品牌的长期理解。',
+    challenge: '两套逻辑、两条节奏：电商节点整合营销要快，品牌自媒体代运营要深。',
+    challengeTone: 'blue',
+    stats: [
+      { value: '18.41亿+', label: '话题曝光' },
+      { value: '26', label: '规划热点' },
+      { value: '39', label: '累计上榜' },
+      { value: 'TOP1', label: '快手热榜' },
     ],
-    photos: [
-      { src: '/works/shenzhou/p01-cover-w640.jpg', caption: 'campaign', rot: -2.0 },
-      { src: '/works/shenzhou/p17-challenge-w640.jpg', caption: 'challenge', rot: 2.6 },
+    chips: ['整合营销', '热点话题运营', '品牌代运营', '竞品调研'],
+    review: [
+      {
+        sub: '',
+        text: '一个实习里经历两类项目，练出两种节奏；而两者的共同地基，都是「调研—策略—执行—复盘」的完整闭环。',
+      },
     ],
-    chips: ['整合营销', '快手', '神州租车'],
     doodle: 'blue',
+    sections: [
+      {
+        index: '项目一',
+        title: '快手电商「老铁降温季」',
+        summary: '参与快手电商节点整合营销全案：策划案撰写、热搜词策划与热点追踪。',
+        blocks: [
+          {
+            sub: '',
+            text: '围绕「热得我奶都开空调了」等高温热梗规划 26 个热点，主推空调 / 电扇 / 凉席 / 艾灸 / 穴位贴五类消暑单品',
+          },
+          {
+            sub: '',
+            text: '事件营销创意借「铁扇公主」透传「为老铁降降温」心智，跟进「铁扇纳凉 · 兵马俑都舒畅」国风物料（1 概念图 + 3 系列海报）',
+          },
+          {
+            sub: '执行协同',
+            text: '写达人 brief、对接营销号落地内容，整理传播日报与户外投放反馈，跟进线下大屏素材',
+          },
+        ],
+        result:
+          '话题曝光 18.41 亿+，累计上榜 39 个，最高冲至快手热榜 TOP1；成功承接热射病、空调清洗、团建中暑等热度并导向商品卡。',
+        highlights: [
+          { value: '18.41亿+', label: '话题曝光' },
+          { value: '39', label: '累计上榜' },
+          { value: 'TOP1', label: '快手热榜' },
+        ],
+        clips: [
+          {
+            kind: 'table',
+            caption: '传播数据',
+            head: ['指标', '数值'],
+            rows: [
+              ['话题曝光', '18.41 亿+'],
+              ['规划热点', '26 个'],
+              ['累计上榜', '39 个'],
+              ['热榜 TOP10', '11 个'],
+              ['社会 / 有用榜 TOP10', '17 个'],
+            ],
+            rot: -1.2,
+          },
+          { kind: 'photo', caption: 'campaign wall', hint: '热搜榜 / 海报物料', tall: true, rot: 2 },
+        ],
+      },
+      {
+        index: '项目二',
+        title: '神州租车自媒体代运营',
+        summary: '独立完成神州租车及竞品四平台调研，并参与整体运营规划与创意提案。',
+        blocks: [
+          {
+            sub: '',
+            text: '系统性调研微信 / 微博 / 小红书 / 抖音四平台（账号定位、内容策略、互动形式、运营效果），输出调研报告',
+          },
+          {
+            sub: '参与整体运营规划',
+            text: '输出「侵入用户生活、混熟交朋友、夹带生意的私货」策略方向与 Social / Media 双维框架',
+          },
+          {
+            sub: '',
+            text: '深度参与「苏超借势」创意（「别人口碑，我们行动」· 0 元起租），负责提案 PPT 50% 制作与美化',
+          },
+        ],
+        result: '方案创意与平台调性选择获甲方专项书面好评，核心策略被纳入甲方内部核心参考库。',
+        clips: [
+          { kind: 'photo', caption: 'proposal deck', hint: '提案 PPT 页面', rot: -2.2 },
+          {
+            kind: 'table',
+            caption: '四平台竞品调研',
+            head: ['平台', '调研维度'],
+            rows: [
+              ['微信', '账号定位 / 内容策略'],
+              ['微博', '互动形式 / 运营效果'],
+              ['小红书', '内容策略 / 运营效果'],
+              ['抖音', '内容策略 / 运营效果'],
+            ],
+            rot: 1.3,
+          },
+        ],
+      },
+    ],
   },
+
+  /* ============================================================
+     篇 03 · 北京氪星创服 —— 三条产线（3 个板块 = 3 页）
+     ============================================================ */
   {
     id: 'kexing',
-    date: '24.07 – 09',
+    date: '2024.07 - 2024.08',
+    months: [7, 8],
     org: '北京氪星创服',
+    short: '氪星创服',
     role: '品牌市场部',
-    title: '第一次把项目送上热搜',
-    titleEn: 'My first trending topic',
-    body: [
-      '氪星的夏天属于大型项目传播：排期表贴满墙，物料组凌晨还在对版本。短视频和多平台运维听上去琐碎，拼起来才是传播的全貌。',
-      '热搜掉下来的那一刻，整个办公室安静了半秒，然后所有人都在笑。那个半秒我记到现在。',
+    place: '北京',
+    title: '一个人，三条产线',
+    titleEn: 'Three lines, one pair of hands',
+    lead: '科创品牌的内容运营与活动执行。一个人覆盖多平台内容与多场大型活动，产出和现场都得保质保量。',
+    challenge: '一人覆盖多平台内容与多场大型活动，内容产出与现场执行需同时保质保量。',
+    challengeTone: 'mint',
+    stats: [
+      { value: '4', label: '条视频上线' },
+      { value: '2', label: '条百科词条' },
+      { value: '3', label: '场大型活动' },
     ],
-    photos: [
-      { src: '/works/chiwei/p01-cover-w640.jpg', caption: 'kick-off', rot: 1.9 },
-      { src: '/works/chiwei/p10-roadmap-w640.jpg', caption: 'roadmap', rot: -2.2 },
+    chips: ['视频号运营', '多平台运维', '大型活动执行'],
+    review: [
+      {
+        sub: '',
+        text: '品牌岗既要「能写」，也要「能到场」—— 内容与现场是两条腿，缺一条都走不远。',
+      },
     ],
-    chips: ['短视频', '大型项目传播'],
     doodle: 'loop',
+    sections: [
+      {
+        index: '01',
+        title: '短视频内容生产',
+        summary: '主导「翼氪计划」视频号短视频全流程：脚本 / 拍摄 / 剪辑 / 数据。',
+        blocks: [
+          { sub: '', text: '独立完成外交官系列、七夕活动 2 条长视频的创意、拍摄与剪辑' },
+          { sub: '全流程自持', text: '脚本 → 拍摄 → 剪辑 → 数据复盘' },
+        ],
+        result: '4 条视频按期上线，形成「策划—制作—数据复盘」的完整视频能力。',
+        highlights: [{ value: '4', label: '条视频上线' }],
+        clips: [
+          { kind: 'photo', caption: 'on set', hint: '拍摄 / 剪辑工作照', rot: 2 },
+          { kind: 'stat', value: '4 条', label: '视频交付上线', rot: -2.2 },
+        ],
+      },
+      {
+        index: '02',
+        title: '多平台内容运维',
+        summary: '运营公司官网、公众号、百家号，负责推文撰写与排版。',
+        blocks: [
+          { sub: '', text: '官网 / 公众号 / 百家号日常推文撰写与排版' },
+          { sub: '', text: '撰写并优化百度百科词条 2 条，完成品牌词条建设' },
+        ],
+        result: '多平台内容稳定供给，2 条百科词条通过审核。',
+        highlights: [{ value: '2', label: '条百科词条过审' }],
+        clips: [
+          {
+            kind: 'table',
+            caption: '平台与产出',
+            head: ['平台', '内容'],
+            rows: [
+              ['官网', '推文'],
+              ['公众号', '推文 / 排版'],
+              ['百家号', '推文 / 排版'],
+            ],
+            rot: -1.4,
+          },
+          { kind: 'stat', value: '2 条', label: '百科词条过审', rot: 2 },
+        ],
+      },
+      {
+        index: '03',
+        title: '大型活动执行',
+        summary: '多场大型活动的现场记录、大纲梳理与传播支持。',
+        blocks: [
+          { sub: '第 26 届北京科技博览会', text: '撰写活动邀请推文' },
+          { sub: '北京医药健康与新能源产业招商推介会', text: '现场记录、大纲梳理、推文排版' },
+          { sub: '「创业军机处」', text: '协助现场调度与内容记录，撰写 ITEC2024 传播总结' },
+        ],
+        result: '多场活动按期完成现场记录与传播支持，「现场—内容—传播」无缝衔接。',
+        highlights: [{ value: '3', label: '场大型活动' }],
+        clips: [
+          { kind: 'photo', caption: 'expo booth', hint: '活动现场照', rot: 2.2 },
+          {
+            kind: 'table',
+            caption: '活动清单',
+            head: ['活动', '我的部分'],
+            rows: [
+              ['第 26 届北京科技博览会', '邀请推文'],
+              ['医药健康与新能源招商推介会', '记录 / 大纲 / 排版'],
+              ['创业军机处', '现场调度 / 记录'],
+            ],
+            rot: -1.2,
+          },
+        ],
+      },
+    ],
   },
+
+  /* ============================================================
+     篇 04 · 春山里 —— 疏朗起点（2 个板块 = 2 页）
+     ============================================================ */
   {
     id: 'eden',
-    date: '23.07 – 09',
-    org: '天津伊甸园',
+    date: '2023.07 - 2023.08',
+    months: [7, 8],
+    org: '春山里',
+    short: '春山里',
     role: '新媒体运营',
+    place: '天津',
     title: '从零开始的新媒体',
     titleEn: 'Where it all began',
-    body: [
-      '第一段实习，在天津。一个人包下账号的选题、文案、拍摄和剪辑， cutoff 前夜在工位上逐帧调字幕。',
-      '那时候什么都不会，什么都敢试。回头看，日记本的第一页就是在这里写下的。',
+    lead: '第一段实习，在天津。零经验起步，一个人包下短视频的脚本、拍摄、剪辑，顺手还把文案写了。',
+    challenge: '零经验起步，要独立完成短视频全流程，同时承担文案与线下活动的内容产出。',
+    /* 原来是 mint，和篇03（氪星创服）撞色 —— 翻到后面两篇纸带颜色一模一样，就失去「每篇一个本子」的分篇感了。 */
+    challengeTone: 'rose',
+    stats: [
+      { value: '2000+', label: '单条视频浏览' },
+      { value: '3', label: '条抖音快剪' },
     ],
-    photos: [
-      { src: '/works/guanxia/p02-preface-w640.jpg', caption: 'day one', rot: -2.6 },
-      { src: '/works/guanxia/p03-overview-w640.jpg', caption: 'overview', rot: 1.5 },
+    chips: ['短视频全流程', '文案撰写', '内容生产闭环'],
+    review: [
+      {
+        sub: '',
+        text: '内容生产是闭环：创意、制作与数据反馈必须串在一起，缺一环效果都会打折。',
+      },
     ],
-    chips: ['短视频', '文案'],
     doodle: 'black',
+    sections: [
+      {
+        index: '01',
+        title: '短视频生产',
+        summary: '负责抖音短视频全流程：脚本、创意、拍摄、剪辑及后台数据分析。',
+        blocks: [
+          { sub: '', text: '参与线下马林巴音乐会拍摄' },
+          { sub: '', text: '独立完成 3 条抖音视频快剪' },
+        ],
+        result: '单条视频浏览量超 2000 次，跑通「策划—制作—发布—复盘」完整链路。',
+        highlights: [
+          { value: '2000+', label: '单条视频浏览' },
+          { value: '3', label: '条抖音快剪' },
+        ],
+        clips: [
+          { kind: 'photo', caption: 'day one', hint: '第一支片的拍摄现场', tall: true, rot: -2 },
+        ],
+      },
+      {
+        index: '02',
+        title: '文案创作',
+        summary: '撰写民宿故事文案，用于产品介绍与企业知名度提升。',
+        blocks: [
+          { sub: '', text: '从住客体验与在地场景里找故事角度' },
+          { sub: '', text: '建立文旅产品的内容表达，支撑账号日常供给' },
+        ],
+        result: '建立文旅产品的内容表达，支撑账号日常内容供给。',
+        clips: [
+          {
+            kind: 'table',
+            caption: '文案方向',
+            head: ['方向', '用途'],
+            rows: [
+              ['民宿故事', '产品介绍'],
+              ['品牌内容', '企业知名度'],
+            ],
+            rot: 1.4,
+          },
+        ],
+      },
+    ],
   },
 ];
+
+/**
+ * 摊平后的页表 —— NotebookOverlay 直接按它翻页。
+ *
+ * ⚠️ 顺序即翻页顺序：封面 → 篇01(篇首/板块…/复盘) → 篇02(…) → … 共 4 篇。
+ *    改这里的分页口径（比如以后要加「篇与篇之间的隔页」）只动这一个函数，
+ *    翻页机构本身不关心页里是什么。
+ */
+export type DiarySheet =
+  | { kind: 'cover' }
+  | {
+      kind: 'chapter' | 'review';
+      entry: DiaryEntry;
+      /** 第几篇（0 起） */
+      chapterIndex: number;
+      /** 本篇内第几页（1 起） */
+      pageInChapter: number;
+      /** 本篇共几页 */
+      pagesInChapter: number;
+    }
+  | {
+      kind: 'section';
+      entry: DiaryEntry;
+      chapterIndex: number;
+      section: DiarySection;
+      /** 本板块在篇内的序号（0 起） */
+      sectionIndex: number;
+      pageInChapter: number;
+      pagesInChapter: number;
+    };
+
+function buildSheets(): DiarySheet[] {
+  const out: DiarySheet[] = [{ kind: 'cover' }];
+  DIARY_ENTRIES.forEach((entry, ci) => {
+    // 篇首 + 各板块 + 复盘
+    const pagesInChapter = entry.sections.length + 2;
+    let n = 1;
+    const base = { entry, chapterIndex: ci, pagesInChapter };
+    out.push({ kind: 'chapter', ...base, pageInChapter: n++ });
+    entry.sections.forEach((section, si) => {
+      out.push({ kind: 'section', ...base, section, sectionIndex: si, pageInChapter: n++ });
+    });
+    out.push({ kind: 'review', ...base, pageInChapter: n++ });
+  });
+  return out;
+}
+
+export const DIARY_SHEETS: DiarySheet[] = buildSheets();
+
+/** 每篇「篇首页」在页表里的索引 —— 封面的四个跳转按钮直接翻到这里 */
+export const DIARY_CHAPTER_PAGES: number[] = DIARY_ENTRIES.map((_, ci) =>
+  DIARY_SHEETS.findIndex((s) => s.kind === 'chapter' && s.chapterIndex === ci),
+);
 
 /** 封面副题（Caveat 手写英文） */
 export const DIARY_COVER_EN = 'Internship Diary';

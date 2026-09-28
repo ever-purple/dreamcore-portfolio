@@ -1190,7 +1190,11 @@ body.is-diary-dragging * {
   left: 0;
   translate: none;
   width: 100vw;
+  /* 移动端地址栏：`100vh` 是"地址栏收起后"的高度，地址栏露着时底部会被吃掉一截
+     （日记本最后一行、翻页钮就压在下面）。`100dvh` 跟随可见视口实时变化。
+     先写 vh 再写 dvh：不支持的浏览器只认前一行，行为与改前完全一致。 */
   height: 100vh;
+  height: 100dvh;
   border-radius: 0;
   touch-action: auto;
   overflow: hidden;
@@ -5799,7 +5803,9 @@ body.is-diary-dragging * {
     column-count: 2;
   }
   .about-shell {
+    /* 同上：手机上 100vh 比可见视口高，卡片底部会顶到地址栏后面。dvh 兜底见上一条注释 */
     height: calc(100vh - 40px);
+    height: calc(100dvh - 40px);
     margin: 16px auto 24px;
   }
   .about-overlay {
@@ -7705,6 +7711,49 @@ body.green-os .about-overlay .about-pet {
   .ww-gauge-line,
   .ww-gauge-cap {
     right: 18px;
+  }
+  /* 刻度栏挪到不压轮播的位置：≤900px 时 .works-wheel-host 沉到底部 46%，
+     而 .works-hint 是相对**整屏**定位的（right:24px; bottom:62px），
+     正好落在那 46% 里，和轨道上的第二张卡片叠在一起。抬到轮播上方即可。 */
+  .works-hint {
+    bottom: calc(46% + 10px);
+  }
+}
+
+/* ── 手机（≤620px）作品轮播：收掉右侧刻度栏，把宽度还给项目文字 ──────────────
+   桌面版是「弧形轨道 + 右侧 178px 刻度竖栏」，两栏互不侵入靠
+   `.ww-item` 的 `padding-inline` 与 `.ww-gauge` **等宽**（178px）。
+   ≤900px 时两者都降到 104px —— 在 390px 手机上就等于 208px / 53% 的屏宽被内边距吃掉，
+   留给标题的只剩 94px（"香氛品牌观夏 夏季营销"只好折成两行），
+   而 58px 宽的刻度栏把项目名截成"香氛品…"。
+   刻度栏列的是**各项目名**，与轨道上的条目本身完全重复 ——
+   窄屏上把它收掉、宽度还给正文，是纯收益（想恢复只删这一条 display:none）。 */
+@media (max-width: 620px) {
+  .ww-item {
+    height: 66px;
+    margin-top: -33px;
+    padding-inline: 20px;
+    gap: 12px;
+  }
+  .ww-cover {
+    width: 68px;
+    height: 48px;
+  }
+  .ww-gauge {
+    display: none;
+  }
+  .ww-title {
+    font-size: 13.5px;
+  }
+  .ww-en {
+    font-size: 10.5px;
+  }
+  .works-hint {
+    /* 刻度栏没了，提示语改居中吸底，不再偏右压住卡片 */
+    right: auto;
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
   }
 }
 
@@ -16540,4 +16589,142 @@ article.dx-sec1::before {
 }
 .about-insp-vcard:has(.about-insp-cardform) {
   break-inside: avoid;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   简历下载提示（src/lib/resume.ts 创建 #dp-resume-toast）
+   ---------------------------------------------------------------------------
+   为什么不用内联 style 而是落在这里：这条提示要用站点调色板变量
+   （--pal-mint / --pal-mint-neon / --pal-choc），还要按状态切换圆点颜色，
+   内联 style 写 var() 与 [data-state] 选择器都很别扭。
+
+   配色 = 全屏菜单那套「薄荷巧克力」：
+     底 rgba(59,43,33,.94) ← --pal-choc (#3b2b21) 加透明度（需要微微透出底下画面）
+     字 --pal-mint (#b5e3d6)
+     边框 mint 的 34% 透明度，勾一圈很淡的薄荷描边
+   定位：fixed 贴底居中，带 safe-area 让 iPhone 的横条不压住它。
+   pointer-events:none 保证它永远不挡点击（尤其是连续点「简历」）。
+   ═══════════════════════════════════════════════════════════════════════════ */
+.dp-resume-toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(34px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 9999;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  max-width: calc(100vw - 36px);
+  padding: 11px 20px;
+  border-radius: 999px;
+  background: rgba(59, 43, 33, 0.94);
+  border: 1px solid rgba(181, 227, 214, 0.34);
+  color: var(--pal-mint);
+  font-size: 13.5px;
+  line-height: 1.35;
+  letter-spacing: 0.02em;
+  text-align: left;
+  box-shadow:
+    0 12px 34px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  pointer-events: none;
+  animation: dp-resume-toast-in 0.26s var(--ease-world, cubic-bezier(0.22, 1, 0.36, 1)) both;
+}
+.dp-resume-toast.is-out {
+  animation: dp-resume-toast-out 0.26s var(--ease-in, cubic-bezier(0.5, 0, 0.75, 0)) both;
+}
+
+/* 状态圆点：加载中薄荷 + 外扩脉冲；完成变霓虹薄荷；出错转暖橘 */
+.dp-resume-toast__dot {
+  position: relative;
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--pal-mint);
+  transition: background 0.18s linear;
+}
+.dp-resume-toast[data-state='loading'] .dp-resume-toast__dot::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 1px solid var(--pal-mint);
+  animation: dp-resume-toast-pulse 1.05s ease-out infinite;
+}
+.dp-resume-toast[data-state='done'] .dp-resume-toast__dot {
+  background: var(--pal-mint-neon);
+}
+.dp-resume-toast[data-state='error'] .dp-resume-toast__dot {
+  background: #d98b6a;
+}
+
+@keyframes dp-resume-toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 12px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+@keyframes dp-resume-toast-out {
+  from {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+}
+@keyframes dp-resume-toast-pulse {
+  from {
+    transform: scale(0.72);
+    opacity: 0.9;
+  }
+  to {
+    transform: scale(1.55);
+    opacity: 0;
+  }
+}
+
+/* 动效敏感用户：只留淡入淡出，去掉位移与脉冲（内容照样看得全） */
+@media (prefers-reduced-motion: reduce) {
+  .dp-resume-toast,
+  .dp-resume-toast.is-out {
+    animation: none;
+  }
+  .dp-resume-toast[data-state='loading'] .dp-resume-toast__dot::after {
+    animation: none;
+    opacity: 0.55;
+    transform: scale(1.1);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   移动端视口兜底：全屏浮层改用 dvh
+   ---------------------------------------------------------------------------
+   手机浏览器（iOS Safari / 安卓 Chrome）的 `100vh` 指的是**地址栏收起后**的大视口。
+   地址栏露着时底部会被吃掉 50~100px —— 而 `inset: 0` 的 fixed 浮层同样按大视口解析，
+   于是浮层里最后一行字 / 吸底按钮正好压在地址栏后面，滚到底也够不着，
+   表现出来就是「显示不全」。`dvh` 跟随**可见**视口实时变化，改完底部永远落在可见区内。
+
+   · 只加 `height`，不动 `inset`：height 与 top 同时存在时 bottom 自动让位，
+     等价于「从顶铺满可见视口」。
+   · 包在 `@supports` 里：不认识 dvh 的旧浏览器整块跳过，行为与改前完全一致。
+   · **不碰** 3D / 滚动驱动那几层（首页 sticky 容器、.studio-lens-*）：
+     它们拿 `vh` 和 `window.innerHeight` 配对算推进度，换 dvh 反而会在地址栏收放时抖动。
+     日记本与 About 卡片那两处是"独立的一整屏"，已在原处直接改（height: 100vh → 100dvh）。
+   ═══════════════════════════════════════════════════════════════════════════ */
+@supports (height: 100dvh) {
+  .about-overlay,
+  .works-detail,
+  .studio-menu-overlay,
+  .studio-contact__sheet {
+    height: 100dvh;
+  }
 }

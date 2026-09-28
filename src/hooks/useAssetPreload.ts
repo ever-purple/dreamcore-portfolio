@@ -9,10 +9,12 @@ import { useEffect, useState } from 'react';
  *
  * 分成两组：
  *   wait    —— 计进百分比、也决定什么时候放行加载页。
- *              内容是首屏真正要用的东西（前 N 张序列帧 + 几个小模型）。
- *   prefetch —— 只预热 HTTP 缓存，不计入百分比、不阻塞放行。
- *              给「点进去才用得上的大模型」用（比如 9MB 的书架 rack.glb），
+ *              内容是首屏真正要用的东西（现在的定义是「首页本体那一串序列帧」）。
+ *   prefetch —— 只预热 HTTP 缓存，不计入百分比、不阻塞放行，**且等 wait 组跑完才开始**。
+ *              给「点进去才用得上的大模型」用（工作室里的 6 个 GLB，含 9MB 的 rack.glb），
  *              这样进工作室时它多半已经在缓存里了，不会卡一下。
+ *              2026-09-28：原来它在加载页期间就并行开拉，等于跟序列帧抢带宽，
+ *              现在改成 ready 门控 + 并发 3，首屏带宽独占。
  *
  * 三条保底规则（否则慢网/断网会把用户永久困在加载页）：
  *   1. 单个资源挂了也算完成，不重试；
@@ -41,6 +43,9 @@ interface Options {
 }
 
 const DEFAULT_TIMEOUT = 12000;
+
+/** 预热组的并发上限。6 个模型（含 9MB 的 rack.glb）一起发会把网络打满 */
+const PREFETCH_CONCURRENCY = 3;
 
 /** 判断这批资源是否值得后台预热（省流量模式 / 慢网就别烧用户流量了） */
 function worthPrefetching(): boolean {
@@ -131,34 +136,52 @@ export function useAssetPreload({
 
   useEffect(() => {
     if (prefetch.length === 0) return;
+    // **wait 组跑完（ready）之后**才允许预热。
+    // 这里原来是「固定延迟 1.2s 就开跑」，等于在加载页还在等帧的时候跟它抢带宽 ——
+    // 首屏最慢的那几秒里，一个 9MB 的 rack.glb 正在并行下载，把帧挤到后面。
+    // 现在改成 ready 门控：加载页期间带宽 100% 给序列帧，放行后再安静地拉模型。
+    if (!ready) return;
     let cancelled = false;
+    // 省流量模式 / 2G/3G：别为了预热烧用户流量
     if (!worthPrefetching()) return;
 
-    // 晚 1.2 秒再拉，别跟首屏抢带宽
     const timer = window.setTimeout(() => {
       if (cancelled) return;
       let finished = 0;
+      let active = 0;
+      const queue = [...prefetch];
+
       const finish = () => {
+        active -= 1;
         if (cancelled) return;
         finished += 1;
         setPrefetchDone(finished);
+        pump();
       };
-      prefetch.forEach((url) => {
-        fetch(url)
-          .then((r) => {
-            if (!r.ok) throw new Error(String(r.status));
-            return r.arrayBuffer();
-          })
-          .then(finish)
-          .catch(finish);
-      });
-    }, 1200);
+
+      /** 限量并发：6 个模型一起发会把刚刚好起来的网络又打满 */
+      const pump = () => {
+        while (active < PREFETCH_CONCURRENCY && queue.length > 0) {
+          const url = queue.shift() as string;
+          active += 1;
+          fetch(url)
+            .then((r) => {
+              if (!r.ok) throw new Error(String(r.status));
+              return r.arrayBuffer(); // 只进 HTTP 缓存，解析交给 three.js
+            })
+            .then(finish)
+            .catch(finish);
+        }
+      };
+
+      pump();
+    }, 300);
 
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [prefetchKey]);
+  }, [prefetchKey, ready]);
 
   return { done, total: wait.length, ready, prefetchDone, prefetchTotal: prefetch.length };
 }

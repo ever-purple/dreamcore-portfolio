@@ -47,13 +47,25 @@ export interface WindowedFrames {
 export interface WindowedFramesOptions {
   /** 并发解码上限，默认 12。120 张同时发会把主线程和带宽一起打满 */
   concurrency?: number;
+  /**
+   * 兜底超时：到点即使还没全下完也算 `complete`，把用户放行。
+   * 没有它的话慢网（3G / 弱 Wi-Fi）会被永久困在加载页 —— `useAssetPreload` 那个
+   * 12s 超时**救不了这里**，因为 App 的放行条件是 `assetsReady && framesComplete`，
+   * 而 `framesComplete` 只从本 hook 来。
+   * 没下完的帧由绘制端的 `nearestLoadedLE()` 顶替（画最近一张已就绪的），
+   * 所以放行后画面是"稍糊但一直在动"，而不是黑屏或冻帧。
+   */
+  timeoutMs?: number;
 }
+
+/** 慢网兜底放行时间。3.2MB 的移动端帧集在这个时限内能跑满 1.4Mbps 以上的链路 */
+const DEFAULT_TIMEOUT = 18000;
 
 export function useWindowedFrames(
   urls: string[],
   options: WindowedFramesOptions = {},
 ): WindowedFrames {
-  const { concurrency = 12 } = options;
+  const { concurrency = 12, timeoutMs = DEFAULT_TIMEOUT } = options;
 
   const imagesRef = useRef<HTMLImageElement[]>([]);
   if (imagesRef.current.length !== urls.length) {
@@ -76,6 +88,7 @@ export function useWindowedFrames(
     /** 全部到位时对外置一次状态（避免 120 次 setState 把加载页拖成幻灯片） */
     const markAllDone = () => {
       if (cancelled) return;
+      window.clearTimeout(timer);
       setState({ ready: true, complete: true, loadedCount: done });
     };
 
@@ -131,17 +144,26 @@ export function useWindowedFrames(
       return;
     }
 
+    // 超时兜底：到点无条件放行，没下完的帧交给绘制端的 nearestLoadedLE 顶替。
+    // 必须放在 pump() 之前 —— markAllDone 里 clearTimeout(timer)，而 pump() 会同步
+    // 调进 markAllDone，若 timer 还没初始化就会撞上 TDZ（const 的暂时性死区）。
+    const timer = window.setTimeout(() => {
+      if (cancelled) return;
+      setState((s) => (s.complete ? s : { ready: true, complete: true, loadedCount: done }));
+    }, timeoutMs);
+
     pump();
 
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
       images.forEach((img) => {
         if (!img) return;
         img.onload = null;
         img.onerror = null;
       });
     };
-  }, [urls, concurrency, images]);
+  }, [urls, concurrency, timeoutMs, images]);
 
   // 全量加载：focus 不再需要
   const focus = useCallback(() => {}, []);

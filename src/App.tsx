@@ -21,16 +21,26 @@ const TOTAL_FRAMES = 120;
  *
  * 判据用「画布像素宽」而不是 CSS 宽，因为 canvas 尺寸是
  * `innerWidth × min(devicePixelRatio, 2)`（见 HomeSection.resizeCanvas）。
- * 阈值 1600 换算回来：手机竖屏 390×2 = 780 ✅小图；iPad 竖屏 768×2 = 1536 ✅小图；
- * 只有桌面（1920 起）和手机横屏（844×2 = 1688）才会走大图 —— 这两个场景屏幕大、
- * 差 70% 字节的感知远小于清晰度损失，取舍是故意的。
+ *
+ * ⚠️ 只看宽度会漏掉**手机横屏**：844×2 = 1688 会被判成大屏，于是手机去吃 10.7MB
+ * 的桌面帧集 —— 恰恰是最该省流量的场景。所以再压一道「短边」条件：
+ * 短边 ≤ 900 的一律走小图（横竖屏都被盖住）。
+ *
+ * ⚠️ 反过来，短边条件**不能单独用**：13 寸视网膜本 CSS 1440×900、dpr 2 时
+ * 实际要 2880px 宽，只按短边 900 判会掉进小图，清晰度白丢一档。
+ * 因此两个条件是与的关系，canvasPx 上限给到 2000（够 1440 CSS × 1.4 左右）。
+ *
+ * 用例核对：手机竖屏 390×2=780 ✅小图 ｜ 手机横屏 844×2=1688 ✅小图 ｜
+ * iPad 竖屏 1024×2=2048 ❌大图（屏幕本来大，小图会糊）｜
+ * 视网膜本 1440×900@2 = 2880 ❌大图（保清晰）｜ 桌面 1920×1080 ❌大图。
  *
  * 2026-09-28 从 JPEG 换 WebP：`public/frames` 原来 63.1MB（120 张 2560×1443），
  * 是全站首屏最大的一笔。WebP q88 后 10.7MB（−83%），实测 PSNR 45.7dB（>40 即视觉无损）。
  */
 const FRAME_DIR = (() => {
   const canvasPx = window.innerWidth * Math.min(window.devicePixelRatio || 1, 2);
-  return canvasPx <= 1600 ? 'frames-sm' : 'frames';
+  const shortSide = Math.min(window.innerWidth, window.innerHeight);
+  return shortSide <= 900 && canvasPx <= 2000 ? 'frames-sm' : 'frames';
 })();
 
 const frameUrls = Array.from(

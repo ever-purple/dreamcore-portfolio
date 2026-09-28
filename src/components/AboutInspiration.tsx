@@ -1420,7 +1420,10 @@ function LinkGrid({
 /* ------------------------------------------------------------------ */
 
 const MODE_TEXT: Record<string, { label: string; hint: string }> = {
-  remote: { label: '远端后端', hint: '改动直接发往配置的内容接口，上线后在后端改的就是同一份数据。' },
+  remote: {
+    label: '云端',
+    hint: '改动直接发往服务器云端（图片存 Vercel Blob，数据存云数据库）—— 换设备、清缓存、刷新都还在，除非你在作者模式删除。',
+  },
   project: {
     label: '项目文件',
     hint: '改动写进 public/insp/data.json —— 刷新、换浏览器、重新构建部署都带着走。',
@@ -1442,6 +1445,8 @@ function AuthorBar({ onChanged }: { onChanged: () => void }) {
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    // 存储后端在模块加载时就确定了（USE_REMOTE 是常量），直接读即可；
+    // 只有 dev 下的 project 模式需要探一下 /__studio 通道是否可用。
     void ensureProjectWriter().then(() => setMode(storageMode()));
   }, []);
 

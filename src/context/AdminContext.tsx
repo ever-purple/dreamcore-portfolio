@@ -8,6 +8,7 @@ import {
 } from 'react';
 import { IS_ADMIN, urlAdminOverride } from '@/config';
 import { GATE_ENABLED, checkKey, isUnlocked } from '@/lib/authorAuth';
+import { migrateLocalToRemote } from '@/lib/contentApi';
 
 /**
  * 作者 / 访客 模式的唯一来源（Single Source of Truth）。
@@ -95,6 +96,14 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     if (!(await checkKey(key))) return false;
     setIsAdmin(true);
     persistMode(true);
+    // 解锁成功 → 顺手把浏览器本地那份旧数据（作者以前录的）迁上云端，
+    // 这样改走云端后旧数据不会丢。异步执行、不阻塞进入作者模式。
+    void migrateLocalToRemote().then((moved) => {
+      if (moved && typeof window !== 'undefined') {
+        // 迁移成功，本地这份已上云，下次刷新走云端就是最新了
+        console.info('[insp] 旧数据已迁移到云端');
+      }
+    });
     return true;
   }, []);
 

@@ -1,5 +1,5 @@
 import { MOCK } from '@/data/inspiration';
-import { putBlob } from '@/lib/blobStore';
+import { putBlob, getBlobURL, isIdbRef } from '@/lib/blobStore';
 import {
   fetchLocalLinkMeta,
   probeInspWriter,
@@ -192,6 +192,109 @@ export async function hydrate(): Promise<void> {
   }
   const disk = await loadFromProjectFile();
   if (disk && disk.savedAt >= current.savedAt) current = disk;
+}
+
+/**
+ * 把当前浏览器本地那份数据推上云端（作者解锁成功后调用一次）。
+ * 用于「旧数据迁移」：作者以前在旧版里录的数据躺在 localStorage / IndexedDB，
+ * 现在改走云端后，解锁那一刻把它们一次性焊进服务器。
+ *
+ * 迁移时会顺带把 `idb:` 引用的图片本体也上传到 Vercel Blob，并把引用换成
+ * https 地址 —— 否则 idb: 引用到了别的设备读不到（IndexedDB 是本机的）。
+ *
+ * 云端已有更新或相同时间的数据时不动（避免旧数据盖掉新数据）。
+ */
+export async function migrateLocalToRemote(): Promise<boolean> {
+  if (!USE_REMOTE) return false;
+  const remote = await loadFromRemote();
+  if (remote && remote.savedAt >= current.savedAt) return false;
+  if (current.savedAt <= 0) return false;
+
+  try {
+    // 先把 store 里的 idb: 引用替换成 Blob 地址
+    await liftIdbRefs();
+    await saveRemote();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** MIME → 扩展名（迁移 idb: 图片时用）。 */
+function mimeToExt(mime: string): string | null {
+  const map: Record<string, string> = {
+    'image/jpeg': 'jpg',
+    'image/jpg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp',
+    'image/avif': 'avif',
+    'image/gif': 'gif',
+    'audio/mpeg': 'mp3',
+    'audio/mp4': 'm4a',
+    'audio/x-m4a': 'm4a',
+    'audio/flac': 'flac',
+    'audio/x-flac': 'flac',
+    'audio/wav': 'wav',
+    'audio/x-wav': 'wav',
+    'audio/ogg': 'ogg',
+    'audio/aac': 'aac',
+  };
+  return map[mime] ?? null;
+}
+
+/**
+ * 把 store 里所有 `idb:` 引用对应的图片，上传到 Vercel Blob，替换成 https 地址。
+ * 遍历六个集合，找 src/cover/icon 字段里的 idb: 引用。
+ */
+async function liftIdbRefs(): Promise<void> {
+  const fields = ['src', 'cover', 'icon'] as const;
+  const store = current.store as Record<string, unknown>;
+  let changed = false;
+
+  for (const key of COLLECTION_KEYS) {
+    const list = store[key];
+    if (!Array.isArray(list)) continue;
+    const newList: unknown[] = [];
+    for (const item of list) {
+      if (!item || typeof item !== 'object') {
+        newList.push(item);
+        continue;
+      }
+      const rec = { ...(item as Record<string, unknown>) };
+      let itemChanged = false;
+      for (const f of fields) {
+        const v = rec[f];
+        if (!isIdbRef(v)) continue;
+        const blobUrl = await getBlobURL(v);
+        if (!blobUrl) continue;
+        // 从 objectURL 取回 blob，再上传到远端
+        try {
+          const blobRes = await fetch(blobUrl);
+          if (!blobRes.ok) continue;
+          const blob = await blobRes.blob();
+          // 按 blob 的真实 MIME 推断扩展名，避免无扩展名导致服务端拒收
+          const ext = mimeToExt(blob.type);
+          if (!ext) continue;
+          const file = new File([blob], `migrated-${String(v).slice(4)}.${ext}`, { type: blob.type });
+          const remoteUrl = await uploadRemote(file);
+          if (remoteUrl) {
+            rec[f] = remoteUrl;
+            itemChanged = true;
+            changed = true;
+          }
+        } catch {
+          /* 这张传不上去就保留 idb: 引用（至少本机还能看） */
+        }
+      }
+      newList.push(itemChanged ? rec : item);
+    }
+    if (changed) store[key] = newList;
+  }
+
+  if (changed) {
+    current = { ...current, store: store as Store };
+    saveLocal();
+  }
 }
 
 /* ------------------------------------------------------------------ */

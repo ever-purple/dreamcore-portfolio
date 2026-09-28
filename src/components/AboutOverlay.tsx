@@ -13,6 +13,7 @@ import { GreenOsBar, GreenOsBoot, GreenOsTitle } from '@/components/GreenOs';
 import { PlayerProvider } from '@/context/PlayerContext';
 import { aboutNav } from '@/data/about';
 import { useEscape } from '@/lib/escape-stack';
+import { markSection } from '@/lib/visitLog';
 
 type Props = {
   open: boolean;
@@ -52,6 +53,17 @@ export function AboutOverlay({ open, onClose, onHoverChange, greenOs = false, bo
   const scrollAboutTop = useCallback(() => {
     overlayRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
+
+  /**
+   * 栏目浏览轨迹：浮层打开时记落地页，之后每切一次记一个。
+   * 站长在后台就能看到「面试官点开了哪几个栏」——
+   * 比只有一句「有人来过」有用得多。
+   * 埋点全部静默，访客无感（见 src/lib/visitLog.ts）。
+   */
+  useEffect(() => {
+    if (!open) return;
+    markSection(active);
+  }, [open, active]);
 
   // Green OS 模式下每次打开都重新走一遍开机自检；非 Green OS 模式永远不显示。
   // boot=false（面试官模式）同理永远不显示 —— 直接给桌面。

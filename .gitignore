@@ -7,6 +7,7 @@ dist-test2
 dist-openfix
 dist-modefix
 dist-insplab
+dist-visitlog
 .vite
 
 # 日志

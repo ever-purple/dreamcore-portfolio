@@ -68,6 +68,25 @@ function fakeUpstash() {
         const arr = lists.get(args[0]) ?? [];
         lists.set(args[0], arr.slice(Number(args[1]), Number(args[2]) + 1));
         result = 'OK';
+      } else if (cmd === 'lindex') {
+        // visitlog 补写用：按 index 取一条，越界返回 null
+        const arr = lists.get(args[0]) ?? [];
+        const i = Number(args[1]);
+        result = i >= 0 && i < arr.length ? arr[i] : null;
+      } else if (cmd === 'lset') {
+        // visitlog 补写用：原地替换某一条，不改动 list 长度
+        const arr = lists.get(args[0]) ?? [];
+        const i = Number(args[1]);
+        if (i < 0 || i >= arr.length) {
+          res.writeHead(500, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ error: 'index out of range' }));
+          return;
+        }
+        arr[i] = args[2];
+        result = 'OK';
+      } else if (cmd === 'expire') {
+        // 假实现：TTL 一律当作设置成功，不做真实过期
+        result = 1;
       } else if (cmd === 'del') {
         result = lists.delete(args[0]) ? 1 : 0;
       } else {
@@ -137,6 +156,7 @@ server.listen(PORT, async () => {
   const visit = (await load('visit.js')).default;
   const guestbook = (await load('guestbook.js')).default;
   const admin = (await load('admin.js')).default;
+  const visitlog = (await load('visitlog.js')).default;
 
   console.log('\n【访客统计 /api/visit】');
   let res = makeRes();
@@ -213,6 +233,60 @@ server.listen(PORT, async () => {
   res = makeRes();
   await guestbook(makeReq('GET'), res);
   check('清空后确实没了', res.body.list.length === 0, res.body.list);
+
+  /* ---------------- 访问日志 /api/visitlog ---------------- */
+  console.log('\n【访问日志 /api/visitlog】');
+
+  res = makeRes();
+  await visitlog(makeReq('GET'), res);
+  check('没口令读不到日志', res.statusCode === 401, res.body);
+
+  // 模拟：带 ?from= 标记的面试官，从手机点进来
+  res = makeRes();
+  await visitlog(
+    makeReq('POST', {
+      body: { visitId: 'v-abc', from: '某某公司', ref: 'linkedin.com', path: 'home' },
+      headers: { 'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0) AppleWebKit/605 Safari/604' },
+    }),
+    res,
+  );
+  check('记一条访问成功', res.body.ok === true, res.body);
+
+  // 切栏目 → 补写同一条，不该多出一条
+  res = makeRes();
+  await visitlog(
+    makeReq('POST', { body: { visitId: 'v-abc', sections: ['intro', 'inspiration'], dwell: 42 } }),
+    res,
+  );
+  check('切栏目是补写不是新增', res.body.ok === true && res.body.patched === true, res.body);
+
+  // 下载简历
+  res = makeRes();
+  await visitlog(
+    makeReq('POST', { body: { visitId: 'v-abc', events: ['简历下载'], sections: ['intro'], dwell: 95 } }),
+    res,
+  );
+  check('简历下载能记上', res.body.ok === true && res.body.patched === true, res.body);
+
+  // 另一位访客：没带标记
+  res = makeRes();
+  await visitlog(makeReq('POST', { body: { visitId: 'v-xyz', path: 'studio' } }), res);
+  check('第二位访客单独成条', res.body.ok === true && !res.body.patched, res.body);
+
+  res = makeRes();
+  await visitlog(makeReq('GET', { headers: { 'x-admin-key': 'secret123' } }), res);
+  const logs = res.body.logs ?? [];
+  check('日志总数 = 2（补写没多记）', logs.length === 2, logs.length);
+  check('最新在前', logs[0]?.id === 'v-xyz', logs.map((l) => l.id));
+
+  const tagged = logs.find((l) => l.id === 'v-abc');
+  check('来源标记存下来了', tagged?.from === '某某公司', tagged?.from);
+  check('栏目轨迹合并正确', JSON.stringify(tagged?.sections) === '["intro"]', tagged?.sections);
+  check('简历下载动作记上了', (tagged?.events ?? []).includes('简历下载'), tagged?.events);
+  check('停留时长更新到 95 秒', tagged?.dwell === 95, tagged?.dwell);
+  check('手机端识别成 mobile', tagged?.device === 'mobile', tagged?.device);
+  check('UA 粗判出 iOS', /iOS/.test(tagged?.ua ?? ''), tagged?.ua);
+  check('没有口令的访客读不到别人的日志', res.statusCode === 200);
 
   // 附：没配存储那条不在这里测 —— KV_URL 是模块加载时就读进来的常量，
   // 同一个进程里删环境变量已经晚了。真机上配不配由 Vercel 决定。

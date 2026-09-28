@@ -90,6 +90,41 @@
       hr { border: none; border-top: 1px solid var(--line); margin: 22px 0; }
       .toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
       .spacer { flex: 1 1 auto; }
+
+      /* ── 访问日志 ─────────────────────────────── */
+      .log { display: flex; flex-direction: column; gap: 10px; }
+      .log-row {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-left: 3px solid var(--line);
+        border-radius: 12px;
+        padding: 12px 14px;
+      }
+      /* 带 ?from= 标记 = 你主动发出的链接被点开了，这是最该被看见的一条 */
+      .log-row.is-tagged { border-left-color: var(--accent); background: #fffdf8; }
+      /* 下载了简历 = 真在考虑你，独立高亮 */
+      .log-row.is-hot { border-left-color: #2f7a4d; background: #f7fdf9; }
+      .log-top { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+      .log-when { font-weight: 600; font-variant-numeric: tabular-nums; }
+      .log-geo { font-size: 12px; color: var(--ink-soft); }
+      .log-dev { font-size: 12px; color: var(--ink-soft); }
+      .log-sp { flex: 1 1 auto; }
+      .log-dwell { font-size: 12px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+      .log-line { font-size: 13px; margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+      .log-k { color: var(--ink-soft); font-size: 12px; }
+      .tag {
+        display: inline-block; padding: 1px 8px; border-radius: 999px;
+        background: var(--accent-soft); color: #8a5a1c; font-size: 12px; font-weight: 600;
+      }
+      .chip {
+        display: inline-block; padding: 1px 7px; border-radius: 6px;
+        background: #f2efe8; color: var(--ink-soft); font-size: 12px;
+      }
+      .chip.hot { background: #e3f5ea; color: #2f7a4d; font-weight: 600; }
+      .log-new {
+        font-size: 11px; font-weight: 700; color: #fff; background: var(--accent);
+        padding: 1px 6px; border-radius: 999px; letter-spacing: .04em;
+      }
       @media (max-width: 520px) {
         body { padding: 20px 14px 48px; }
         .stat .n { font-size: 24px; }
@@ -125,6 +160,21 @@
           <button id="clear" class="danger">清空留言</button>
         </div>
         <p class="msg" id="msg" hidden></p>
+
+        <hr />
+
+        <h1 style="font-size: 16px; margin-bottom: 6px;">访问日志</h1>
+        <p class="sub" style="margin-bottom: 14px;">
+          谁能看到这些：只有你（要口令）。记的是「有没有人来认真看过」——
+          <b>带 ?from= 标记的那条</b>就是你发出去的链接被点开了。地区只到城市，
+          完整 IP 不落库，日志 30 天自动过期。
+        </p>
+        <div class="toolbar" style="margin-bottom: 12px;">
+          <button id="logOnlyTagged">只看带来源标记的</button>
+          <button id="logExport">导出日志</button>
+        </div>
+        <div class="log" id="logList"></div>
+        <p class="note" id="logNote"></p>
 
         <hr />
 
@@ -214,6 +264,135 @@
         }
 
         var currentData = null;
+        var currentLogs = [];
+        var onlyTagged = false;
+
+        /* ---------------- 访问日志 ---------------- */
+
+        /** 栏目 id → 中文名，后台列表里直接给人看 */
+        var SECTION_LABEL = {
+          intro: '自我介绍',
+          vision: '职业愿景',
+          inspiration: '灵感收藏',
+          guestbook: '留言板',
+          home: '首页',
+          studio: '工作室'
+        };
+
+        function secLabel(id) { return SECTION_LABEL[id] || id; }
+
+        function dwellText(sec) {
+          if (!sec || sec < 1) return '不到 1 秒';
+          if (sec < 60) return sec + ' 秒';
+          var m = Math.floor(sec / 60);
+          var s = sec % 60;
+          return s ? (m + ' 分 ' + s + ' 秒') : (m + ' 分钟');
+        }
+
+        function relText(ts) {
+          var d = Date.now() - ts;
+          if (d < 60000) return '刚刚';
+          if (d < 3600000) return Math.floor(d / 60000) + ' 分钟前';
+          if (d < 86400000) return Math.floor(d / 3600000) + ' 小时前';
+          return Math.floor(d / 86400000) + ' 天前';
+        }
+
+        function renderLogs() {
+          var logs = onlyTagged ? currentLogs.filter(function (l) { return l.from; }) : currentLogs;
+          var list = $('logList');
+          $('logNote').textContent = '共 ' + currentLogs.length + ' 条记录' +
+            (onlyTagged ? '（筛出带来源标记的 ' + logs.length + ' 条）' : '') +
+            ' · 最新在前 · 30 天自动清理';
+
+          if (!logs.length) {
+            list.innerHTML = '<p class="empty">' +
+              (onlyTagged ? '还没有带来源标记的访问。' : '还没有访问记录。') + '</p>';
+            return;
+          }
+
+          list.innerHTML = logs.map(function (l) {
+            var hot = (l.events || []).indexOf('简历下载') >= 0;
+            var cls = 'log-row' + (l.from ? ' is-tagged' : '') + (hot ? ' is-hot' : '');
+            var parts = [];
+
+            parts.push('<div class="log-top">');
+            parts.push('<span class="log-when">' + timeText(l.ts) + '</span>');
+            parts.push('<span class="log-geo">' + (l.geo ? escapeHtml(l.geo) : '地区未知') + '</span>');
+            parts.push('<span class="log-dev">' + (l.device === 'mobile' ? '手机' :
+              l.device === 'tablet' ? '平板' : '电脑') +
+              (l.ua ? ' · ' + escapeHtml(l.ua) : '') + '</span>');
+            parts.push('<span class="log-sp"></span>');
+            parts.push('<span class="log-dwell">停留 ' + dwellText(l.dwell) + '</span>');
+            parts.push('<span class="log-geo">' + relText(l.last || l.ts) + '</span>');
+            parts.push('</div>');
+
+            // 来源：这是全页面最重要的一行
+            if (l.from) {
+              parts.push('<div class="log-line"><span class="log-k">来源</span>' +
+                '<span class="tag">' + escapeHtml(l.from) + '</span></div>');
+            } else if (l.ref) {
+              parts.push('<div class="log-line"><span class="log-k">来路</span>' +
+                '<span class="chip">' + escapeHtml(l.ref) + '</span></div>');
+            } else {
+              parts.push('<div class="log-line"><span class="log-k">来源</span>' +
+                '<span class="chip">直接打开（未带标记）</span></div>');
+            }
+
+            // 看了哪些栏
+            var secs = (l.sections || []).map(function (s) {
+              return '<span class="chip">' + escapeHtml(secLabel(s)) + '</span>';
+            }).join(' ');
+            parts.push('<div class="log-line"><span class="log-k">看了</span>' +
+              (secs || '<span class="chip">—</span>') + '</div>');
+
+            // 关键动作
+            if (hot) {
+              parts.push('<div class="log-line"><span class="log-k">动作</span>' +
+                '<span class="chip hot">★ 下载了简历</span></div>');
+            }
+
+            return '<div class="' + cls + '">' + parts.join('') + '</div>';
+          }).join('');
+        }
+
+        function loadLogs() {
+          var key = keyInput.value.trim();
+          if (!key) return;
+          fetch('/api/visitlog', { headers: { 'x-admin-key': key }, cache: 'no-store' })
+            .then(function (r) { return r.json().then(function (j) { return { status: r.status, data: j }; }); })
+            .then(function (out) {
+              if (!out.data || out.data.ok !== true) {
+                $('logList').innerHTML = '<p class="empty">读不到访问日志：' +
+                  escapeHtml(String(out.data && out.data.reason || out.status)) + '</p>';
+                return;
+              }
+              currentLogs = out.data.logs || [];
+              renderLogs();
+            })
+            .catch(function (e) {
+              $('logList').innerHTML = '<p class="empty">网络错误：' + escapeHtml(e.message) + '</p>';
+            });
+        }
+
+        $('logOnlyTagged').addEventListener('click', function () {
+          onlyTagged = !onlyTagged;
+          this.textContent = onlyTagged ? '显示全部' : '只看带来源标记的';
+          renderLogs();
+        });
+
+        $('logExport').addEventListener('click', function () {
+          var payload = {
+            exportedAt: new Date().toISOString(),
+            total: currentLogs.length,
+            logs: currentLogs
+          };
+          var blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+          var a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = 'dreamcore-visitlog-' + timeText(Date.now()).replace(/[ .:]/g, '-') + '.json';
+          a.click();
+          URL.revokeObjectURL(a.href);
+        });
 
         function render(data) {
           currentData = data;
@@ -267,6 +446,7 @@
               $('gate').hidden = true;
               $('main').hidden = false;
               render(out.data);
+              loadLogs(); // 留言 + 访客数拿到后，再把访问日志并进来
             })
             .catch(function (e) { setMsg($('gateMsg'), '网络错误：' + e.message, 'err'); })
             .finally(function () { $('refresh').disabled = false; });
@@ -292,7 +472,8 @@
 
         $('login').addEventListener('click', function () { if (getKey()) load(); });
         keyInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') { if (getKey()) load(); } });
-        $('refresh').addEventListener('click', load);
+        // 「刷新一下」把留言数和访问日志一起刷新，不用点两次
+        $('refresh').addEventListener('click', function () { load(); loadLogs(); });
 
         $('export').addEventListener('click', function () {
           var payload = {

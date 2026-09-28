@@ -6,32 +6,59 @@ import { HomeSection } from '@/sections/HomeSection';
 import { StudioSection } from '@/sections/StudioSection';
 import { useWindowedFrames } from '@/hooks/useWindowedFrames';
 import { useAssetPreload } from '@/hooks/useAssetPreload';
+import { recordEnter, wireExitFlush } from '@/lib/visitLog';
 import type { StudioObject } from '@/data/studio';
 import 'lenis/dist/lenis.css';
 import './App.css';
 import gsap from 'gsap';
 
 const TOTAL_FRAMES = 120;
+
+/**
+ * 序列帧目录**按画布真实像素宽自适应**：
+ *   · 桌面 → `public/frames`    （2560×1443，WebP q88，10.7MB）
+ *   · 小屏 → `public/frames-sm` （1440×812， WebP q80， 3.2MB）
+ *
+ * 判据用「画布像素宽」而不是 CSS 宽，因为 canvas 尺寸是
+ * `innerWidth × min(devicePixelRatio, 2)`（见 HomeSection.resizeCanvas）。
+ * 阈值 1600 换算回来：手机竖屏 390×2 = 780 ✅小图；iPad 竖屏 768×2 = 1536 ✅小图；
+ * 只有桌面（1920 起）和手机横屏（844×2 = 1688）才会走大图 —— 这两个场景屏幕大、
+ * 差 70% 字节的感知远小于清晰度损失，取舍是故意的。
+ *
+ * 2026-09-28 从 JPEG 换 WebP：`public/frames` 原来 63.1MB（120 张 2560×1443），
+ * 是全站首屏最大的一笔。WebP q88 后 10.7MB（−83%），实测 PSNR 45.7dB（>40 即视觉无损）。
+ */
+const FRAME_DIR = (() => {
+  const canvasPx = window.innerWidth * Math.min(window.devicePixelRatio || 1, 2);
+  return canvasPx <= 1600 ? 'frames-sm' : 'frames';
+})();
+
 const frameUrls = Array.from(
   { length: TOTAL_FRAMES },
-  (_, i) => `/frames/${String(i + 1).padStart(4, '0')}.jpg`,
+  (_, i) => `/${FRAME_DIR}/${String(i + 1).padStart(4, '0')}.webp`,
 );
 
 /**
- * 模型预热：进工作室才用得上的大件，先默默下进缓存，不计进进度条、也不卡加载页。
- * rack.glb 一个人 9MB（贴图转 WebP 无损后从 17.9MB 降到 9.1MB），是全套最重的一件，
- * 绝不能让它等在加载页里 —— 首页压根用不到它。
- * 省流量模式 / 2G/3G 下会自动跳过预热（见 useAssetPreload 的 worthPrefetching）。
+ * 加载页**只等首页本体**（这 120 张帧），其余一律降到后台预热。
+ *
+ * 原来的 wait 里还塞了 5 个 GLB（mascot/dvd/dv/mp3/tape，合计 3.4MB，rack.glb 另算 9.1MB）。
+ * 但那 6 个模型**首页一个都用不到** —— 它们只在工作室里出现，而工作室必须先滚完
+ * 这 300vh 的开门动画、再点 Open 才进得去，中间有大把时间让它们在后台下完。
+ * 让一群看不见的资源把加载页多堵十几 MB，是「网站打开速度明显偏慢」的第二号原因。
+ * 现在它们的语义和 rack.glb 完全一致：`prefetch`（只进 HTTP 缓存 + 等 wait 组跑完再开始，
+ * 见 useAssetPreload 的「ready 之后才预热」），既有保障又不抢首屏带宽。
  */
-const PREFETCH_MODELS: string[] = [`${import.meta.env.BASE_URL}newsstand/rack.glb`];
+const WAIT_ASSETS = [...frameUrls];
 
-const WAIT_ASSETS = [
-  ...frameUrls, // 全部序列帧 = 首页本体
+/** 后台预热：进工作室才用得上的大件。不计进度、不卡加载页，wait 组跑完才开始拉 */
+const PREFETCH_MODELS: string[] = [
   `${import.meta.env.BASE_URL}about/mascot.glb`,
   `${import.meta.env.BASE_URL}newsstand/dvd.glb`,
   `${import.meta.env.BASE_URL}newsstand/dv.glb`,
   `${import.meta.env.BASE_URL}newsstand/mp3.glb`,
   `${import.meta.env.BASE_URL}newsstand/tape.glb`,
+  // rack.glb 一个人 9MB（贴图转 WebP 无损后从 17.9MB 降到 9.1MB），是全套最重的一件
+  `${import.meta.env.BASE_URL}newsstand/rack.glb`,
 ];
 
 /** 同时最多下 8 个：120 张帧一起发会把带宽打满，关键资源反而被挤到后面 */
@@ -72,6 +99,18 @@ function App() {
 
   const handleEnter = useCallback(() => {
     setEntered(true);
+  }, []);
+
+  /**
+   * 访问日志埋点：落地即记一条，并装好「离开时补报停留时长」。
+   *
+   * 记的是「有没有面试官来看过」——靠你发出去的 `?from=xxx` 标记认人，
+   * 不靠 IP（IP 只用来查城市做参考）。全程静默，访客无感。
+   */
+  useEffect(() => {
+    recordEnter(stage);
+    wireExitFlush();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Lenis 平滑滚动

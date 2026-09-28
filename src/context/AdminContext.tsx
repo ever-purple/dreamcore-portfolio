@@ -29,8 +29,8 @@ export type AdminState = {
   mode: AdminMode;
   setMode: (next: boolean) => void;
   toggle: () => void;
-  /** 输口令开作者模式。口令不对返回 false */
-  unlock: (key: string) => boolean;
+  /** 输口令开作者模式（服务端校验）。口令不对返回 false */
+  unlock: (key: string) => Promise<boolean>;
 };
 
 function readInitialMode(): boolean {
@@ -65,7 +65,7 @@ const AdminCtx = createContext<AdminState>({
   mode: IS_ADMIN ? 'author' : 'guest',
   setMode: () => {},
   toggle: () => {},
-  unlock: () => false,
+  unlock: () => Promise.resolve(false),
 });
 
 export function AdminProvider({ children }: { children: ReactNode }) {
@@ -86,9 +86,9 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  /** 口令校验 + 进入。口令不对就保持访客模式 */
-  const unlock = useCallback((key: string) => {
-    if (!checkKey(key)) return false;
+  /** 口令校验（服务端）+ 进入。口令不对就保持访客模式 */
+  const unlock = useCallback(async (key: string) => {
+    if (!(await checkKey(key))) return false;
     setIsAdmin(true);
     persistMode(true);
     return true;

@@ -62,8 +62,6 @@ const LS_KEY_V1 = 'dreamcore:insp-store-v1';
 
 /** 远端后端地址。留空 = 不用远端。 */
 const REMOTE = (import.meta.env.VITE_CONTENT_API as string | undefined)?.trim() || '';
-/** 远端后端的可选鉴权头（配了就带上，方便部署后不被路人改） */
-const REMOTE_KEY = (import.meta.env.VITE_AUTHOR_KEY as string | undefined)?.trim() || '';
 
 /* ------------------------------------------------------------------ */
 /* 载入                                                                */
@@ -165,7 +163,7 @@ async function loadFromProjectFile(): Promise<Envelope | null> {
 async function loadFromRemote(): Promise<Envelope | null> {
   try {
     const res = await fetch(REMOTE, {
-      headers: { accept: 'application/json', ...(REMOTE_KEY ? { 'x-author-key': REMOTE_KEY } : {}) },
+      headers: { accept: 'application/json' },
     });
     if (!res.ok) return null;
     const parsed: unknown = await res.json();
@@ -211,7 +209,6 @@ async function saveRemote(): Promise<void> {
     method: 'PUT',
     headers: {
       'content-type': 'application/json',
-      ...(REMOTE_KEY ? { 'x-author-key': REMOTE_KEY } : {}),
     },
     body: JSON.stringify(current),
   });
@@ -242,7 +239,6 @@ async function uploadRemote(file: File): Promise<string | null> {
   form.append('file', file);
   const res = await fetch(`${REMOTE.replace(/\/$/, '')}/upload`, {
     method: 'POST',
-    headers: REMOTE_KEY ? { 'x-author-key': REMOTE_KEY } : undefined,
     body: form,
   });
   if (!res.ok) return null;

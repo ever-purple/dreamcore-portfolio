@@ -27,5 +27,8 @@ export const CONTACT = {
   ] satisfies SocialLink[],
 };
 
-/** 简历文件路径。把 PDF 命名成 resume.pdf 放进 public/ 即可（见 public/resume/说明.txt） */
-export const RESUME_URL = '/resume.pdf';
+/** 简历文件路径。PDF 用原文件名放在 public/ 下（public/孙晨茜简历-市场营销策划岗.pdf），
+ *  下载时也保留这个原名，不再强制改名成 resume.pdf */
+export const RESUME_URL = '/孙晨茜简历-市场营销策划岗.pdf';
+/** 下载时给浏览器看的文件名（与文件原名保持一致） */
+export const RESUME_FILENAME = '孙晨茜简历-市场营销策划岗.pdf';

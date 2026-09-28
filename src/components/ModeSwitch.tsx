@@ -5,6 +5,7 @@ import {
   HOTKEY_KEY,
   HOTKEY_TIMES,
   HOTKEY_WINDOW,
+  gateError,
   isUnlocked,
 } from '@/lib/authorAuth';
 import { useMagnetic } from '@/hooks/useMagnetic';
@@ -27,6 +28,7 @@ export function ModeSwitch() {
   const [asking, setAsking] = useState(false);
   const [value, setValue] = useState('');
   const [wrong, setWrong] = useState(false);
+  const [checking, setChecking] = useState(false); // 服务端校验期间防重复提交
   const hotRef = useRef({ n: 0, t: 0 });
 
   useEffect(() => {
@@ -59,15 +61,21 @@ export function ModeSwitch() {
   // 访客：什么都不渲染。作者：只渲染徽标。
   if (GATE_ENABLED && !isUnlocked()) return null;
 
-  const submitKey = (event: React.FormEvent) => {
+  const submitKey = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (unlock(value)) {
-      setAsking(false);
-      setValue('');
-      setWrong(false);
-      return;
+    if (checking) return;
+    setChecking(true);
+    try {
+      if (await unlock(value)) {
+        setAsking(false);
+        setValue('');
+        setWrong(false);
+        return;
+      }
+      setWrong(true);
+    } finally {
+      setChecking(false);
     }
-    setWrong(true);
   };
 
   return (
@@ -128,6 +136,7 @@ export function ModeSwitch() {
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <button
                 type="submit"
+                disabled={checking}
                 style={{
                   padding: '7px 14px',
                   fontSize: 12,
@@ -135,11 +144,12 @@ export function ModeSwitch() {
                   border: 'none',
                   background: '#2f7f66',
                   color: '#fff',
-                  cursor: 'pointer',
+                  cursor: checking ? 'wait' : 'pointer',
+                  opacity: checking ? 0.7 : 1,
                   fontFamily: 'inherit',
                 }}
               >
-                进去
+                {checking ? '校验中…' : '进去'}
               </button>
               <button
                 type="button"
@@ -162,7 +172,7 @@ export function ModeSwitch() {
               </button>
               <span style={{ flex: '1 1 auto' }} />
               <span style={{ fontSize: 11, color: wrong ? '#c2453b' : '#9a9a9a' }}>
-                {wrong ? '口令不对' : '仅作者可见'}
+                {wrong ? gateError() || '口令不对' : '仅作者可见'}
               </span>
             </div>
           </form>

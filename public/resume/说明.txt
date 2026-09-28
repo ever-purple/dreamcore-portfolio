@@ -1,8 +1,6 @@
-把你的简历 PDF 放到这里：
+简历 PDF 的位置（2026-09-28 起不用再改名了）：
 
-    文件名必须叫：  resume.pdf
-    也就是这个路径：public/resume.pdf   ← 放在 public 根目录，不是这个 resume 文件夹里
+    public/孙晨茜简历-市场营销策划岗.pdf   ← 就放在 public 根目录，保留原文件名
 
-放好后不用改任何代码 —— 菜单里点「Resume / 简历」就会直接下载它。
-
-现在还没放的话，点菜单里的简历会弹一条提示告诉你这一步。
+菜单里点「Resume / 简历」会直接下载它，文件名也保持原名。
+路径常量在 src/data/contact.ts 的 RESUME_URL / RESUME_FILENAME，换文件时同步改那里。

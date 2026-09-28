@@ -15,6 +15,4 @@ interface ImportMetaEnv {
    *   POST {base}/upload      → multipart，字段 file，返回 { url }
    */
   readonly VITE_CONTENT_API?: string;
-  /** 调内容后端时带上的鉴权头 x-author-key（可选，防止路人改内容） */
-  readonly VITE_AUTHOR_KEY?: string;
 }

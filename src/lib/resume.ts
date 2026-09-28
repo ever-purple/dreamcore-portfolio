@@ -7,7 +7,7 @@
  *  · `download` 属性 + 同源路径 → 点击即下载，不新开标签页、不内嵌预览。
  *  · 探测用 HEAD：PDF 可能很大，GET 会真把它拉一遍。
  */
-import { RESUME_URL } from '@/data/contact';
+import { RESUME_FILENAME, RESUME_URL } from '@/data/contact';
 
 /** 一次性提示条。复用 index.css 里 .dp-toast 的观感，但全局 fixed 定位（那个是局部 absolute）。 */
 function notice(text: string) {
@@ -39,7 +39,7 @@ export async function downloadResume(): Promise<void> {
   try {
     const r = await fetch(RESUME_URL, { method: 'HEAD' });
     if (!r.ok) {
-      notice('简历还没上传：把 PDF 命名为 resume.pdf 放进 public/ 文件夹即可');
+      notice('简历文件不见了：确认 public/孙晨茜简历-市场营销策划岗.pdf 还在项目里');
       return;
     }
   } catch {
@@ -47,7 +47,7 @@ export async function downloadResume(): Promise<void> {
   }
   const a = document.createElement('a');
   a.href = RESUME_URL;
-  a.download = '简历.pdf';
+  a.download = RESUME_FILENAME; // 保留简历原文件名，不强制改名
   document.body.appendChild(a);
   a.click();
   a.remove();

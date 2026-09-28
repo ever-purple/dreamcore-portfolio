@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "test:api": "tsc api/visit.ts api/guestbook.ts api/admin.ts --outDir _apitest --module esnext --target es2022 --moduleResolution bundler --rewriteRelativeImportExtensions --skipLibCheck --types node && node scripts/api-selftest.mjs",
+    "test:api": "tsc api/visit.ts api/guestbook.ts api/admin.ts api/author.ts --outDir _apitest --module esnext --target es2022 --moduleResolution bundler --rewriteRelativeImportExtensions --skipLibCheck --types node && node scripts/api-selftest.mjs",
     "preview": "vite preview",
     "compress:glb": "node scripts/compress-glb.mjs"
   },

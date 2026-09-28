@@ -4,16 +4,17 @@
  * 生产构建里作者模式不再「点一下就开」：要点开输入框输口令，输对才进。
  * 进了就在 cookie 里记一笔，刷新、换页都还是作者模式；关掉浏览器失效。
  *
- * ⚠️ 说清楚一件事：口令写在前端代码里，懂行的人打开 F12 能翻出来。
- *    这道门防的是「访客随手一点把编辑界面翻出来」，不是防破解。
- *    以后哪天有「只有作者能写」的接口，那边必须再校验一次，别指望前端。
+ * 🔒 口令校验在**服务端**（/api/author，对照 Vercel 环境变量 ADMIN_KEY）：
+ *    前端代码里不再有任何口令，F12 翻不出来。输入的口令只在请求体里走一次，
+ *    校验通过后浏览器只留一个「已解锁」标记 cookie（不含口令本身）。
+ *    注意：这道门防的仍是「访客随手把编辑界面翻出来」——真正的数据安全
+ *    由各写接口（/api/admin、/api/guestbook）在服务端再校验一次来保证。
+ *
+ * 服务端没配 ADMIN_KEY 时（/api/author 返回 503），gateError() 会给出提示。
  */
 
 const COOKIE = 'dc_author';
 const COOKIE_DAYS = 14;
-
-/** 口令来自 Vercel 环境变量 VITE_AUTHOR_KEY（构建时写进包里） */
-export const AUTHOR_KEY = String(import.meta.env.VITE_AUTHOR_KEY ?? '');
 
 /**
  * 隐藏入口：连按同一个键触发，不显示任何按钮。
@@ -24,10 +25,17 @@ export const HOTKEY_TIMES = 5;
 export const HOTKEY_WINDOW = 1500;
 
 /**
- * 只有「生产构建 + 配了口令」才启用这道门。
+ * 只有「生产构建」才启用这道门。
  * 开发环境保持原来的 ?admin=1 习惯，不然自己调试还要先输口令，很烦。
+ * （服务端有没有配口令，要到输口令那一刻才知道，由 gateError() 提示。）
  */
-export const GATE_ENABLED = import.meta.env.PROD && AUTHOR_KEY.length > 0;
+export const GATE_ENABLED = import.meta.env.PROD;
+
+/** 最近一次校验失败的原因（空串 = 没失败过 / 就是口令不对）。供口令框展示。 */
+let lastGateError = '';
+export function gateError(): string {
+  return lastGateError;
+}
 
 function readCookie(name: string): string {
   if (typeof document === 'undefined') return '';
@@ -41,11 +49,39 @@ export function isUnlocked(): boolean {
   return readCookie(COOKIE) === '1';
 }
 
-/** 校验口令，对了就把 cookie 写上。返回 true = 可以进作者模式 */
-export function checkKey(input: string): boolean {
-  if (!GATE_ENABLED) return true;
-  if (AUTHOR_KEY.length === 0 || input.trim() !== AUTHOR_KEY) return false;
+/** 服务端确认过口令、写了解锁 cookie。返回 true = 可以进作者模式 */
+function markUnlocked(): void {
   const maxAge = COOKIE_DAYS * 24 * 60 * 60;
   document.cookie = `${COOKIE}=1; path=/; max-age=${maxAge}; samesite=lax`;
-  return true;
+}
+
+/**
+ * 校验口令（问服务端）。返回 true = 可以进作者模式。
+ * 失败时可通过 gateError() 拿到比「口令不对」更具体的原因（没配 / 网络问题）。
+ */
+export async function checkKey(input: string): Promise<boolean> {
+  if (!GATE_ENABLED) return true;
+  lastGateError = '';
+  try {
+    const res = await fetch('/api/author', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: input.trim() }),
+      cache: 'no-store',
+    });
+    if (res.ok) {
+      markUnlocked();
+      return true;
+    }
+    if (res.status === 503) {
+      lastGateError = '服务端还没配 ADMIN_KEY';
+      return false;
+    }
+    if (res.status === 401) return false; // 纯粹口令不对，不给额外提示
+    lastGateError = `服务异常（${res.status}）`;
+    return false;
+  } catch {
+    lastGateError = '网络不通，稍后再试';
+    return false;
+  }
 }

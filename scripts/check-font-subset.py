@@ -31,7 +31,9 @@
 ⚠️ ② 只是候选清单，判断"这句到底走不走纳米宋"要看它所在元素的 CSS
    （`grep -A6 '^\\.类名' src/index.css` 有没有 NanoOldSongA）。
    想拿**运行时 ground truth**，用 `_verify-font-coverage.mjs`
-   （CDP `CSS.getPlatformFontsForNode`，直接量出每个字实际用了哪个字体）。
+   （CDP `CSS.getPlatformFontsForNode`，直接量出每个字实际用了哪个字体）；
+   只关心分享卡浮层的话，`_verify-share-card.mjs` 的 G8 组是同一把量具的聚焦版
+   （含"✕ 交给系统字体"和"come in 走拉丁字体"两条反面对照）。
 """
 import os
 import re

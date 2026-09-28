@@ -19,6 +19,12 @@
          ⚠️ og:image / og:url 填的是「相对路径」兜底：万一构建时没配 VITE_SITE_URL，
             爬虫会按页面地址自己补全，照样能显示；配了 VITE_SITE_URL 后（见 vite.config.ts
              的 shareCard()），构建时会自动改成绝对地址，Facebook / X 这类只认绝对地址的平台也稳。
+
+         同目录下还有一张 **竖版** public/og/card-share-tall.png（1080×1440，3:4），
+         它**不做 og:image**，是站内「联系方式 → 分享网站」那个浮层在窄屏上展示 /
+         转发用的（横版塞进手机浮层只有一条扁条，竖版才看得清 come in）。
+         两张图都由隔壁工作区 2026-09-26-20-09-02/_ogcard/ 里的脚本生成，
+         那两份脚本是唯一出处，改图去那边改再拷回来。
     -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="孙晨茜 作品集" />

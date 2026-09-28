@@ -10,6 +10,7 @@ import {
 import { useEscape } from '@/lib/escape-stack';
 import { AsciiFlower } from '@/components/AsciiFlower';
 import { PageDecor } from '@/components/PageDecor';
+import { ShareCardOverlay } from '@/components/ShareCardOverlay';
 import { CONTACT } from '@/data/contact';
 
 /**
@@ -229,7 +230,8 @@ type Pair = {
  */
 const CONTACT_PAIRS: Pair[] = [
   { label: 'Contacts', value: CONTACT.email, base: 0.32, span: 0.2 },
-  /* 右侧这栏可点：onShare → 手机调起系统分享面板，桌面复制链接（见下面 onShare） */
+  /* 右侧这栏可点：点它**蹦出分享卡浮层**，浮层里那枚「转发卡片」才真的把图片发出去
+     （2026-09-28 改；原来这里是直接 navigator.share，发出去的只有链接，见下面 onShare） */
   { label: 'Share', value: '分享网站', base: 0.5, span: 0.16 },
 ];
 
@@ -239,8 +241,16 @@ export const StudioContactPanel = forwardRef<StudioContactHandle, Props>(functio
 ) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
-  /** 复制链接后的"已复制"提示（桌面端无系统分享面板时降级显示） */
-  const [shared, setShared] = useState(false);
+  /**
+   * 分享卡浮层开着吗（2026-09-28）。
+   *
+   * ⚠️ 这个状态**不能**并进 `blocked`：`blocked` 那条 effect 会顺手把面板
+   *    `targetRef` 归零（"被别的浮层盖住就主动收回"）—— 而分享卡是从面板里长出来的，
+   *    打开它绝不该把面板收回去。所以单独一个状态 + 一个 ref，
+   *    ref 供 rAF 外面那几个事件处理函数同步读（见 onWheel / onTouchMove 的注释）。
+   */
+  const [shareOpen, setShareOpen] = useState(false);
+  const shareRef = useRef(false);
 
   /** 滚轮目标（被弹簧追的"滚动进度"）。放 ref 里 —— 每帧都要读写，进 state 会把整棵树重渲 60 次/秒。 */
   const targetRef = useRef(0);
@@ -300,36 +310,34 @@ export const StudioContactPanel = forwardRef<StudioContactHandle, Props>(functio
   useEscape(retract, open);
 
   /**
-   * 分享这个网站：
-   *   · 手机（支持 navigator.share）→ 调起系统分享面板（微信 / 小红书 / 邮件…），
-   *     用户取消（AbortError）就静默；
-   *   · 桌面（无 share）→ 降级复制当前网址到剪贴板，并亮 2 秒"已复制"提示；
-   *   · 再极端（剪贴板被禁）→ prompt 兜底。
-   * 用 location.href 而不是写死域名：分享的永远是当前打开的具体页面。
+   * 分享这个网站（2026-09-28 改）：点一下只做一件事 —— **把分享卡浮层打开**。
+   *
+   * ## 为什么不再直接分享
+   * 旧实现是 `navigator.share({ title, text, url })`，桌面没有 `navigator.share`
+   * 时退化成 `clipboard.writeText(url)`。用户实测后原话：
+   *   「分享卡根本就看不见……只能复制链接，把链接发给好友只是链接不是图片，
+   *     我希望是点击转发网站的时候就蹦出分享卡，分享卡里的按钮点击后就可以
+   *     分享图片到其他地方微信小红书等等」
+   * 症结是那条路径**永远只发链接**，而这个站"值得被转发的东西"其实是一张图。
+   * 所以现在把"发什么"交回给用户：浮层里展示那张卡，浮层自己的「转发卡片」再走
+   * `navigator.share({ files })` → 写剪贴板 → 下载 三级降级（见 src/lib/shareCard.ts）。
+   * 配套地，面板里原来那个 `.studio-contact__share-hint`（"链接已复制 ✓"）
+   * 连同 `shared` 状态一起退休了 —— 反馈统一交给浮层自己的提示行。
+   *
+   * ⚠️ `shareRef` 要**同步**写，不能只靠 `useEffect` 跟着 `shareOpen` 走：
+   *    浮层打开那一瞬间如果正好有一记滚轮/触屏事件排在队列里，
+   *    面板挂在 window 上的捕获监听（见文件头「坑 2」）可能先跑到 —— 那时 effect 还没执行。
+   *    而它一旦跑到，就会把这记滚轮算成"收回面板"，浮层会莫名其妙跳一下。
    */
-  const onShare = useCallback(async () => {
-    const url = window.location.href;
-    const payload = {
-      title: '孙晨茜 作品集',
-      text: '孙晨茜 作品集 · stay for a moment',
-      url,
-    };
-    const nav = navigator as Navigator & { share?: (d: typeof payload) => Promise<void> };
-    if (typeof nav.share === 'function') {
-      try {
-        await nav.share(payload);
-        return;
-      } catch (err) {
-        if ((err as Error)?.name === 'AbortError') return;
-      }
-    }
-    try {
-      await navigator.clipboard.writeText(url);
-      setShared(true);
-      window.setTimeout(() => setShared(false), 2200);
-    } catch {
-      window.prompt('复制此链接分享：', url);
-    }
+  const onShare = useCallback(() => {
+    shareRef.current = true;
+    setShareOpen(true);
+  }, []);
+
+  /** 关浮层。Esc / 点背幕 / 点关闭按钮都走这里（Esc 由浮层自己的 useEscape 入栈触发）。 */
+  const closeShare = useCallback(() => {
+    shareRef.current = false;
+    setShareOpen(false);
   }, []);
 
   useEffect(() => {
@@ -449,7 +457,9 @@ export const StudioContactPanel = forwardRef<StudioContactHandle, Props>(functio
     };
 
     const onWheel = (e: WheelEvent) => {
-      if (blockedRef.current) return;
+      // shareRef = 分享卡浮层盖在上面。理由同「坑 3」，但那层不在 blocked 里：
+      // 它是从面板里长出来的，blocked 一开就会把面板收回去（见 shareOpen 那段注释）。
+      if (blockedRef.current || shareRef.current) return;
       const t = targetRef.current;
       // ⚠️ 已经是 1 还往下、或已经是 0 还往上 → 不吃事件（见文件头「坑 1」）
       if (e.deltaY > 0 ? t >= 1 : t <= 0) return;
@@ -464,12 +474,12 @@ export const StudioContactPanel = forwardRef<StudioContactHandle, Props>(functio
     let touchY: number | null = null;
     let touchStartP = 0;
     const onTouchStart = (e: TouchEvent) => {
-      if (blockedRef.current) return;
+      if (blockedRef.current || shareRef.current) return;
       touchY = e.touches[0]?.clientY ?? null;
       touchStartP = targetRef.current;
     };
     const onTouchMove = (e: TouchEvent) => {
-      if (blockedRef.current || touchY === null) return;
+      if (blockedRef.current || shareRef.current || touchY === null) return;
       const y = e.touches[0]?.clientY ?? touchY;
       const next = Math.min(1, Math.max(0, touchStartP + (touchY - y) / TOUCH_TRAVEL));
       const dP = next - targetRef.current;
@@ -653,12 +663,10 @@ export const StudioContactPanel = forwardRef<StudioContactHandle, Props>(functio
                     <Roll text={pair.value} base={pair.base} span={pair.span} />
                   )}
                 </span>
-                {/* 复制成功提示：绝对定位在栏下方，不参与排版（不把两栏顶歪） */}
-                {pair.label === 'Share' && shared && (
-                  <span className="studio-contact__share-hint" role="status">
-                    链接已复制 ✓
-                  </span>
-                )}
+                {/* 这里原本有个「链接已复制 ✓」提示（shared 状态）。2026-09-28 起
+                    点 Share 不再复制链接、而是开分享卡浮层，反馈统一由浮层自己的
+                    提示行给 —— 所以连同 .studio-contact__share-hint 一起删掉了，
+                    别再加回来（那条 CSS 也一起删了）。 */}
               </div>
             ))}
           </div>
@@ -677,6 +685,13 @@ export const StudioContactPanel = forwardRef<StudioContactHandle, Props>(functio
           </div>
         </div>
       </div>
+
+      {/*
+        分享卡浮层。挂在这里只是为了"离按钮近好读"，它自己是 `createPortal` 到 body 的
+        （见 ShareCardOverlay 文件头第 1 条）—— 所以不受这张巧克力纸的
+        overflow:hidden / 层叠上下文影响，也不会被 aria-hidden 连带。
+      */}
+      <ShareCardOverlay open={shareOpen} onClose={closeShare} />
     </div>
   );
 });

@@ -72,3 +72,7 @@ public/works/*.pdf
 # 本地工作记忆与技能数据（不进公开仓库）
 .workbuddy/
 _cleanup-manifest.txt
+dist-ogtest
+# 试构建出来的临时产物目录（dist-ogtest / dist-seedfix …）：只是本地验证用，
+# 真上线走 Vercel，不需要也不会入库。用通配符免得每试一次就多一条。
+dist-*/

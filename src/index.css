@@ -1211,6 +1211,32 @@ body.is-diary-dragging * {
   opacity: 0;
   transition: opacity 0.3s var(--ease-in) both;
 }
+/* —— 2026-09-28：书内容就绪前不播滑入、不亮相 ——
+   iframe 版（is-book-file）的容器是全视口透明壳，书本体在 iframe 里；
+   3MB 单文件在 Vercel 上要 1~3s 才渲染。以前滑入动画挂在浮层挂载瞬间，
+   全在"容器里什么都没有"的时候播完 —— 书像是在正中直接弹出（没有从右边滑入），
+   还先白一下（书壳先渲染、封面照片后到）。现在 BookFrame 在 iframe onLoad 后
+   才加 .is-ready：未就绪不播动画、iframe 保持透明（只有模糊背景），
+   就绪那一刻才播 nb-page-in —— 带着完整封面的书从右边滑进来。 */
+.notebook-page.is-book-file {
+  animation: none;
+}
+.notebook-page.is-book-file.is-ready {
+  animation: nb-page-in 0.6s var(--ease-world) 0.06s both;
+}
+/* 收起要压过 .is-ready 的入场（关闭时书从右滑出，而不是再播一遍滑入）。
+   (0,3,0) > .is-ready 的 (0,3,0) 靠书写顺序靠后取胜。 */
+.notebook-overlay.is-closing .notebook-page.is-book-file {
+  animation: nb-page-out 0.38s var(--ease-in) both;
+}
+/* iframe 本体也等就绪再淡入（:where() 把特异性清零，让上面的 is-closing 淡出始终赢） */
+:where(.notebook-page.is-book-file) .diary-book-frame {
+  opacity: 0;
+}
+:where(.notebook-page.is-book-file.is-ready) .diary-book-frame {
+  opacity: 1;
+  transition: opacity 0.25s var(--ease-world) both;
+}
 @keyframes nb-page-in {
   from {
     transform: translateX(72%) rotate(3deg);

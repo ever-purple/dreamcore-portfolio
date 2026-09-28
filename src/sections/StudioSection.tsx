@@ -2,7 +2,7 @@ import { lazy, useCallback, useEffect, useMemo, useRef, useState, Suspense } fro
 import { AboutOverlay } from '@/components/AboutOverlay';
 import { CrtOverlay } from '@/components/GreenOs';
 import { ObjectZone } from '@/components/ObjectZone';
-import { NotebookOverlay } from '@/components/NotebookOverlay';
+import { NotebookOverlay, DIARY_BOOK_URL } from '@/components/NotebookOverlay';
 import { downloadResume } from '@/lib/resume';
 import { StudioChrome, StudioNavProvider, type StudioNav } from '@/components/StudioChrome';
 
@@ -104,6 +104,16 @@ const POINT_BY_ID = Object.fromEntries(studioObjects.map((o) => [o.id, o.point])
  */
 export function StudioSection({ onSelectObject, onBack }: Props) {
   const [hoveredId, setHoveredId] = useState<StudioObject['id'] | null>(null);
+  /* —— 预热实习日记单文件（2026-09-28）——
+     日记整本是 public/diary-book/index.html 一个 3MB 单文件（封面照片也内联在其 CSS 里）。
+     Vercel 上等用户点开笔记本才去拉：书壳先渲染、封面照片 1s 后才到（"白封面"），
+     且滑入动画全在"还没内容"时播完（看起来不是从右边进来的）。
+     这里在进工作室时就用**与 iframe 完全相同的 URL**（含 ?embed=1&v=… 查询串，
+     HTTP 缓存按完整 URL 区分，少一个参数就是两份缓存）拉一遍进缓存；
+     点开时 iframe 命中缓存（304 重验证），书即刻渲染、滑入动画带着内容播。 */
+  useEffect(() => {
+    fetch(DIARY_BOOK_URL).catch(() => {});
+  }, []);
   /* ?diary=1 可直接预览实习日记浮层（与 ?works=1 / ?media=1 / ?newsstand=1 同一套
      调试参数约定）。加它的直接原因：日记挂在一个 3D 笔记本物件上，
      想反复看翻页动效就得先等场景加载、再把镜头转到那个角度去点它 —— 太慢了。 */

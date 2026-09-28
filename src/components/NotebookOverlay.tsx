@@ -338,6 +338,14 @@ export function NotebookOverlay({ open, onClose }: Props) {
    焦点在书里按 ESC 也能冒到父层。 */
 function BookFrame({ closing, onClose }: { closing: boolean; onClose: () => void }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
+  /* 书内容就绪前不亮相（2026-09-28）——
+     单文件书 public/diary-book/index.html 有 3MB（封面照片也内联在其 CSS 里），
+     Vercel 上等用户点开才去拉要 1~3s。以前滑入动画挂在浮层挂载瞬间，而容器是
+     全视口透明壳 —— 动画全在"里面什么都没有"的时候播完了，用户看到的是：
+     书在正中直接弹出（没有从右边滑入）+ 先白一下的空封面、照片 1s 后才补上。
+     现在：iframe onLoad 后才加 .is-ready —— 滑入动画挪到那一刻播，
+     加载期间只有模糊背景，用户看到的就是"带着完整封面的书从右边滑进来"。 */
+  const [ready, setReady] = useState(false);
   useEffect(() => {
     const onMsg = (ev: MessageEvent) => {
       if (ev.data === 'diary-book:esc') onClose();
@@ -353,13 +361,14 @@ function BookFrame({ closing, onClose }: { closing: boolean; onClose: () => void
       aria-label="实习日记"
     >
       <div className="notebook-backdrop" onClick={onClose} />
-      <div className="notebook-page diary-book is-book-file">
+      <div className={`notebook-page diary-book is-book-file${ready ? ' is-ready' : ''}`}>
         <iframe
           ref={frameRef}
           className="diary-book-frame"
-          src="./diary-book/index.html?embed=1&v=20260926k"
+          src={DIARY_BOOK_URL}
           title="实习日记"
           onLoad={() => {
+            setReady(true);
             const w = frameRef.current?.contentWindow;
             w?.addEventListener('keydown', (ev) => {
               if (ev.key === 'Escape') onClose();
@@ -375,6 +384,9 @@ function BookFrame({ closing, onClose }: { closing: boolean; onClose: () => void
     </div>
   );
 }
+
+/** 单文件书地址 —— StudioSection 挂载时用**同一个 URL** 预热 HTTP 缓存（见那里注释） */
+export const DIARY_BOOK_URL = './diary-book/index.html?embed=1&v=20260926k';
 
 const BOOK_FILE = true;
 

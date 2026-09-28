@@ -6,6 +6,7 @@ dist-test
 dist-test2
 dist-openfix
 dist-modefix
+dist-insplab
 .vite
 
 # 日志

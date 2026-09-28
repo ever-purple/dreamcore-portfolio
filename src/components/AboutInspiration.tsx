@@ -24,7 +24,7 @@ import {
 import { resolveIdbRefs } from '@/lib/blobStore';
 import { readAudioTags, type AudioTags } from '@/lib/audioTags';
 import { platformLabel, toTrack } from '@/context/PlayerContext';
-import type { LinkItem, MusicItem, ProjectItem, SkillItem, VisionItem } from '@/data/inspiration';
+import type { LinkItem, MusicItem, ProjectItem, VisionItem } from '@/data/inspiration';
 
 /* ------------------------------------------------------------------ */
 /* 一级分类                                                            */
@@ -48,13 +48,33 @@ const SUBTABS: Record<string, SubTab[]> = {
     { id: 'vision', label: '视觉 Vision' },
     { id: 'music', label: '音乐 Music' },
   ],
-  ai_lab: [
-    { id: 'projects', label: 'Projects' },
-    { id: 'skills', label: 'Skills' },
-  ],
+  /* AI实验室不再分「项目 / 技能」两个页签 —— 一个列表混着放，作者录什么就是什么。 */
 };
 
-const DEFAULT_SUB: Record<string, string> = { aesthetics: 'vision', ai_lab: 'projects' };
+const DEFAULT_SUB: Record<string, string> = { aesthetics: 'vision' };
+
+/* ------------------------------------------------------------------ */
+/* 排序：所有收藏一律「从新到旧」                                       */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 从 id 尾部的毫秒时间戳反推「加入时间」。
+ * 各处新增时 id 都是 `${前缀}-${Date.now()}`（`projects-1790…` / `link-1790…` /
+ * `vision-1790…`），所以不额外加 createdAt 字段也能按时间排。
+ * 认不出来（手改过 id 的老数据）返回 0，排在最末。
+ */
+function timeOf(id: string): number {
+  const m = /(\d{10,})\s*$/.exec(id) ?? /(\d{10,})/.exec(id);
+  return m ? Number(m[1]) : 0;
+}
+
+/** 按加入时间从新到旧；同一毫秒内的保持原有相对顺序（稳定排序）。 */
+function byNewest<T extends { id: string }>(list: T[]): T[] {
+  return list
+    .map((it, i) => ({ it, i, t: timeOf(it.id) }))
+    .sort((a, b) => b.t - a.t || a.i - b.i)
+    .map((x) => x.it);
+}
 
 /* ------------------------------------------------------------------ */
 /* 复用的小组件                                                        */
@@ -517,7 +537,7 @@ function ProjectAddForm({ onAdd }: { onAdd: (item: ProjectItem) => void }) {
         <span className="about-insp-drop-plus" aria-hidden="true">
           +
         </span>
-        <span className="about-insp-drop-label">新增项目</span>
+        <span className="about-insp-drop-label">新增条目</span>
       </button>
     );
   }
@@ -557,66 +577,6 @@ function ProjectAddForm({ onAdd }: { onAdd: (item: ProjectItem) => void }) {
 
       <div className="about-insp-form-actions">
         <button type="button" className="about-insp-btn is-primary" onClick={submit} disabled={busy}>
-          添加
-        </button>
-        <button type="button" className="about-insp-btn" onClick={reset}>
-          取消
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/** 新增 AI 技能：图标 + 名称 + 功能描述 + 链接 */
-function SkillAddForm({ onAdd }: { onAdd: (item: SkillItem) => void }) {
-  const [open, setOpen] = useState(false);
-  const [icon, setIcon] = useState('✨');
-  const [name, setName] = useState('');
-  const [desc, setDesc] = useState('');
-  const [link, setLink] = useState('');
-
-  const reset = () => {
-    setIcon('✨');
-    setName('');
-    setDesc('');
-    setLink('');
-    setOpen(false);
-  };
-
-  const submit = () => {
-    if (!name.trim()) return;
-    onAdd({
-      id: `skills-${Date.now()}`,
-      icon: icon.trim() || '✨',
-      name: name.trim(),
-      desc: desc.trim() || undefined,
-      link: link.trim() || undefined,
-    });
-    reset();
-  };
-
-  if (!open) {
-    return (
-      <button type="button" className="about-insp-skill-add" onClick={() => setOpen(true)} aria-label="添加技能">
-        <span className="about-insp-skill-add-plus" aria-hidden="true">
-          +
-        </span>
-        <span>添加技能</span>
-      </button>
-    );
-  }
-
-  return (
-    <div className="about-insp-form about-insp-form-skill">
-      <p className="about-insp-form-title">🧩 新增技能</p>
-      <div className="about-insp-form-row">
-        <input className="about-insp-input about-insp-input-icon" value={icon} placeholder="✨" onChange={(e) => setIcon(e.target.value)} />
-        <input className="about-insp-input" value={name} autoFocus placeholder="技能名称" onChange={(e) => setName(e.target.value)} />
-      </div>
-      <input className="about-insp-input" value={desc} placeholder="功能描述：这个 skill 能干什么" onChange={(e) => setDesc(e.target.value)} />
-      <input className="about-insp-input" value={link} placeholder="链接 https://…" onChange={(e) => setLink(e.target.value)} />
-      <div className="about-insp-form-actions">
-        <button type="button" className="about-insp-btn is-primary" onClick={submit}>
           添加
         </button>
         <button type="button" className="about-insp-btn" onClick={reset}>
@@ -1372,91 +1332,6 @@ function ProjectGrid({
   );
 }
 
-/** AI 技能：技能卡（图标 + 名称 + 功能描述 + 链接） */
-function SkillWall({
-  items,
-  isAdmin,
-  onAdd,
-  onDelete,
-  onEdit,
-}: {
-  items: SkillItem[];
-  isAdmin: boolean;
-  onAdd: (item: SkillItem) => void;
-  onDelete: (id: string) => void;
-  onEdit: (id: string, patch: Record<string, unknown>) => void;
-}) {
-  const [editingId, setEditingId] = useState<string | null>(null);
-
-  return (
-    <div className="about-insp-sgrid">
-      {items.map((s) => {
-        const inner = (
-          <>
-            <span className="about-insp-skill-icon" aria-hidden="true">
-              {s.icon}
-            </span>
-            <span className="about-insp-skill-body">
-              <span className="about-insp-skill-name">{s.name}</span>
-              {s.desc ? <span className="about-insp-skill-desc">{s.desc}</span> : null}
-            </span>
-          </>
-        );
-        return (
-          <div className="about-insp-skill" key={s.id}>
-            {editingId === s.id ? (
-              <InlineEditForm
-                fields={[
-                  { key: 'icon', label: '图标（一个 emoji）' },
-                  { key: 'name', label: '技能名称' },
-                  { key: 'desc', label: '功能描述' },
-                  { key: 'link', label: '链接 https://…' },
-                ]}
-                initial={{ icon: s.icon, name: s.name, desc: s.desc ?? '', link: s.link ?? '' }}
-                onSave={(val) => {
-                  onEdit(s.id, {
-                    icon: val.icon.trim() || s.icon,
-                    name: val.name.trim() || s.name,
-                    desc: val.desc.trim() || undefined,
-                    link: val.link.trim() || undefined,
-                  });
-                  setEditingId(null);
-                }}
-                onCancel={() => setEditingId(null)}
-              />
-            ) : (
-              <>
-                {s.link ? (
-                  <a
-                    className="about-insp-skill-hit"
-                    href={s.link}
-                    target="_blank"
-                    rel="noreferrer noopener"
-                    aria-label={`打开 ${s.name}`}
-                  >
-                    {inner}
-                  </a>
-                ) : (
-                  <span className="about-insp-skill-hit">{inner}</span>
-                )}
-              </>
-            )}
-            {isAdmin ? (
-              <>
-                {editingId === s.id ? null : (
-                  <EditButton onClick={() => setEditingId(s.id)} label={`编辑技能 ${s.name}`} />
-                )}
-                <DelButton onClick={() => onDelete(s.id)} label={`删除技能 ${s.name}`} />
-              </>
-            ) : null}
-          </div>
-        );
-      })}
-      {isAdmin ? <SkillAddForm onAdd={onAdd} /> : null}
-    </div>
-  );
-}
-
 /** 链接卡：案例 / 知识共用（封面 + 标题 + 点击跳转） */
 function LinkGrid({
   items,
@@ -1705,7 +1580,6 @@ export function AboutInspiration() {
   const [vision, setVision] = useState<VisionItem[]>(() => getCollection('vision'));
   const [music, setMusic] = useState<MusicItem[]>(() => getCollection('music'));
   const [projects, setProjects] = useState<ProjectItem[]>(() => getCollection('projects'));
-  const [skills, setSkills] = useState<SkillItem[]>(() => getCollection('skills'));
   const [cases, setCases] = useState<LinkItem[]>(() => getCollection('cases'));
   const [knowledge, setKnowledge] = useState<LinkItem[]>(() => getCollection('knowledge'));
   const [zoom, setZoom] = useState<LightboxItem | null>(null);
@@ -1715,18 +1589,16 @@ export function AboutInspiration() {
 
   /** 刷新视图数据；上传文件在数据里是 `idb:` 落盘引用，这里换成可显示的 object URL */
   const refresh = async () => {
-    const [v, m, p, s, c, k] = await Promise.all([
+    const [v, m, p, c, k] = await Promise.all([
       resolveIdbRefs(getCollection('vision'), ['src']),
       resolveIdbRefs(getCollection('music'), ['src', 'cover']),
       resolveIdbRefs(getCollection('projects'), ['cover']),
-      resolveIdbRefs(getCollection('skills'), []),
       resolveIdbRefs(getCollection('cases'), []),
       resolveIdbRefs(getCollection('knowledge'), []),
     ]);
     setVision(v);
     setMusic(m);
     setProjects(p);
-    setSkills(s);
     setCases(c);
     setKnowledge(k);
   };
@@ -1771,11 +1643,6 @@ export function AboutInspiration() {
     refresh();
   };
 
-  const onAddSkill = async (item: SkillItem) => {
-    await addItem('skills', item);
-    refresh();
-  };
-
   const onAddLink = async (key: 'cases' | 'knowledge', item: LinkItem) => {
     await addItem(key, item);
     refresh();
@@ -1797,7 +1664,7 @@ export function AboutInspiration() {
           <SubTabs tabs={SUBTABS.aesthetics} active={cur} onPick={(id) => pickSub('aesthetics', id)} />
           {cur === 'vision' ? (
             <VisionGrid
-              items={vision}
+              items={byNewest(vision)}
               isAdmin={isAdmin}
               onOpen={setZoom}
               onAdd={onUploadVision}
@@ -1807,7 +1674,7 @@ export function AboutInspiration() {
             />
           ) : (
             <MusicGrid
-              items={music}
+              items={byNewest(music)}
               isAdmin={isAdmin}
               onAdd={onAddMusic}
               onDelete={(id) => onDelete('music', id)}
@@ -1817,27 +1684,15 @@ export function AboutInspiration() {
         </>
       );
     }
+    /* AI实验室：不再分「项目 / 技能」两个页签 —— 一个列表混着放，按时间从新到旧。 */
     return (
-      <>
-        <SubTabs tabs={SUBTABS.ai_lab} active={cur} onPick={(id) => pickSub('ai_lab', id)} />
-        {cur === 'projects' ? (
-          <ProjectGrid
-            items={projects}
-            isAdmin={isAdmin}
-            onAdd={onAddProject}
-            onDelete={(id) => onDelete('projects', id)}
-            onEdit={(id, patch) => onEditItem('projects', id, patch)}
-          />
-        ) : (
-          <SkillWall
-            items={skills}
-            isAdmin={isAdmin}
-            onAdd={onAddSkill}
-            onDelete={(id) => onDelete('skills', id)}
-            onEdit={(id, patch) => onEditItem('skills', id, patch)}
-          />
-        )}
-      </>
+      <ProjectGrid
+        items={byNewest(projects)}
+        isAdmin={isAdmin}
+        onAdd={onAddProject}
+        onDelete={(id) => onDelete('projects', id)}
+        onEdit={(id, patch) => onEditItem('projects', id, patch)}
+      />
     );
   };
 
@@ -1889,7 +1744,7 @@ export function AboutInspiration() {
       {/* 内容区 */}
       {active === 'cases' ? (
         <LinkGrid
-          items={cases}
+          items={byNewest(cases)}
           isAdmin={isAdmin}
           onAdd={(it) => onAddLink('cases', it)}
           onDelete={(id) => onDelete('cases', id)}
@@ -1897,7 +1752,7 @@ export function AboutInspiration() {
         />
       ) : active === 'knowledge' ? (
         <LinkGrid
-          items={knowledge}
+          items={byNewest(knowledge)}
           isAdmin={isAdmin}
           onAdd={(it) => onAddLink('knowledge', it)}
           onDelete={(id) => onDelete('knowledge', id)}

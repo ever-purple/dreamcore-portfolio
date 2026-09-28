@@ -298,12 +298,15 @@ export type LinkMeta = {
   extra?: Record<string, unknown>;
 };
 
-/** 识别失败 / 目标页没给封面时的占位封面池（同一链接稳定命中同一张） */
+/** 识别失败 / 目标页没给封面时的占位封面池（同一链接稳定命中同一张）。
+ *  2026-09-28：原指向 `/frames/000N.jpg`（2560×1443 的序列帧原图，单张 350~600KB）。
+ *  那批 JPEG 已经换成 WebP 并从 public/ 清掉了，这里改指 `frames-sm` 的 WebP 变体 ——
+ *  它本来就是"缩到 1440 宽"的小图，当一张卡片封面既够清晰又只有 ~27KB。 */
 const COVER_POOL = [
-  '/frames/0001.jpg',
-  '/frames/0026.jpg',
-  '/frames/0051.jpg',
-  '/frames/0076.jpg',
+  '/frames-sm/0001.webp',
+  '/frames-sm/0026.webp',
+  '/frames-sm/0051.webp',
+  '/frames-sm/0076.webp',
   '/about/banner-visual.jpeg',
   '/about/bg-pattern.webp',
 ];
@@ -519,9 +522,22 @@ export async function importStore(text: string): Promise<boolean> {
   return true;
 }
 
-/** 恢复成代码里的种子数据（MOCK）。 */
+/**
+ * 恢复默认数据。
+ *
+ * 「默认」的来源优先级：
+ *   1. `/insp/data.json` —— 网站发布的那份（改内容推上线后，作者在这里一键同步回来）；
+ *   2. 编译进 bundle 的种子 MOCK —— data.json 拉不到时兜底。
+ *
+ * ⚠️ 之前只恢复 MOCK 有个坑：种子和 data.json 是两份数据，只更新 data.json 时
+ * 作者点「恢复默认」拿不到新内容（还会被本地快照的 savedAt 永久遮蔽）。
+ * 现在以 data.json 为准，两边就咬合上了。
+ */
 export async function resetStore(): Promise<void> {
-  current = { savedAt: Date.now(), store: freshStore() };
+  const disk = await loadFromProjectFile();
+  current = disk
+    ? { savedAt: Date.now(), store: disk.store }
+    : { savedAt: Date.now(), store: freshStore() };
   await persist();
 }
 

@@ -135,7 +135,60 @@ export const MUSIC: MusicItem[] = [
 /* ------------------------------------------------------------------ */
 
 export const PROJECTS: ProjectItem[] = [
-  // { id: 'p1', cover: '<封面>', name: '项目名', desc: '一句话简介', tags: ['#LLM'], link: 'https://github.com/owner/repo', stars: 123 },
+  // ⚠️ 这份种子要和 public/insp/data.json 的 store.projects 保持一致：
+  // data.json 是「网站发布的正式数据」（恢复默认优先恢复它），
+  // 这里是 bundle 内的兜底种子（data.json 拉不到时才用）。
+  // id 尾部时间戳 = GitHub 真实 starred_at，「从新到旧」排序靠它（见 byNewest）。
+  {
+    id: 'projects-1789558872000',
+    cover: '/insp/media/gh-pbakaus-impeccable.png',
+    name: 'impeccable',
+    tags: ['#设计语言', '#AI 设计'],
+    desc: '关于哪方面：AI 辅助设计的「设计语言」。对什么有用：让 AI 产出界面前先套一层设计语言约束，去掉「AI 味」审美。',
+    link: 'https://github.com/pbakaus/impeccable',
+    source: 'github',
+    stars: 71918,
+  },
+  {
+    id: 'projects-1789558840000',
+    cover: '/insp/media/gh-nextlevelbuilder-ui-ux-pro-max-skill.png',
+    name: 'ui-ux-pro-max-skill',
+    tags: ['#UI/UX', '#AI skill'],
+    desc: '关于哪方面：UI/UX 设计 AI skill。对什么有用：做 Web / 移动 / 落地页 / React / Tailwind 界面时给 AI 注入设计智能，产出更专业的 UI。',
+    link: 'https://github.com/nextlevelbuilder/ui-ux-pro-max-skill',
+    source: 'github',
+    stars: 131121,
+  },
+  {
+    id: 'projects-1788873504000',
+    cover: '/insp/media/gh-greensock-gsap-skills.png',
+    name: 'gsap-skills',
+    tags: ['#动效', '#GSAP'],
+    desc: '关于哪方面：Web 动效 / GSAP 动画。对什么有用：写滚动动效、时间轴编排、插件用法时给 AI 注入 GSAP 官方最佳实践。',
+    link: 'https://github.com/greensock/gsap-skills',
+    source: 'github',
+    stars: 15745,
+  },
+  {
+    id: 'projects-1788873005000',
+    cover: '/insp/media/gh-img2threejs-img2threejs.png',
+    name: 'img2threejs',
+    tags: ['#3D', '#Three.js'],
+    desc: '关于哪方面：图片 → Three.js 3D 模型。对什么有用：把参考图 / 角色图转成可动画、可直接上网页的 3D 模型，省掉手工建模。',
+    link: 'https://github.com/img2threejs/img2threejs',
+    source: 'github',
+    stars: 17063,
+  },
+  {
+    id: 'projects-1788700217000',
+    cover: '/insp/media/gh-MengTo-threeui.png',
+    name: 'threeui',
+    tags: ['#Three.js', '#UI 组件'],
+    desc: '关于哪方面：Three.js / WebGL UI 组件目录。对什么有用：做 3D 网页界面时找现成的交互组件与源码参考。',
+    link: 'https://github.com/MengTo/threeui',
+    source: 'github',
+    stars: 6260,
+  },
 ];
 
 /* ------------------------------------------------------------------ */

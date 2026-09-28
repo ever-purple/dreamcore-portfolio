@@ -81,6 +81,10 @@ export function AdminProvider({ children }: { children: ReactNode }) {
   const toggle = useCallback(() => {
     setIsAdmin((prev) => {
       const next = !prev;
+      // 和 setMode 同一道门：切口令保护的作者模式必须已解锁（cookie 在）。
+      // 之前 toggle 绕过了这道校验，是个潜在后门 —— 万一哪天徽标对未解锁访客可见，
+      // 点一下就直接进作者模式了。
+      if (next && GATE_ENABLED && !isUnlocked()) return prev;
       persistMode(next);
       return next;
     });

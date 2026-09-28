@@ -11,11 +11,12 @@ import {
 import { useMagnetic } from '@/hooks/useMagnetic';
 
 /**
- * 作者 / 访客模式徽标 —— 访客看不到它（没解锁直接不渲染），作者才看得到。
+ * 作者 / 访客模式徽标 —— 没解锁过的真访客看不到它（return null），作者常驻可见。
  *
  * 固定顶部居中，压在所有浮层之上。
  *   作者模式 → 薄荷绿 + 可编辑（木马「＋提交项目」、案例「编辑项目」、灵感收藏上传/删除）
- *   访客模式 → 只有作者自己能看到的这一档（默认隐藏）
+ *   访客模式 → 作者自己切过来「预览访客视角」的这一档；cookie 还在，所以徽标仍显示，
+ *              **再点一下就切回作者**（不用重输口令）—— 之前是单向的，切过去就回不来。
  *
  * 【隐藏入口】不显示任何按钮，3 秒内连按 4 次 M（键盘）弹出口令框；
  * 按住不放产生的自动重复不算数，正常访客基本不会误触、也不进截图。
@@ -187,13 +188,19 @@ export function ModeSwitch() {
         type="button"
         className={`mode-switch ${isAdmin ? 'is-author' : 'is-guest'}`}
         onClick={() => {
-          if (isAdmin) toggle();
+          if (isAdmin) {
+            toggle();
+          } else if (isUnlocked()) {
+            // 访客态但 cookie 还在（作者自己切过来预览的）：点一下就切回作者，不用再输口令。
+            // 没解锁过的真访客根本看不到这个徽标（上面 return null 挡着），所以这条路不会被绕过。
+            toggle();
+          }
         }}
         aria-pressed={isAdmin}
-        title="作者模式（可编辑）。点一下切回访客模式"
+        title={isAdmin ? '作者模式（可编辑）。点一下切回访客模式' : '访客模式（只读）。点一下切回作者模式'}
       >
         <span className="mode-switch-dot" aria-hidden="true" />
-        <span className="mode-switch-label">作者模式</span>
+        <span className="mode-switch-label">{isAdmin ? '作者模式' : '访客模式'}</span>
         <span className="mode-switch-hint">{isAdmin ? '可编辑' : '只读'}</span>
         <span className="mode-switch-flip" aria-hidden="true">
           ⇄

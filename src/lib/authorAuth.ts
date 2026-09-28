@@ -18,11 +18,12 @@ const COOKIE_DAYS = 14;
 
 /**
  * 隐藏入口：连按同一个键触发，不显示任何按钮。
- * 1.5 秒内连按 5 次 —— 正常访客不会误触，也不占屏幕、不进截图。
+ * 3 秒内连按 4 次即可 —— 正常访客不会误触，也不占屏幕、不进截图；
+ * 同时挡掉「按住不放」产生的重复 keydown 事件。
  */
 export const HOTKEY_KEY = 'm';
-export const HOTKEY_TIMES = 5;
-export const HOTKEY_WINDOW = 1500;
+export const HOTKEY_TIMES = 4;
+export const HOTKEY_WINDOW = 3000;
 
 /**
  * 只有「生产构建」才启用这道门。

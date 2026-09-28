@@ -17,7 +17,8 @@ import { useMagnetic } from '@/hooks/useMagnetic';
  *   作者模式 → 薄荷绿 + 可编辑（木马「＋提交项目」、案例「编辑项目」、灵感收藏上传/删除）
  *   访客模式 → 只有作者自己能看到的这一档（默认隐藏）
  *
- * 【隐藏入口】不显示任何按钮，1.5 秒内连按 5 次 M（键盘）弹出口令框。
+ * 【隐藏入口】不显示任何按钮，3 秒内连按 4 次 M（键盘）弹出口令框；
+ * 按住不放产生的自动重复不算数，正常访客基本不会误触、也不进截图。
  * 输对 → 进入作者模式，并在浏览器里记 14 天，期间徽标常驻可见，刷新、换页都在。
  * 开发环境这道门是关的（徽标一直可见、?admin=1 照旧），方便自己调试。
  */
@@ -35,6 +36,7 @@ export function ModeSwitch() {
     if (!GATE_ENABLED) return;
 
     const onKey = (e: KeyboardEvent) => {
+      if (e.repeat) return; // 按住不放产生的自动重复 keydown 不算数
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key.toLowerCase() !== HOTKEY_KEY) return;
       const el = e.target as HTMLElement | null;

@@ -148,6 +148,14 @@ HARDCODED_DISPLAY = [
     "公司与项目介绍",
     "核心工作",
     "核心工作内容与实战成果",
+    # 2026-09-28：工作室底部「联系方式」面板右侧那栏
+    #   （StudioContactPanel.tsx 的 CONTACT_PAIRS = [{ Contacts, email }, { Share, 分享网站 }]）。
+    #   用户拿着截图报「联系方式有三个字不是纳米宋了」—— 实测子集里
+    #   分 ✅ 在、**享/网/站 ❌ 缺**，正好三个字静默回退 Noto Serif，
+    #   而同一行的「分」还是纳米宋 → 一行里两种宋体。
+    #   ⚠️ 这一栏是写在组件里的常量，不是 data/*.ts 的字段，脚本扫不到，只能手工登记。
+    #   （同面板的 CONTACT.email 是全 ASCII，不涉及子集。）
+    "分享网站",
 ]
 chars.update("".join(HARDCODED_DISPLAY))
 

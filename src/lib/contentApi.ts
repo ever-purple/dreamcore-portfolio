@@ -351,8 +351,8 @@ async function uploadRemote(file: File): Promise<string | null> {
     reader.readAsDataURL(file);
   });
   const b64 = dataUrl.includes(',') ? dataUrl.slice(dataUrl.indexOf(',') + 1) : dataUrl;
-  const qs = new URLSearchParams({ ext, kind, name: file.name });
-  const res = await fetch(`${REMOTE.replace(/\/$/, '')}/upload?${qs.toString()}`, {
+  const qs = new URLSearchParams({ action: 'upload', ext, kind, name: file.name });
+  const res = await fetch(`${REMOTE.replace(/\/$/, '')}?${qs.toString()}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ data: b64 }),
@@ -591,7 +591,7 @@ async function deleteRemoteBlob(url: unknown): Promise<void> {
   // 不动 idb: 引用、也不动站内 /insp/media 路径。
   if (!/^https:\/\/[^/]+\.blob\.vercel-storage\.com\//i.test(url)) return;
   try {
-    await fetch(`${REMOTE.replace(/\/$/, '')}/blob?url=${encodeURIComponent(url)}`, {
+    await fetch(`${REMOTE.replace(/\/$/, '')}?action=blob&url=${encodeURIComponent(url)}`, {
       method: 'DELETE',
       cache: 'no-store',
     });

@@ -360,15 +360,14 @@ server.listen(PORT, async () => {
 
   // 上传：没口令 → 401
   res = makeRes();
-  await insp(makeReq('POST', { url: '/api/insp/upload', query: { ext: 'png' }, body: { data: 'aGVsbG8=' } }), res);
+  await insp(makeReq('POST', { query: { action: 'upload', ext: 'png' }, body: { data: 'aGVsbG8=' } }), res);
   check('上传没口令 → 401', res.statusCode === 401, res.body);
 
   // 上传：口令对 → 返回假 Blob URL
   res = makeRes();
   await insp(
     makeReq('POST', {
-      url: '/api/insp/upload',
-      query: { ext: 'png', kind: 'image', name: '测试图.png' },
+      query: { action: 'upload', ext: 'png', kind: 'image', name: '测试图.png' },
       body: { data: 'aGVsbG8=' }, // "hello" 的 base64
       headers: { 'x-admin-key': 'secret123' },
     }),
@@ -381,8 +380,7 @@ server.listen(PORT, async () => {
   res = makeRes();
   await insp(
     makeReq('POST', {
-      url: '/api/insp/upload',
-      query: { ext: 'exe' },
+      query: { action: 'upload', ext: 'exe' },
       body: { data: 'xxxx' },
       headers: { 'x-admin-key': 'secret123' },
     }),
@@ -394,8 +392,7 @@ server.listen(PORT, async () => {
   res = makeRes();
   await insp(
     makeReq('DELETE', {
-      url: '/api/insp/blob',
-      query: { url: 'https://fake.blob.vercel-storage.com/insp/abc.png' },
+      query: { action: 'blob', url: 'https://fake.blob.vercel-storage.com/insp/abc.png' },
       headers: { 'x-admin-key': 'secret123' },
     }),
     res,
@@ -405,7 +402,7 @@ server.listen(PORT, async () => {
   // 删除：非法 url → 400
   res = makeRes();
   await insp(
-    makeReq('DELETE', { url: '/api/insp/blob', query: { url: 'javascript:alert(1)' }, headers: { 'x-admin-key': 'secret123' } }),
+    makeReq('DELETE', { query: { action: 'blob', url: 'javascript:alert(1)' }, headers: { 'x-admin-key': 'secret123' } }),
     res,
   );
   check('删非法 url → 400', res.statusCode === 400, res.body);

@@ -226,14 +226,14 @@ async function deleteBlob(url: string): Promise<boolean> {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Cache-Control', 'no-store');
 
-  // 路径前缀 /api/insp/xxx
-  const rawPath = req.url ?? '/api/insp';
-  const pathname = rawPath.split('?')[0].replace(/\/+$/, '') || '/api/insp';
-  const isUpload = pathname === '/api/insp/upload';
-  const isBlobDel = pathname === '/api/insp/blob';
+  // 用 query 参数区分动作，而不是子路径 —— Vercel 只把 /api/insp 精确路由到本文件，
+  // /api/insp/upload 这种子路径匹配不到任何文件会 404。
+  const action = str(req.query?.action);
+  const isUpload = action === 'upload';
+  const isBlobDel = action === 'blob';
 
   /* ---- 读：公开，访客也能读 ---- */
-  if (req.method === 'GET' && pathname === '/api/insp') {
+  if (req.method === 'GET') {
     if (!storageReady()) {
       res.status(503).json({ ok: false, reason: 'storage-not-configured' });
       return;
@@ -264,7 +264,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   /* ---- 写整份数据 ---- */
-  if (req.method === 'PUT' && pathname === '/api/insp') {
+  if (req.method === 'PUT') {
     try {
       const parsed = normalizeBodyObject(req.body);
       if (!parsed) {

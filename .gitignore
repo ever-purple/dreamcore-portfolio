@@ -4,6 +4,7 @@ dist
 dist-ssr
 dist-test
 dist-test2
+dist-openfix
 .vite
 
 # 日志

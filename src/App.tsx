@@ -125,6 +125,58 @@ function App() {
     else if (entered) lenis.start();
   }, [stage, entered]);
 
+  // 进工作室前预热背景资源：StudioLensBackground 的 <video> 只在 stage 切到 'studio'
+  // 时才挂载，若等到点 OPEN 才加载，进门后会卡在「静帧海报 → 视频缓冲」的空窗，
+  // 观感就是用户说的「背景出现得很慢」。这里在首页 idle 时把循环视频 + 首帧海报
+  // 先拉进缓存，进门即播、镜头水波揭示立刻就位。
+  // 不卡加载页、不计入进度，且只在真·首页 + 已进场后做，绝不抢占首页关键资源。
+  useEffect(() => {
+    if (stage !== 'home' || !entered) return;
+    // 省流量 / 计费网络：不预拉 2.4MB 视频，进门后照常走海报→缓冲流程
+    const conn = (navigator as unknown as { connection?: { saveData?: boolean } }).connection;
+    if (conn?.saveData) return;
+    const idle: (cb: () => void) => number =
+      'requestIdleCallback' in window
+        ? (cb) => window.requestIdleCallback(cb as IdleRequestCallback)
+        : (cb) => window.setTimeout(cb, 1500);
+    const handle = idle(() => {
+      const base = import.meta.env.BASE_URL;
+      // 海报：海报组件与 LensDistortion 的 image 同源，预热后两者都零等待
+      const poster = new Image();
+      poster.src = `${base}studio/studio-poster.jpg`;
+      // 隐藏 video 预热 HTTP / 字节区间缓存：StudioLensBackground 里同源 <video> 秒播
+      const v = document.createElement('video');
+      v.preload = 'auto';
+      v.muted = true;
+      v.playsInline = true;
+      v.src = `${base}studio/studio-loop.mp4`;
+      v.load();
+      // 兜底：prefetch link，部分浏览器对隐藏 video 的预载优先级偏低
+      const link = document.createElement('link');
+      link.rel = 'prefetch';
+      link.as = 'video';
+      link.type = 'video/mp4';
+      link.href = `${base}studio/studio-loop.mp4`;
+      document.head.appendChild(link);
+      window.setTimeout(() => {
+        try {
+          document.head.removeChild(link);
+        } catch {
+          /* 已移除 */
+        }
+      }, 10000);
+    });
+    return () => {
+      if ('cancelIdleCallback' in window) {
+        try {
+          window.cancelIdleCallback(handle);
+        } catch {
+          /* 尚未调度 */
+        }
+      }
+    };
+  }, [stage, entered]);
+
   const setDownBlocked = useCallback((blocked: boolean) => {
     downBlockedRef.current = blocked;
   }, []);

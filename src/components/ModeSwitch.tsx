@@ -60,8 +60,9 @@ export function ModeSwitch() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // 访客：什么都不渲染。作者：只渲染徽标。
-  if (GATE_ENABLED && !isUnlocked()) return null;
+  // 访客：默认什么都不渲染；但只要用隐藏入口（连按 M）唤起了口令框，就必须渲染出来
+  // （否则 setAsking(true) 一触发，重渲染又在这里 return null，弹窗永不可见）。
+  if (GATE_ENABLED && !isUnlocked() && !asking) return null;
 
   const submitKey = async (event: React.FormEvent) => {
     event.preventDefault();

@@ -7682,41 +7682,53 @@ body.green-os .about-overlay .about-pet {
     top: auto;
     left: 0;
     width: 100%;
-    height: 46%;
-    padding: 16px 0 22px;
+    /* 2026-09-28（用户：「轮播组件太大导致半圆滑动项目位置过于靠下」）——
+       原来 top:auto + height:46% 是**贴死屏幕下沿**的：390×844 实测 .ww-wrap
+       落在 472..822，弧心 = 647 = 77% 屏高，焦点项下面那一项就已经掉出视口
+       （i2 的 rect.top = 861 > 844）。现在两刀一起把弧心拉到约 59%：
+         ① 底部留出 clamp(56px…92px) 给提示语 / 署名（原来它们和轮播挤在一起）；
+         ② 高度 46% → 60%。
+       行距不在这里管 —— 由 WorksWheel.tsx 按 .ww-wrap 实测高度缩放半径
+       （见那里的 DESKTOP_WHEEL_H / RADII_MIN_K）。 */
+    bottom: clamp(56px, 10.5vh, 92px);
+    height: 60%;
+    padding: 12px 0 14px;
   }
+  /* 去掉原来的 min-height: 180px —— 那是"宁可溢出也要保底"的写法，
+     会和上面收缩后的宿主高度打架（宿主只剩 200px 时 wrap 仍强撑 180px，
+     弧心被顶回屏幕下半）。高度一律交给 flex 分配。 */
   .ww-wrap {
-    min-height: 180px;
+    min-height: 0;
   }
   .ww-item {
-    height: 74px;
-    margin-top: -37px;
-    padding-inline: 104px;
-    gap: 14px;
+    height: 64px;
+    margin-top: -32px;
+    padding-inline: 92px;
+    gap: 12px;
   }
   .ww-gauge {
-    width: 104px;
+    width: 92px; /* 必须与 .ww-item 的 padding-inline 相等，两栏才互不侵入 */
   }
   .ww-cover {
-    width: 74px;
-    height: 52px;
+    width: 70px;
+    height: 48px;
   }
   .ww-title {
     font-size: 13px;
   }
   .ww-gauge-list {
-    right: 34px;
-    max-width: 58px;
+    right: 30px;
+    max-width: 54px;
   }
   .ww-gauge-line,
   .ww-gauge-cap {
-    right: 18px;
+    right: 16px;
   }
-  /* 刻度栏挪到不压轮播的位置：≤900px 时 .works-wheel-host 沉到底部 46%，
-     而 .works-hint 是相对**整屏**定位的（right:24px; bottom:62px），
-     正好落在那 46% 里，和轨道上的第二张卡片叠在一起。抬到轮播上方即可。 */
+  /* 刻度栏挪到不压轮播的位置：≤900px 时 .works-wheel-host 沉到屏幕中下部，
+     而 .works-hint 是相对**整屏**定位的，正好落在轮播里和轨道上的卡片叠在一起。
+     抬到轮播宿主上沿再往上 10px —— 宿主上沿 = 100% − 高度(60%) − 底距。 */
   .works-hint {
-    bottom: calc(46% + 10px);
+    bottom: calc(60% + clamp(56px, 10.5vh, 92px) + 10px);
   }
 }
 
@@ -7730,23 +7742,30 @@ body.green-os .about-overlay .about-pet {
    窄屏上把它收掉、宽度还给正文，是纯收益（想恢复只删这一条 display:none）。 */
 @media (max-width: 620px) {
   .ww-item {
-    height: 66px;
-    margin-top: -33px;
-    padding-inline: 20px;
-    gap: 12px;
+    /* 66 → 58：手机上行距由半径缩放压到 ~93px，条目再瘦一圈才留得出
+       「上下各探出半个」的邻项（用户 2026-09-28 要的是"能滑着看"，
+       一屏只看到焦点一项就还是像坏掉）。文字三行（11/13/10px）约 52px，
+       58px 仍留得住上下各 3px 的呼吸。 */
+    height: 58px;
+    margin-top: -29px;
+    padding-inline: 18px;
+    gap: 11px;
   }
   .ww-cover {
-    width: 68px;
-    height: 48px;
+    width: 64px;
+    height: 44px;
   }
   .ww-gauge {
     display: none;
   }
   .ww-title {
-    font-size: 13.5px;
+    font-size: 13px;
+  }
+  .ww-code {
+    font-size: 11px;
   }
   .ww-en {
-    font-size: 10.5px;
+    font-size: 10px;
   }
   .works-hint {
     /* 刻度栏没了，提示语改居中吸底，不再偏右压住卡片 */
@@ -11310,7 +11329,9 @@ img {
 /* 拖动手柄 —— **只挂在网格卡片上**（用户 2026-09-22：打开前可以随便拖，打开后不可移动）。
    里面任何东西都不许自己抢手势：文字不可选中；图片关掉原生 HTML5 拖拽
    —— <img> 默认 draggable，一按就发 dragstart，pointermove 序列被打断，
-   表现就是"小票拖不动、只有里面的图在动"（2026-09-22 报的就是这个）。 */
+   表现就是"小票拖不动、只有里面的图在动"（2026-09-22 报的就是这个）。
+   ⚠️ 这里的 `touch-action: none` 只管**鼠标**那一档；触摸端由下面的
+      `@media (hover: none)` 放宽成 `pan-y`，否则整页滚不动（2026-09-28）。 */
 .cp-drag-handle {
   cursor: grab;
   touch-action: none;
@@ -11324,6 +11345,36 @@ img {
 .cp-receipt-img,
 .cp-receipt-sticker img {
   -webkit-user-drag: none;
+}
+/* ── 触摸端（手机 / 平板）：小票不再抢手势，把纵向滚动还给页面 ──────────────
+   2026-09-28 用户：「文案区域只能显示前两项，后两项不可见，需要支持滑动」。
+   根因：这张小票占满整张卡、又是 `.cp-drag-handle { touch-action: none }`，
+   于是**页面上唯一的大面积可触摸区**把浏览器原生滚动整块禁掉了 ——
+   上面的 `.cp-scroll` 实测 scrollHeight/clientHeight = 2671/844，
+   本身完全滚得动，却一次都收不到手势。
+   修法两层，缺一不可：
+     · 这里把 `touch-action` 放宽到 `pan-y`：**保留纵向滚动**，仍然禁掉
+       双指缩放与横向平移（票面不会被拖歪）；
+     · 组件侧 `onPointerDown` 对 `pointerType === 'touch'` 直接 return，
+       不再 `setPointerCapture` —— 光改 CSS 不够，指针捕获本身又把手势锁回这张票。
+   桌面鼠标两样都不受影响（`touch-action` 对鼠标无意义，`pointerType` 是 'mouse'）。 */
+@media (hover: none), (max-width: 900px) {
+  .cp-drag-handle {
+    touch-action: pan-y;
+    cursor: pointer;
+  }
+  .cp-drag-handle:active {
+    cursor: pointer;
+  }
+  /* 触摸屏没有"悬停"：点一下 `:hover` 会一直黏住，票被永久放大 5.5%，看着像卡住。
+     只回退 scale，保留倾角（.cp-receipt-unit 的基线就是 rotate(--cp-tilt)）。 */
+  .cp-receipt:hover .cp-receipt-unit {
+    transform: rotate(var(--cp-tilt, 0deg));
+  }
+  /* 「按住可拖动」这行提示对触摸端是假的（上面已禁用拖动），收掉 */
+  .cp-only-fine {
+    display: none;
+  }
 }
 /* 长小票（展开态）= ReceiptUnit 的展开态变体，纸面/宽度全部继承，这里只加「打印」入场：
    自顶向下揭开。fill-mode 用 backwards 而不是 both —— 动画终态留着 clip-path:inset(0)
@@ -11718,6 +11769,15 @@ img {
   }
   .cp-grid {
     grid-template-columns: 1fr;
+    /* 单列之后"错落"是纯装饰，却仍按四张票的顺序把整组往下推。手机上一屏只放得下
+       一张半，错落只会让人以为"下面的票没对齐"。2026-09-28 收一半：
+       stagger 46 → 24 封顶、gap 34 → 20 封顶、上下 padding 56/72 → 48/40 封顶，
+       页面总高从实测 2671 收到 ~2400。真正解决"看不到后两项"的是滚动
+       （触摸端 `.cp-drag-handle { touch-action: pan-y }`，见上面那段），
+       这里只是让第一张票别一上来就顶得那么远。 */
+    --cp-stagger: clamp(10px, 2.4vh, 24px);
+    gap: clamp(14px, 3.4vw, 20px);
+    padding: clamp(34px, 4.5vh, 48px) clamp(16px, 4.4vw, 40px);
   }
 }
 

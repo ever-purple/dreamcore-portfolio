@@ -87,7 +87,15 @@ export function CopyProjectPage({ onClose }: Props) {
           「被标题栏盖住」。挪进来之后裁切边界变成屏幕物理上沿（y=0），
           小票可以完整地拖到标题区上方（小票 z-index 2 > 标题，画在标题之上）。
           代价：内容真溢出（矮屏）时标题会跟着滚走 —— 对这页可接受。 */}
-      <div className="cp-scroll" data-cursor="" data-cursor-tone="light">
+      {/* ⚠️ `data-lenis-prevent` 是必须的（2026-09-28 补，用户报「文案区域只能显示
+          前两项，后两项不可见，需要支持滑动」）。App.tsx 的 Lenis 实例 wrapper 是
+          window，它会全局 preventDefault 掉 wheel / touchmove 自己来实现"平滑滚动"；
+          而 .cp-scroll 是一个**嵌套**滚动容器，不告诉它"这里归浏览器管"，
+          它就会把落在小票上的每一次上滑都吃掉 —— 实测 wheel 2/2、touchmove 38/38
+          全部被 preventDefault，scrollTop 恒 0。
+          全站约定本来就是"每个浮层根节点都挂这个属性"（AboutOverlay / WorkDetail /
+          NewsstandScene / WorksCarousel / WorksWheel 都有），只有这一页漏了。 */}
+      <div className="cp-scroll" data-lenis-prevent data-cursor="" data-cursor-tone="light">
         <header className="cp-topbar">
           <div className="cp-brand">
             {/* 2026-09-22 第四轮：原先是「Copywriting & AI」，用户要「去掉 &AI，加上文案，
@@ -353,6 +361,13 @@ function ReceiptCard({ project, onOpen }: { project: CopyProject; onOpen: () => 
 
   const onPointerDown = (e: ReactPointerEvent<HTMLButtonElement>) => {
     movedRef.current = false;
+    /* 触摸（手机 / 平板）**不做拖动**，把这层手势整层还给页面滚动 ——
+       用户 2026-09-28：「文案区域只能显示前两项，后两项不可见，需要支持滑动」。
+       根因就是这张小票：它占满整张卡、又是 `.cp-drag-handle`
+       （原 `touch-action: none`），触摸落在票面上的任何一次上滑都被它吃掉，
+       上面的 `.cp-scroll`（实测 2671/844，本身完全可滚）一次都没收到原生滚动。
+       桌面鼠标照旧可拖、落点保留（用户 2026-09-22 定的是"打开前可以随便拖"）。 */
+    if (e.pointerType === 'touch') return;
     dragRef.current = { sx: e.clientX, sy: e.clientY, ox: pos.x, oy: pos.y, moved: false };
     e.currentTarget.setPointerCapture?.(e.pointerId);
   };
@@ -397,7 +412,11 @@ function ReceiptCard({ project, onOpen }: { project: CopyProject; onOpen: () => 
       aria-label={`展开 ${project.title} 的小票`}
     >
       <ReceiptUnit project={project} />
-      <span className="cp-receipt-open cp-receipt-mono">▾ 点按展开全文</span>
+      {/* 「按住可拖动」只在有悬停能力的设备（鼠标）上出现 —— 触摸端这张票不响应拖动，
+          写出来反而是骗人。见 .cp-only-fine 的媒体查询。 */}
+      <span className="cp-receipt-open cp-receipt-mono">
+        ▾ <span className="cp-only-fine">按住可拖动 · </span>点按展开全文
+      </span>
     </button>
   );
 }
@@ -477,6 +496,9 @@ function ReceiptSheet({ project, onClose }: { project: CopyProject; onClose: () 
   return (
     <div
       className="cp-receipt-overlay"
+      /* 同上：这个浮层是 fixed + overflow-y:auto 的整屏滚动容器，缺了这个属性
+         一样会被 Lenis 吞掉手势 —— 展开后只能看到小票顶上一截，往下滑不动。 */
+      data-lenis-prevent
       onClick={onClose}
       role="dialog"
       aria-modal="true"

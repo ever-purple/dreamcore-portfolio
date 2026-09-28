@@ -44,6 +44,17 @@ const R_X = 620; // 横向半径 → 越大，"半圆"弯得越明显（0 = 退�
    R_X > R_Y → 弯得比正圆还夸张，像被掰弯的弧。
 */
 const TILT = 0.6; // rotateX 阻尼：0=不倾斜 1=完全贴合弧面（让条目面朝弧心）
+/*
+   —— 半径的适应式缩放（2026-09-28，修「手机上项目落得太靠下 / 滑不动」）——
+   上面三个半径是**按桌面容器高度**定的：.works-wheel-host 上下各有 76px 内边距，
+   1440×900 下 .ww-wrap 实测约 748px 高，R_Y=560 → 行距 ≈145px，一屏能容 5 项。
+   手机上 .ww-wrap 只有 480 上下，行距 145px 意味着**焦点项下面那一项就已经掉出
+   容器底**（实测 i2 的 rect.top 到 861 > 视口 844）——用户看到的"项目全挤在屏幕最下
+   一排、半截被切"就是这个。所以半径按 wrap 实测高度等比缩放，桌面不变、手机会
+   自动收到 ~0.64 倍。R_X 跟着 R_Y 一起缩，才保持上面那条"正圆弧"的约束。
+*/
+const DESKTOP_WHEEL_H = 748; // 桌面 .ww-wrap 的基准高度（px）
+const RADII_MIN_K = 0.42; // 缩放下限：横屏手机上别把圆弧压成一条直线
 
 /* ==================================================================
    2. 景深（镜头感）
@@ -145,9 +156,14 @@ export function WorksWheel({ projects, focusIndex, onSelect, onCenterChange, ref
   /** 步进节流 */
   const accRef = useRef(0);
   const lockRef = useRef(0);
-  /** 拖动状态 */
-  const dragRef = useRef({ active: false, y: 0, moved: 0 });
+  /** 拖动状态：sy = pointerdown 时的 Y，dy = **带符号**的累计位移（dy<0 = 往上拖）。
+      2026-09-28 修：原先把"按下时的绝对坐标"当成方向依据（`d.y > 0 ? -1 : 1`），
+      而屏幕坐标几乎恒 > 0，于是 dir 恒为 -1 —— 在 pos=0 时 animateTo(-1) 被 clamp
+      回 0，表现就是**怎么拖都不动**（桌面同理，只是桌面主要用滚轮没暴露）。 */
+  const dragRef = useRef({ active: false, sy: 0, dy: 0, moved: 0 });
   const suppressRef = useRef(false);
+  /** 当前生效的弧线半径（随容器高度缩放，见 DESKTOP_WHEEL_H） */
+  const radiiRef = useRef({ y: R_Y, z: R_Z, x: R_X });
 
   /* ---------- 逐帧布局：把弧线 / 缩放 / 模糊写进 DOM ---------- */
   const layout = useCallback(() => {
@@ -166,18 +182,19 @@ export function WorksWheel({ projects, focusIndex, onSelect, onCenterChange, ref
       }
       if (el.style.display === 'none') el.style.display = '';
 
-      // —— 弧线：θ → (x, y, z)
+      // —— 弧线：θ → (x, y, z)。半径取"当前容器高度下"的那一档（桌面 = 原值）
       const a = d * STEP_DEG;
       const rad = (a * Math.PI) / 180;
       const curve = Math.cos(rad) - 1; // 0（中心）→ -1（最远），三项共用
-      const y = Math.sin(rad) * R_Y;
-      const z = curve * R_Z;
+      const { y: Ry, z: Rz, x: Rx } = radiiRef.current;
+      const y = Math.sin(rad) * Ry;
+      const z = curve * Rz;
       /*
         横向分量带负号：curve 恒 ≤ 0，取负后两侧（上下远端）向**右**偏移，
         于是焦点项相对最靠左、整条弧呈 ")" 形（中心鼓向左）。
         去掉这个负号就翻成 "(" 形 —— 方向只由这一个符号决定。
       */
-      const x = -curve * R_X;
+      const x = -curve * Rx;
 
       // —— 景深：t 用 smoothstep 缓动，避免"出焦即糊"
       const t = Math.min(ad / FALLOFF, 1);
@@ -259,6 +276,24 @@ export function WorksWheel({ projects, focusIndex, onSelect, onCenterChange, ref
     layout();
   }, [layout, n]);
 
+  /* ---------- 弧线半径随容器高度缩放（桌面不变，手机自动收紧行距） ----------
+     必须用 ResizeObserver 而不是只在挂载时量一次：这一层是 flex 子项，
+     容器高度取决于 CSS 媒体查询给 .works-wheel-host 的高度，跨断点旋转屏幕会变。 */
+  useLayoutEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const measure = () => {
+      const h = wrap.clientHeight || DESKTOP_WHEEL_H;
+      const k = clamp(h / DESKTOP_WHEEL_H, RADII_MIN_K, 1);
+      radiiRef.current = { y: R_Y * k, z: R_Z * k, x: R_X * k };
+      layout();
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(wrap);
+    return () => ro.disconnect();
+  }, [layout]);
+
   /* ---------- 外部聚焦变化 → 轮子转过去 ---------- */
   useEffect(() => {
     if (focusIndex === null) return;
@@ -289,12 +324,13 @@ export function WorksWheel({ projects, focusIndex, onSelect, onCenterChange, ref
 
     const onDown = (e: PointerEvent) => {
       if (e.button !== 0) return;
-      dragRef.current = { active: true, y: e.clientY, moved: 0 };
+      dragRef.current = { active: true, sy: e.clientY, dy: 0, moved: 0 };
     };
     const onMove = (e: PointerEvent) => {
       const d = dragRef.current;
       if (!d.active) return;
-      d.moved = Math.max(d.moved, Math.abs(e.clientY - d.y));
+      d.dy = e.clientY - d.sy;
+      d.moved = Math.max(d.moved, Math.abs(d.dy));
     };
     const onUp = () => {
       const d = dragRef.current;
@@ -306,7 +342,9 @@ export function WorksWheel({ projects, focusIndex, onSelect, onCenterChange, ref
         suppressRef.current = false;
       }, 0);
       if (d.moved < 20) return;
-      const dir = d.y > 0 ? -1 : 1; // 往上拖 = 看后面的项目
+      /* 方向只看**带符号位移**：往上拖（dy<0）= 看后面的项目。
+         count 用最大位移算，所以"快速一甩"也能一次走好几项。 */
+      const dir = d.dy < 0 ? 1 : -1;
       const count = Math.max(1, Math.round(d.moved / DRAG_PER_ITEM));
       lockRef.current = performance.now();
       animateTo(Math.round(posRef.current) + dir * count);

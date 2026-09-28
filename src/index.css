@@ -6127,6 +6127,40 @@ body.is-diary-dragging * {
   }
 }
 
+/* ==================================================================
+   Studio 背景的可见性兜底（2026-09-28 —— 用户报"手机上进 My Studio 背景全黑"）
+   ------------------------------------------------------------------
+   完整根因见 src/components/StudioLensBackground.tsx 顶部"第 4 个坑"。
+   一句话：畸变层可能根本起不来，而且是**静默**起不来（不是 WebGL2 缺失、
+   就是海报图加载失败），结果页面一切正常、只有背景是纯黑。
+   所以这里给两层兜底。
+   ================================================================== */
+
+/* ① 底图：ShaderMount 是「先 await 海报图 → 再 new ShaderMount → 才建 canvas」，
+   图没到位之前畸变层里什么都没有（以前这段时间就是纯黑，慢网下能黑好几秒）。
+   把同一张海报预铺成根节点的 CSS 背景：立刻有像素，shader 起来后被 canvas 完全盖住。
+   ⚠️ 刻意不写 background-color —— 底下的房间本色就是暗的，
+      凭空猜一个色号反而会在图片解码前闪一下不协调的颜色。 */
+.studio-lens-root {
+  background: url('/studio/studio-poster.jpg') center / cover no-repeat;
+}
+
+/* ② 降级：不挂畸变层，把"清晰原视频"从"mask 局部揭示"改成整幅铺满。
+   镜头畸变和鼠标水波没有了可以接受，但背景本身必须看得见。
+   选择器是 3 个 class，和上面的 `.studio-lens-root.is-revealing .studio-lens-clear`
+   同级 → 靠**位置更靠后**取胜，别把它挪到前面去。 */
+.studio-lens-root.is-noshader .studio-lens-distort {
+  display: none;
+}
+.studio-lens-root.is-noshader .studio-lens-clear {
+  opacity: 1;
+  -webkit-mask-image: none;
+  mask-image: none;
+  /* 整幅铺满就不再需要那 7 层 mask 的漂移动画了，省掉每帧的全屏重绘 */
+  animation: none;
+  transition: none;
+}
+
 /* 屏幕里溢出的那团光：跟着被放大到糊满全屏，负责"穿进去"的那一下 */
 .studio-dive-core {
   position: absolute;

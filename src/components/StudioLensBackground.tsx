@@ -1,6 +1,48 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { prefersReduced } from '@/lib/motion-pref';
 import { LensDistortion } from '@paper-design/shaders-react';
+
+/** 海报：既是 shader 的初始纹理，也是"shader 还没起来"时的兜底底图（见 index.css） */
+const POSTER = '/studio/studio-poster.jpg';
+
+/** 浏览器给 `<canvas>` 的默认尺寸。还是这个数 = ShaderMount 从没走到过 handleResize = 没初始化 */
+const UNINIT_CANVAS_W = 300;
+const UNINIT_CANVAS_H = 150;
+/** 海报到位后，再给 shader 建 canvas 的时间 */
+const POSTER_TO_CANVAS_MS = 2500;
+/** 海报都没到位时的最长等待（慢网兜底） */
+const SHADER_DEADLINE_MS = 12000;
+
+/**
+ * WebGL2 能力探测。**必须**在挂 `<LensDistortion>` 之前问一次，原因是：
+ *
+ * `@paper-design/shaders` 的 ShaderMount 只有 `getContext('webgl2')` 一条路
+ * （dist/shader-mount.js:64），**没有 WebGL1 回退**，拿不到就直接
+ * `throw new Error("Paper Shaders: WebGL is not supported in this browser")`。
+ * 更坑的是 throw 之前它已经把 canvas `prepend` 进 DOM 了（105~108 行），
+ * 于是失败形态是：canvas 留在那儿、停在默认 300×150、永不绘制 → 整层透明；
+ * 而 throw 又发生在一个没人 catch 的 async effect 里（见下面第二个 effect 的注释），
+ * 只变成 unhandled rejection —— **页面不崩、控制台之外看不出任何异常**，
+ * 用户看到的就是"进 My Studio 背景全黑，只剩几个发光点"。
+ *
+ * three.js 是有 WebGL1 回退的，所以"3D 场景正常、偏偏工作室背景黑"这个组合，
+ * 第一嫌疑就是设备/WebView 拿不到 WebGL2（老 WebView、被 GPU 驱动进了黑名单等）。
+ */
+function hasWebGL2(): boolean {
+  try {
+    const probe = document.createElement('canvas');
+    const gl = probe.getContext('webgl2');
+    if (!gl) return false;
+    // 立刻归还上下文：浏览器同时可用的 WebGL 上下文数量有限，探测不该占名额
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 'pending' = 还没探完（这一档只显示兜底底图）；'on' = 正常挂畸变层；'off' = 降级 */
+type ShaderState = 'pending' | 'on' | 'off';
 
 /**
  * Studio 背景 = 两层叠在一起：
@@ -9,7 +51,7 @@ import { LensDistortion } from '@paper-design/shaders-react';
  *      水波区域** → 露出的地方就是「加效果之前的样子」。
  *   两层共用同一个 <video>：视频在上层显示，同时把当前帧喂给下层的 shader，永远同帧同步。
  *
- * ⚠️ 三个坑（都踩过）：
+ * ⚠️ 四个坑（都踩过）：
  *  1. LensDistortion 默认 `fit="contain"`。16:9 底图放进 16:10 画面会左右留边、露出酒红底
  *     —— 就是之前那两条红边。这里显式 `fit="cover"` 铺满。
  *  2. **这个库只在上传时读一帧图**（fragment shader 里连 u_time 都没有），`image` 传静态
@@ -24,6 +66,15 @@ import { LensDistortion } from '@paper-design/shaders-react';
  *     并沿"主水波→尾迹"方向再往外延一段 → 半清晰的拖尾。
  *     各瓣再由 CSS 关键帧缓慢漂移（`lens-drift-*`）→ 边界持续变形，有流动感。
  *     见 index.css 的 `.studio-lens-clear`。
+ *  4. **整个畸变层可能根本起不来，而且不留任何痕迹**（2026-09-28 用户报"手机上进
+ *     My Studio 背景全黑"，就是这一条）。两条独立的死法：
+ *       a) 设备/WebView 没有 WebGL2 —— 库只有 webgl2 一条路，拿不到就 throw；
+ *       b) 海报图 `/studio/studio-poster.jpg` 加载失败 —— ShaderMount 是"先 await
+ *          海报、后建 canvas"，`img.onerror → reject()` 之后**连 canvas 都不会有**，
+ *          而且那个 promise 没人 catch、**永不重试**。
+ *     两种死法症状一模一样（页面正常、背景全黑），所以下面用 `hasWebGL2()` 先探一次，
+ *     再用一个看门狗盯着"canvas 到底有没有被真正初始化"，任一不成立就降级成
+ *     "清晰视频整幅铺满"（`.is-noshader`，见 index.css）。
  *
  * 拖尾：target → cur（主水波，弹簧-阻尼 ~0.25s 到位）→ trail（尾迹 ~0.47s 到位）。
  * 之前用 `cur += (target - cur) * 0.18` 约 0.05s 就到位，等于没有拖尾 —— 用户反馈"拖尾感不明显"。
@@ -33,6 +84,79 @@ import { LensDistortion } from '@paper-design/shaders-react';
 export function StudioLensBackground() {
   const rootRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  /** 只有 `'on'` 才渲染 <LensDistortion>；`'off'` 走降级（清晰视频整幅铺满） */
+  const [shader, setShader] = useState<ShaderState>('pending');
+
+  /* ---------------- ① 先探能力：没有 WebGL2 就根本别挂畸变层 ---------------- */
+  useEffect(() => {
+    // 放在 effect 里而不是 render 里：探测要建一个 WebGL 上下文，
+    // 在 render 阶段做副作用会被 StrictMode 双调用，白建两次上下文。
+    setShader(hasWebGL2() ? 'on' : 'off');
+  }, []);
+
+  /* ---------------- ② 再盯结果：能力探测过了 ≠ 真能起来 ---------------- */
+  useEffect(() => {
+    if (shader !== 'on') return;
+
+    let finished = false;
+    const settle = (next: ShaderState) => {
+      if (finished) return;
+      finished = true;
+      setShader(next);
+    };
+
+    /* 为什么要盯：ShaderMount 是「先 await 海报图 → 再 new ShaderMount → 才建 canvas」
+       （dist/shaders-react/shader-mount.js:92~110）。海报一旦加载失败就在
+       `await Promise.all` 那里直接 reject，canvas 永远不会创建；而调用它的
+       `initShader()` 既没 await 也没 catch，所以只是一个 unhandled rejection
+       —— 页面照常渲染，背景永久全黑，且**永不重试**。
+       这里自己再加载一次同一张海报：既能把"图挂了"这条死法抓出来，
+       也顺手把 shader 要用的那张图预热进缓存（同 URL，不会多花流量）。 */
+    let posterState: 'loading' | 'ok' | 'err' = 'loading';
+    let posterAt = 0;
+    const poster = new Image();
+    poster.src = POSTER;
+    poster.onload = () => {
+      posterState = 'ok';
+      posterAt = performance.now();
+    };
+    poster.onerror = () => {
+      posterState = 'err';
+    };
+
+    const startedAt = performance.now();
+    const timer = window.setInterval(() => {
+      const host = rootRef.current?.querySelector<HTMLElement>('.studio-lens-distort');
+      const canvas = host?.querySelector('canvas');
+
+      // 真正初始化成功的判据：ShaderMount 的 handleResize() 会按容器尺寸写
+      // canvas.width/height（至少 CSS 像素 ×1，全屏元素必然远超 300）。
+      // 还是 300×150 就说明它从没被初始化过 —— 那就是 a) 那条死法。
+      if (canvas && (canvas.width > UNINIT_CANVAS_W || canvas.height > UNINIT_CANVAS_H)) {
+        settle('on');
+        return;
+      }
+      if (posterState === 'err') {
+        settle('off');
+        return;
+      }
+      if (posterState === 'ok' && performance.now() - posterAt > POSTER_TO_CANVAS_MS) {
+        settle('off');
+        return;
+      }
+      if (performance.now() - startedAt > SHADER_DEADLINE_MS) {
+        settle('off');
+      }
+    }, 150);
+
+    return () => {
+      finished = true;
+      window.clearInterval(timer);
+      poster.onload = null;
+      poster.onerror = null;
+    };
+  }, [shader]);
 
   /* ---------------- 鼠标水波揭示：位置 + 半径 + 拖尾 ---------------- */
   useEffect(() => {
@@ -218,38 +342,49 @@ export function StudioLensBackground() {
   }, []);
 
   return (
-    <div ref={rootRef} className="studio-lens-root">
-      {/* ① 底层：镜头畸变，全屏，吃实时视频帧 */}
-      <div className="studio-lens-distort">
-        <LensDistortion
-          speed={-0.3}
-          spread={0.19}
-          bias={0}
-          angle={0}
-          perspective={1}
-          count={8}
-          dispersion={1}
-          dispersionShift={0}
-          dispersionColor={0.6}
-          focusCenter={0.8}
-          focusEdges={1}
-          swirl={0.35}
-          noise={0}
-          noiseFrequency={0.25}
-          noiseOffset={0}
-          lensBulge={0}
-          lensCircle={0}
-          grainMixer={0}
-          grainOverlay={0}
-          imageX={0}
-          imageY={0}
-          fit="cover"
-          image="/studio/studio-poster.jpg"
-          style={{ width: '100%', height: '100%' }}
-        />
-      </div>
+    <div
+      ref={rootRef}
+      className={`studio-lens-root${shader === 'off' ? ' is-noshader' : ''}`}
+    >
+      {/* ① 底层：镜头畸变，全屏，吃实时视频帧。
+             ⚠️ 只在确认 shader 能起来之后才挂 —— 见顶部"第 4 个坑"：
+             没有 WebGL2 时挂上去不仅不会出画面，还会往 DOM 里塞一个
+             永不绘制的 300×150 canvas。这一档（含还在探测的 'pending'）
+             由 index.css 给 .studio-lens-root 铺的海报底图顶着。 */}
+      {shader === 'on' && (
+        <div className="studio-lens-distort">
+          <LensDistortion
+            speed={-0.3}
+            spread={0.19}
+            bias={0}
+            angle={0}
+            perspective={1}
+            count={8}
+            dispersion={1}
+            dispersionShift={0}
+            dispersionColor={0.6}
+            focusCenter={0.8}
+            focusEdges={1}
+            swirl={0.35}
+            noise={0}
+            noiseFrequency={0.25}
+            noiseOffset={0}
+            lensBulge={0}
+            lensCircle={0}
+            grainMixer={0}
+            grainOverlay={0}
+            imageX={0}
+            imageY={0}
+            fit="cover"
+            image={POSTER}
+            style={{ width: '100%', height: '100%' }}
+          />
+        </div>
+      )}
 
-      {/* ② 上层：清晰原视频。mask 只在不规则水波范围内不透明 → 其余地方透出下层畸变 */}
+      {/* ② 上层：清晰原视频。mask 只在不规则水波范围内不透明 → 其余地方透出下层畸变。
+             降级时（.is-noshader）它会被 CSS 改成整幅铺满 —— 畸变没了，但背景还在。
+             这一层是降级的底牌：视频没播起来时它至少显示 poster 属性那张图。 */}
       <div className="studio-lens-clear">
         <video
           ref={videoRef}
@@ -259,7 +394,7 @@ export function StudioLensBackground() {
           muted
           playsInline
           preload="auto"
-          poster="/studio/studio-poster.jpg"
+          poster={POSTER}
         >
           <source src="/studio/studio-loop.mp4" type="video/mp4" />
         </video>

@@ -15,7 +15,6 @@
 
 const COOKIE = 'dc_author';
 const COOKIE_DAYS = 14;
-
 /**
  * 隐藏入口：连按同一个键触发，不显示任何按钮。
  * 3 秒内连按 4 次即可 —— 正常访客不会误触，也不占屏幕、不进截图；
@@ -47,13 +46,14 @@ function readCookie(name: string): string {
 /** 之前输对过口令？（cookie 在，就还是作者） */
 export function isUnlocked(): boolean {
   if (!GATE_ENABLED) return true;
-  return readCookie(COOKIE) === '1';
+  return readCookie(COOKIE) !== '';
 }
 
-/** 服务端确认过口令、写了解锁 cookie。返回 true = 可以进作者模式 */
-function markUnlocked(): void {
+/** 服务端确认过口令、写了解锁 cookie。token 是服务端签发的随机串（不含口令）。 */
+function markUnlocked(token: string): void {
   const maxAge = COOKIE_DAYS * 24 * 60 * 60;
-  document.cookie = `${COOKIE}=1; path=/; max-age=${maxAge}; samesite=lax`;
+  const value = token || '1'; // token 为空时（Redis 没配）退化成「已解锁」占位
+  document.cookie = `${COOKIE}=${encodeURIComponent(value)}; path=/; max-age=${maxAge}; samesite=lax`;
 }
 
 /**
@@ -71,7 +71,8 @@ export async function checkKey(input: string): Promise<boolean> {
       cache: 'no-store',
     });
     if (res.ok) {
-      markUnlocked();
+      const data = (await res.json().catch(() => ({}))) as { token?: string };
+      markUnlocked(data.token || '');
       return true;
     }
     if (res.status === 503) {

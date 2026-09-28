@@ -60,8 +60,11 @@ const LS_KEY = 'dreamcore:insp-store-v2';
 /** 旧版本（v1）存的是裸 store，读得到就迁移过来，避免老数据丢失 */
 const LS_KEY_V1 = 'dreamcore:insp-store-v1';
 
-/** 远端后端地址。留空 = 不用远端。 */
-const REMOTE = (import.meta.env.VITE_CONTENT_API as string | undefined)?.trim() || '';
+/** 远端后端地址。留空 = 用站内 /api/insp（Vercel Serverless 云端通道）。 */
+const REMOTE = (import.meta.env.VITE_CONTENT_API as string | undefined)?.trim() || '/api/insp';
+
+/** 线上（生产）默认走云端；dev 下仍走项目文件（/__studio 写回源码）。 */
+const USE_REMOTE = import.meta.env.PROD || Boolean((import.meta.env.VITE_CONTENT_API as string | undefined)?.trim());
 
 /* ------------------------------------------------------------------ */
 /* 载入                                                                */
@@ -129,7 +132,7 @@ export function getCollection<K extends CollectionKey>(key: K): Store[K] {
 
 /** 当前存储后端（作者面板显示用） */
 export function storageMode(): StorageMode {
-  if (REMOTE) return 'remote';
+  if (USE_REMOTE) return 'remote';
   if (diskReady) return 'project';
   return 'browser';
 }
@@ -141,7 +144,7 @@ export function lastPersistError(): string {
 
 /** 是否已经能写项目文件（dev 下才有） */
 export async function ensureProjectWriter(): Promise<boolean> {
-  if (REMOTE) return false;
+  if (USE_REMOTE) return false;
   if (diskReady === null) diskReady = (await probeInspWriter()) !== null;
   return diskReady;
 }
@@ -182,7 +185,7 @@ async function loadFromRemote(): Promise<Envelope | null> {
 export async function hydrate(): Promise<void> {
   if (hydrated) return;
   hydrated = true;
-  if (REMOTE) {
+  if (USE_REMOTE) {
     const got = await loadFromRemote();
     if (got) current = got;
     return;
@@ -220,7 +223,7 @@ async function persist(): Promise<void> {
   current = { savedAt: Date.now(), store: current.store };
   saveLocal();
   try {
-    if (REMOTE) await saveRemote();
+    if (USE_REMOTE) await saveRemote();
     else if (await ensureProjectWriter()) await saveInspToDisk(current);
     lastError = '';
   } catch (err) {
@@ -235,11 +238,21 @@ async function persist(): Promise<void> {
 export type UploadResult = { url: string; name: string };
 
 async function uploadRemote(file: File): Promise<string | null> {
-  const form = new FormData();
-  form.append('file', file);
-  const res = await fetch(`${REMOTE.replace(/\/$/, '')}/upload`, {
+  const ext = file.name.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase() || '';
+  const kind: 'image' | 'audio' = file.type.startsWith('audio') ? 'audio' : 'image';
+  // 二进制转 base64 塞进 JSON body（服务端 /api/insp/upload 按 JSON 解析，最稳）
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ''));
+    reader.onerror = () => reject(reader.error ?? new Error('read failed'));
+    reader.readAsDataURL(file);
+  });
+  const b64 = dataUrl.includes(',') ? dataUrl.slice(dataUrl.indexOf(',') + 1) : dataUrl;
+  const qs = new URLSearchParams({ ext, kind, name: file.name });
+  const res = await fetch(`${REMOTE.replace(/\/$/, '')}/upload?${qs.toString()}`, {
     method: 'POST',
-    body: form,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ data: b64 }),
   });
   if (!res.ok) return null;
   const data = (await res.json().catch(() => null)) as { url?: string } | null;
@@ -248,12 +261,12 @@ async function uploadRemote(file: File): Promise<string | null> {
 
 /**
  * 上传单个文件，返回**可长期引用**的地址。
- * 优先级：远端后端 > 项目 public/insp/media（dev 下）> IndexedDB（浏览器本地兜底）。
+ * 优先级：远端后端（线上，图存 Vercel Blob）> 项目 public/insp/media（dev 下）> IndexedDB（兜底）。
  * 只有 IndexedDB 兜底时返回的是 `idb:` 引用，视图层要用 resolveIdbRefs 换回 object URL。
  */
 export async function uploadFile(file: File): Promise<UploadResult> {
   const kind: 'image' | 'audio' = file.type.startsWith('audio') ? 'audio' : 'image';
-  if (REMOTE) {
+  if (USE_REMOTE) {
     const url = await uploadRemote(file).catch(() => null);
     if (url) return { url, name: file.name };
   } else if (await ensureProjectWriter()) {
@@ -468,14 +481,36 @@ export async function addItem(key: CollectionKey, item: AnyItem): Promise<void> 
   await persist();
 }
 
+/** 删除一条远端 Blob 图（作者删条目时同步清掉，省得云上堆垃圾）。 */
+async function deleteRemoteBlob(url: unknown): Promise<void> {
+  if (typeof url !== 'string') return;
+  // 只删 Vercel Blob 的地址（https://xxx.blob.vercel-storage.com/...），
+  // 不动 idb: 引用、也不动站内 /insp/media 路径。
+  if (!/^https:\/\/[^/]+\.blob\.vercel-storage\.com\//i.test(url)) return;
+  try {
+    await fetch(`${REMOTE.replace(/\/$/, '')}/blob?url=${encodeURIComponent(url)}`, {
+      method: 'DELETE',
+      cache: 'no-store',
+    });
+  } catch {
+    /* 删不掉就算了，不阻塞删除操作本身 */
+  }
+}
+
 /** 按 id 删除一条 */
 export async function removeItem(key: CollectionKey, id: string): Promise<void> {
   const list = current.store[key] as AnyItem[];
+  const target = list.find((x) => (x as { id: string }).id === id);
   current.store = {
     ...current.store,
     [key]: list.filter((x) => (x as { id: string }).id !== id),
   } as Store;
   await persist();
+  // 删除条目后，尽力同步清掉它引用的云端图片（异步，不阻塞）
+  if (target && USE_REMOTE) {
+    const t = target as { cover?: unknown; src?: unknown; icon?: unknown };
+    void deleteRemoteBlob(t.cover ?? t.src ?? t.icon);
+  }
 }
 
 /** 按 id 修改一条。只合并传入的字段，其余保持原样。 */

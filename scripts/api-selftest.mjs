@@ -120,11 +120,12 @@ const makeRes = () => ({
     this.body = s;
   },
 });
-const makeReq = (method, { body, query = {}, headers = {} } = {}) => ({
+const makeReq = (method, { body, query = {}, headers = {}, url } = {}) => ({
   method,
   body,
   query,
   headers,
+  url: url ?? '/api/insp',
 });
 
 /* ---------------- 断言 ---------------- */
@@ -145,10 +146,30 @@ const PORT = 8899;
 const server = fakeUpstash();
 
 server.listen(PORT, async () => {
-  // 必须在 import 之前设好：三个函数文件顶部的 KV_URL 是模块加载时就读下来的常量
+  // 必须在 import 之前设好：几个函数文件顶部的 KV_URL 是模块加载时就读下来的常量
   process.env.KV_REST_API_URL = `http://127.0.0.1:${PORT}`;
   process.env.KV_REST_API_TOKEN = 'test-token';
   process.env.ADMIN_KEY = 'secret123';
+  process.env.BLOB_READ_WRITE_TOKEN = 'test-blob-token';
+
+  // 拦截「上传到 Vercel Blob」的真实外网 fetch，返回一个假 URL。
+  // insp.ts 的 putBlob / deleteBlob 都走全局 fetch，这里只拦 blob.vercel-storage.com。
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    if (url.includes('blob.vercel-storage.com')) {
+      if ((init?.method ?? 'GET').toUpperCase() === 'DELETE') {
+        return { ok: true, status: 200 } ;
+      }
+      // 假 Blob 上传：返回一个稳定 URL
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ url: `https://fake.blob.vercel-storage.com/insp/${url.split('/').pop()}` }),
+      };
+    }
+    return realFetch(input, init);
+  };
 
   // Windows 上 path.join 出来的是 C:\... ，直接喂给 import() 会报
   // ERR_UNSUPPORTED_ESM_URL_SCHEME —— ESM 只认 file:// 开头的说明符。
@@ -157,6 +178,7 @@ server.listen(PORT, async () => {
   const guestbook = (await load('guestbook.js')).default;
   const admin = (await load('admin.js')).default;
   const visitlog = (await load('visitlog.js')).default;
+  const insp = (await load('insp.js')).default;
 
   console.log('\n【访客统计 /api/visit】');
   let res = makeRes();
@@ -290,6 +312,103 @@ server.listen(PORT, async () => {
 
   // 附：没配存储那条不在这里测 —— KV_URL 是模块加载时就读进来的常量，
   // 同一个进程里删环境变量已经晚了。真机上配不配由 Vercel 决定。
+
+  /* ---------------- 灵感收藏云端 /api/insp ---------------- */
+  console.log('\n【灵感收藏云端 /api/insp】');
+
+  // 读：公开，没数据时返回 store:null
+  res = makeRes();
+  await insp(makeReq('GET'), res);
+  check('读（无数据）公开返回 ok', res.statusCode === 200 && res.body.ok === true, res.body);
+  check('无数据时 store 为 null', res.body.store === null, res.body.store);
+
+  // 写：没口令 → 401
+  res = makeRes();
+  await insp(makeReq('PUT', { body: { savedAt: 1, store: { vision: [] } } }), res);
+  check('写没口令 → 401', res.statusCode === 401, res.body);
+
+  // 写：口令对 → 成功
+  res = makeRes();
+  await insp(
+    makeReq('PUT', {
+      body: { savedAt: 100, store: { vision: [{ id: 'v1', src: 'https://x' }], knowledge: [] } },
+      headers: { 'x-admin-key': 'secret123' },
+    }),
+    res,
+  );
+  check('作者写整份数据成功', res.statusCode === 200 && res.body.ok === true, res.body);
+
+  // 读回
+  res = makeRes();
+  await insp(makeReq('GET'), res);
+  check('写后能读回', res.body.ok === true && res.body.savedAt === 100, res.body);
+  check('vision 那条在', res.body.store?.vision?.length === 1, res.body.store?.vision);
+
+  // 写：只收白名单键，塞垃圾键会被丢弃
+  res = makeRes();
+  await insp(
+    makeReq('PUT', {
+      body: { savedAt: 200, store: { vision: [], evil: [{ x: 1 }], hack: 'no' } },
+      headers: { 'x-admin-key': 'secret123' },
+    }),
+    res,
+  );
+  check('垃圾键被丢弃（只留白名单）', res.body.ok === true, res.body);
+  res = makeRes();
+  await insp(makeReq('GET'), res);
+  check('读回不含 evil/hack 键', !('evil' in res.body.store) && !('hack' in res.body.store), res.body.store);
+
+  // 上传：没口令 → 401
+  res = makeRes();
+  await insp(makeReq('POST', { url: '/api/insp/upload', query: { ext: 'png' }, body: { data: 'aGVsbG8=' } }), res);
+  check('上传没口令 → 401', res.statusCode === 401, res.body);
+
+  // 上传：口令对 → 返回假 Blob URL
+  res = makeRes();
+  await insp(
+    makeReq('POST', {
+      url: '/api/insp/upload',
+      query: { ext: 'png', kind: 'image', name: '测试图.png' },
+      body: { data: 'aGVsbG8=' }, // "hello" 的 base64
+      headers: { 'x-admin-key': 'secret123' },
+    }),
+    res,
+  );
+  check('上传成功返回 URL', res.statusCode === 200 && res.body.ok === true, res.body);
+  check('URL 是 https 绝对地址', /^https:\/\/.+\.blob\.vercel-storage\.com\//.test(res.body.url ?? ''), res.body.url);
+
+  // 上传：非法扩展名 → 400
+  res = makeRes();
+  await insp(
+    makeReq('POST', {
+      url: '/api/insp/upload',
+      query: { ext: 'exe' },
+      body: { data: 'xxxx' },
+      headers: { 'x-admin-key': 'secret123' },
+    }),
+    res,
+  );
+  check('非法扩展名 → 400', res.statusCode === 400, res.body);
+
+  // 删除 Blob：口令对 → ok
+  res = makeRes();
+  await insp(
+    makeReq('DELETE', {
+      url: '/api/insp/blob',
+      query: { url: 'https://fake.blob.vercel-storage.com/insp/abc.png' },
+      headers: { 'x-admin-key': 'secret123' },
+    }),
+    res,
+  );
+  check('删除 Blob 成功', res.statusCode === 200 && res.body.ok === true, res.body);
+
+  // 删除：非法 url → 400
+  res = makeRes();
+  await insp(
+    makeReq('DELETE', { url: '/api/insp/blob', query: { url: 'javascript:alert(1)' }, headers: { 'x-admin-key': 'secret123' } }),
+    res,
+  );
+  check('删非法 url → 400', res.statusCode === 400, res.body);
 
   console.log(`\n结果：通过 ${pass} 项，失败 ${fail} 项\n`);
   server.close();

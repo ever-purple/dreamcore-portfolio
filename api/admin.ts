@@ -6,7 +6,7 @@ import {
   type GuestEntry,
   type VercelRequest,
   type VercelResponse,
-} from './_lib.ts';
+} from './_lib';
 
 /**
  * 后台数据接口 ——「留言」和「访客统计」放在同一个地方。

@@ -1,6 +1,7 @@
-// 带上 .ts：ESM 下不带扩展名 Node 解析不了，带上才能本地直接跑回归测试，
-// Vercel 用 esbuild 打包也不认这个后缀，两边都OK。
-import { redis, storageReady, type VercelRequest, type VercelResponse } from './_lib.ts';
+// 注意：云函数里 import './_lib' 一律不要带 .ts 后缀——
+// Vercel 对 Node 函数按文件独立转译，运行时找不到 `./_lib.ts` 会导致
+// FUNCTION_INVOCATION_FAILED。无扩展名在 esbuild 打包、本地 tsx 下都能正确解析。
+import { redis, storageReady, type VercelRequest, type VercelResponse } from './_lib';
 
 /**
  * GET  /api/visit          → 读当前 { count: 第几位访客(UV), pv: 浏览量 }

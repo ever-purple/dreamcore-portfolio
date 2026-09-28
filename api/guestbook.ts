@@ -7,7 +7,7 @@ import {
   type GuestEntry,
   type VercelRequest,
   type VercelResponse,
-} from './_lib.ts';
+} from './_lib';
 
 /**
  * 留言板（Vercel Serverless + Upstash Redis，零 npm 依赖）

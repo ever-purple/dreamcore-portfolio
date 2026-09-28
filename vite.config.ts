@@ -13,19 +13,20 @@ import { studioWriter } from "./studio-writer"
  * 没配就保留 index.html 里的相对路径兜底（国内平台与站内 link-meta 都能自己补全）。
  */
 const SITE_URL = (process.env.VITE_SITE_URL || '').replace(/\/+$/, '');
-const shareCard = `${SITE_URL}/og/card-share-wide.png`.replace(/^\/og\//, '');
 
-/** 分享卡元信息：见 index.html 里「社交分享卡」一段 */
+/**
+ * 分享卡元信息：见 index.html 里「社交分享卡」一段。
+ *
+ * index.html 里已经把 og:image / og:url 硬编码成 everpurple.top 的绝对地址了
+ * （微信/小红书爬虫只认 https:// 开头的绝对地址，相对路径会显示成裸链接）。
+ * 这个插件只做一件事：若配置了 VITE_SITE_URL（换域名时），用它覆盖掉硬编码的域名。
+ */
 const shareCardPlugin = {
   name: 'share-card',
   transformIndexHtml(html: string) {
-    if (!SITE_URL) {
-      // 没有域名：摘掉 og:url（相对地址对 crawlers 无意义），相对路径的 og:image 原样保留
-      return html.replace(/^[ \t]*<meta property="og:url"[^>]*>\n/gm, '');
-    }
+    if (!SITE_URL) return html; // 没配就用 index.html 里的绝对地址
     return html
-      .replace('__OG_URL__', `${SITE_URL}/`)
-      .replace(/og\/card-share-wide\.png/g, shareCard);
+      .replace(/https:\/\/www\.everpurple\.top/g, SITE_URL);
   },
 };
 

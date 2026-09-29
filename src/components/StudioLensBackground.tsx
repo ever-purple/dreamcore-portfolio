@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { prefersReduced } from '@/lib/motion-pref';
+import { STUDIO_POSTER } from '@/lib/placeholderFrames';
 import { LensDistortion } from '@paper-design/shaders-react';
 
 /** 海报：既是 shader 的初始纹理，也是"shader 还没起来"时的兜底底图（见 index.css） */
@@ -345,6 +346,10 @@ export function StudioLensBackground() {
     <div
       ref={rootRef}
       className={`studio-lens-root${shader === 'off' ? ' is-noshader' : ''}`}
+      /* 注入内联缩略图（见 index.css 的 .studio-lens-root 两层背景）：
+         零请求，所以「门还没进 / 海报还在网络上飞」这段时间也有真画面，
+         而不是只剩深色底 —— 用户 2026-09-29 报的「背景出不来」正是这一段。 */
+      style={{ '--studio-poster-inline': `url("${STUDIO_POSTER}")` } as CSSProperties}
     >
       {/* ① 底层：镜头畸变，全屏，吃实时视频帧。
              ⚠️ 只在确认 shader 能起来之后才挂 —— 见顶部"第 4 个坑"：
@@ -384,7 +389,10 @@ export function StudioLensBackground() {
 
       {/* ② 上层：清晰原视频。mask 只在不规则水波范围内不透明 → 其余地方透出下层畸变。
              降级时（.is-noshader）它会被 CSS 改成整幅铺满 —— 畸变没了，但背景还在。
-             这一层是降级的底牌：视频没播起来时它至少显示 poster 属性那张图。 */}
+             这一层是降级的底牌：视频没出帧时它显示 poster。
+             ⚠️ poster 用**内联缩略图**而不是 POSTER 大图：视频 2.4MB，在 430KB/s 的
+             跨境链路上要 5.8 秒才可能出帧，这段时间整层就只剩 poster —— 用大图等于
+             再等一次网络，用内联图则立刻有画面（用户「垫一帧」的诉求就落在这里）。 */}
       <div className="studio-lens-clear">
         <video
           ref={videoRef}
@@ -394,7 +402,7 @@ export function StudioLensBackground() {
           muted
           playsInline
           preload="auto"
-          poster={POSTER}
+          poster={STUDIO_POSTER}
         >
           <source src="/studio/studio-loop.mp4" type="video/mp4" />
         </video>

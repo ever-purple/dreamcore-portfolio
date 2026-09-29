@@ -1,28 +1,44 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
- * 序列帧「全量预加载」—— 回到最初的实现。
+ * 序列帧加载器：**首窗优先放行 + 末窗优先加载 + 滚动插队**。
  *
- * 为什么又把窗口式换成全量：
  * ---------------------------------------------------------------------------
- * 窗口式（只保 [focus-6, focus+20] 里的帧、窗口外主动 removeAttribute('src') 释放解码）
- * 为了省内存牺牲了「滚动到哪一帧、那一帧就一定在」，实测出来的三个症状合起来
- * 正是用户说的「显示不全，甚至不动」：
+ * 为什么从「全量等完」改成「首窗放行」（2026-09-29 实测驱动）
+ * ---------------------------------------------------------------------------
+ * 上一版是「120 张全部解码完成才算 complete」。它的理由是「加载页本来就等了这 120 张，
+ * 所以不额外增加等待」——**这个前提在慢网下不成立**，线上实测把它彻底推翻：
  *
- *   ① 快速下滚：当前进度那张还没解码完，只能拿"最近的已解码旧帧"顶上
- *      → 画面冻在某一帧不动，等解码追上来再突然跳一大段（中间几十帧全没看到）。
- *   ② 回滚（100 → 0）：下滚时被释放掉的帧要重新下载，
- *      → 上滚时画面卡住，根本回不到起点。
- *   ③ 刚进入时首帧若还没解码，且静止时 tick 认为"进度没变"就不重绘
- *      → canvas 一直是纯黑，什么都看不到。
+ *   · 单张帧 108 KB 耗时 0.99 s → 链路只有约 **110 KB/s**
+ *   · 120 张并发 8 全量下完 → **25.3 秒** / 10.69 MB / 平均 432 KB/s
+ *   · 而本 hook 的兜底超时是 **18000 ms**，`useAssetPreload` 那侧是 12000 ms
  *
- * 全量的代价是常驻显存（120 × 2560×1443×4B ≈ 1.7GB），换来的是**任何时刻滚到
- * 哪一帧就有哪一帧**：0 → 100 完整开门到 OPEN，100 → 0 完整回到起点，两个方向
- * 都是连续的，不会冻、不会跳、不会黑屏。
+ * 于是放行时帧只下到 60%~72%，**缺的正好是序号末尾的「门开露黄光」**（App 放行条件是
+ * `assetsReady && framesComplete`，所以以更晚的 18 s 为准）。再加上绘制端
+ * `nearestLoadedLE()` 只向下兜底、重绘门禁又要求「进度必须变化才重绘」，
+ * 迟到的帧永远补不上 —— 用户看到的「转很久、滚不全、结尾不出画面」就是这么来的。
  *
- * 关于"要不要等 64MB"：加载页本来就等了全部帧（useAssetPreload 的 wait 里就有
- * 这 120 张，而且它也是用 Image 解码的），所以这里**不会额外增加等待**——
- * 字节已经在缓存里，只是再建一份常驻的解码位图给 canvas 用。
+ * 关键事实：**首页进入的那一刻只需要第 1 帧**。300vh 的滚动行程走完要好几秒，
+ * 后面的帧完全来得及在用户滚到之前陆续到位。所以「等全部」是把 25 秒的等待
+ * 押在了用户根本还没看到的地方。
+ *
+ * 现在：只等**首窗**（前 `headCount` 张）就放行，同时把**末窗**（最后 `priorityTail` 张）
+ * 提到队首 —— 保证滚到 100% 时「门开露黄光」那一帧一定在。其余帧按序后台补。
+ *
+ * ---------------------------------------------------------------------------
+ * 三条优先级队列
+ * ---------------------------------------------------------------------------
+ *   urgent（focus 插队） > head（首窗，决定何时放行） > tail（末窗，结局保障） > rest（其余）
+ *
+ * `focus(frame)` 由 HomeSection 每帧滚动时调用（`onFrameFocus`），把光标附近的帧
+ * 提到最前面。它在上一版是个空操作（`useCallback(() => {}, [])`）—— 那个遗漏导致
+ * 「滚到哪一帧、那一帧还没下」时只能干等。现在复活：向前 2 帧、向后 14 帧插队。
+ *
+ * ---------------------------------------------------------------------------
+ * 退出条件
+ * ---------------------------------------------------------------------------
+ * `complete`（= 放行）= 首窗全部定案 **或** 超时兜底。**坏图也算定案**
+ * （`onerror` 同样计数），否则一张 404 就能把用户永久困在加载页。
  */
 
 export interface WindowedFrames {
@@ -31,47 +47,82 @@ export interface WindowedFrames {
    * 引用**全程稳定**，不会把绘制 effect 拖进「每加载一张就重算一次」。
    */
   images: HTMLImageElement[];
-  /** 全部解码完成（全量加载下与 complete 同义，保留两个名字是为了不改调用方） */
+  /** 首窗就绪（与 complete 同义，保留两个名字是为了不改调用方） */
   ready: boolean;
-  /** 全部就绪 */
+  /** 首窗就绪 → 可以放行加载页 */
   complete: boolean;
-  /** 已就绪张数 */
+  /** 已定案张数（成功 + 失败） */
   loadedCount: number;
   /**
-   * 全量加载没有「焦点窗口」的概念，这里退化为空操作。
-   * 保留在接口里，HomeSection 不用改签名。
+   * 滚动到第 `frame` 帧时调用，把邻近未加载的帧插到队首。
+   * 向前 2 帧（回滚时马上要用）、向后 14 帧（下滚的主要方向）。
    */
   focus: (frame: number) => void;
+  /**
+   * 每有一张帧定案就 +1。**绘制端用它判断「有没有迟到的帧需要补画」**。
+   *
+   * 为什么不是普通 state：帧会在几秒内陆续到位上百次，每次都 setState 会把
+   * App 连同 HomeSection 重渲染上百轮（上一版注释里叫「把加载页拖成幻灯片」）。
+   * 用 ref 则零渲染开销，消费方（HomeSection 的 rAF tick）在每帧顺手读一下即可。
+   */
+  revisionRef: { current: number };
 }
 
 export interface WindowedFramesOptions {
   /** 并发解码上限，默认 12。120 张同时发会把主线程和带宽一起打满 */
   concurrency?: number;
   /**
-   * 兜底超时：到点即使还没全下完也算 `complete`，把用户放行。
+   * 兜底超时：到点即使首窗还没下完也算 `complete`，把用户放行。
    * 没有它的话慢网（3G / 弱 Wi-Fi）会被永久困在加载页 —— `useAssetPreload` 那个
-   * 12s 超时**救不了这里**，因为 App 的放行条件是 `assetsReady && framesComplete`，
+   * 超时**救不了这里**，因为 App 的放行条件是 `assetsReady && framesComplete`，
    * 而 `framesComplete` 只从本 hook 来。
-   * 没下完的帧由绘制端的 `nearestLoadedLE()` 顶替（画最近一张已就绪的），
-   * 所以放行后画面是"稍糊但一直在动"，而不是黑屏或冻帧。
+   * 没下完的帧由绘制端的 `nearestLoadedLE()` / 内联兜底帧顶替。
+   *
+   * 从 18000 降到 12000：现在等的只是 8 张（约 0.7 MB）而不是 120 张（10.7 MB），
+   * 12 秒还下不完就是真的不可用了，早放行早让用户看到东西。
    */
   timeoutMs?: number;
+  /** 首窗大小：前几张到位就放行，默认 8 */
+  headCount?: number;
+  /** 末尾优先帧数：把最后这几张提到队首，保证「开门」结局帧一定在，默认 16 */
+  priorityTail?: number;
 }
 
-/** 慢网兜底放行时间。3.2MB 的移动端帧集在这个时限内能跑满 1.4Mbps 以上的链路 */
-const DEFAULT_TIMEOUT = 18000;
+/** 慢网兜底放行时间（现在只需覆盖首窗那 8 张，不再是 120 张） */
+const DEFAULT_TIMEOUT = 12000;
+/** 首窗：约 0.7 MB（大屏）/ 0.22 MB（小屏），足够铺满进入时的第一屏 */
+const DEFAULT_HEAD = 8;
+/** 末窗：90% 滚动阈值（第 108 张）之后到 119 全部覆盖，留足余量 */
+const DEFAULT_TAIL = 16;
+
+/** 帧状态：0 未开始 / 1 在飞 / 2 定案（成功或失败） */
+const IDLE = 0;
+const INFLIGHT = 1;
+const SETTLED = 2;
 
 export function useWindowedFrames(
   urls: string[],
   options: WindowedFramesOptions = {},
 ): WindowedFrames {
-  const { concurrency = 12, timeoutMs = DEFAULT_TIMEOUT } = options;
+  const {
+    concurrency = 12,
+    timeoutMs = DEFAULT_TIMEOUT,
+    headCount = DEFAULT_HEAD,
+    priorityTail = DEFAULT_TAIL,
+  } = options;
 
   const imagesRef = useRef<HTMLImageElement[]>([]);
   if (imagesRef.current.length !== urls.length) {
     imagesRef.current = Array.from({ length: urls.length });
   }
   const images = imagesRef.current;
+
+  /** 滚动插队队列。住在 ref 里，因为要跨 effect 与事件回调共享同一份 */
+  const urgentRef = useRef<number[]>([]);
+  /** 让 `focus` 能唤醒 effect 内的 pump（pump 是闭包，外面拿不到） */
+  const pumpRef = useRef<() => void>(() => {});
+  /** 定案计数。绘制端读它来判断「迟到的帧要不要补画」 */
+  const revisionRef = useRef(0);
 
   const [state, setState] = useState<{ ready: boolean; complete: boolean; loadedCount: number }>({
     ready: false,
@@ -80,74 +131,133 @@ export function useWindowedFrames(
   });
 
   useEffect(() => {
+    const n = urls.length;
+
+    // 空列表：直接放行，别让调用方永远等一个不会来的 ready
+    if (n === 0) {
+      setState({ ready: true, complete: true, loadedCount: 0 });
+      return;
+    }
+
     let cancelled = false;
     let done = 0;
-    let next = 0;
     let active = 0;
 
-    /** 全部到位时对外置一次状态（避免 120 次 setState 把加载页拖成幻灯片） */
-    const markAllDone = () => {
+    /** 首窗大小（夹到 [0, n]）—— 它决定「什么时候放行」 */
+    const head = Math.max(0, Math.min(headCount, n));
+    /** 末窗大小（不超过剩下的帧数） */
+    const tail = Math.max(0, Math.min(priorityTail, Math.max(0, n - head)));
+
+    const status = new Uint8Array(n);
+    /** 还差几张首窗帧，归零即放行 */
+    let headLeft = head;
+
+    // 三条优先级队列。pump 依次取：head → tail → rest
+    const headQ: number[] = [];
+    const tailQ: number[] = [];
+    const restQ: number[] = [];
+    for (let i = 0; i < head; i += 1) headQ.push(i);
+    for (let i = Math.max(head, n - tail); i < n; i += 1) tailQ.push(i);
+    for (let i = head; i < n - tail; i += 1) restQ.push(i);
+
+    let timer = 0;
+
+    /** 放行加载页。重复调用安全（首窗完成 / 超时 / 全部到齐都会走到这里） */
+    const release = () => {
       if (cancelled) return;
       window.clearTimeout(timer);
-      setState({ ready: true, complete: true, loadedCount: done });
+      setState((s) => (s.complete ? s : { ready: true, complete: true, loadedCount: done }));
     };
 
-    /** 一张解码完成（或失败） */
-    const settle = () => {
-      active -= 1;
+    /** 一张帧定案：记账 → 推进首窗进度 → 接着填队 */
+    const complete = (i: number) => {
+      if (status[i] !== SETTLED) {
+        status[i] = SETTLED;
+        done += 1;
+      }
       if (cancelled) return;
-      done += 1;
-      if (done >= urls.length) {
-        done = urls.length;
-        markAllDone();
+
+      revisionRef.current += 1;
+
+      if (headLeft > 0 && i < head) {
+        headLeft -= 1;
+        if (headLeft === 0) {
+          release();
+        } else {
+          // 首窗还没齐 —— 报一次进度，让加载页的百分比走得平滑。
+          // 首窗期间最多 head 次（8 次）setState，开销可忽略；首窗之后不再报，
+          // 否则剩下 112 张每次都重渲染 App，就是上一版注释里说的「把加载页拖成幻灯片」。
+          setState((s) => (s.complete ? s : { ready: false, complete: false, loadedCount: done }));
+        }
+      }
+
+      if (done >= n) {
+        // 全部到齐：即使首窗早就放行了，也把 loadedCount 补成满值
+        window.clearTimeout(timer);
+        setState({ ready: true, complete: true, loadedCount: n });
+        return;
       }
       pump();
     };
 
     const start = (i: number) => {
+      status[i] = INFLIGHT;
+
       const url = urls[i];
       const img = images[i] ?? (images[i] = new Image());
 
-      // 组件重挂载但数组是同一个引用 → 已解码的直接算完成，不重复请求
-      if (img.naturalWidth > 0) {
-        done += 1;
-        if (done >= urls.length) markAllDone();
-        return;
-      }
-      // 空槽 / 坏 URL：也要计数，否则 complete 永远等不到
-      if (url === undefined) {
-        done += 1;
-        if (done >= urls.length) markAllDone();
+      // 已解码（组件重挂载但 images 是同一份引用）或空槽：直接定案，不发请求。
+      // ⚠️ 这两条分支**不能**走 settle() —— 那条路会 active -= 1，而这里没加过。
+      if (img.naturalWidth > 0 || url === undefined) {
+        complete(i);
         return;
       }
 
       active += 1;
       img.decoding = 'async';
-      img.onload = () => settle();
+      img.onload = () => {
+        active -= 1;
+        complete(i);
+      };
       // 坏图也要放行，别让它把 complete 永远卡住
-      img.onerror = () => settle();
+      img.onerror = () => {
+        active -= 1;
+        complete(i);
+      };
       img.src = url;
+    };
+
+    /** 取下一个该加载的索引：urgent → head → tail → rest。已排队过的跳过 */
+    const dequeue = (): number => {
+      const urgent = urgentRef.current;
+      while (urgent.length > 0) {
+        const i = urgent.shift() as number;
+        if (status[i] === IDLE) return i;
+      }
+      const queues = [headQ, tailQ, restQ];
+      for (let q = 0; q < queues.length; q += 1) {
+        const queue = queues[q];
+        while (queue.length > 0) {
+          const i = queue.shift() as number;
+          if (status[i] === IDLE) return i;
+        }
+      }
+      return -1;
     };
 
     const pump = () => {
       if (cancelled) return;
-      while (active < concurrency && next < urls.length) {
-        const i = next;
-        next += 1;
+      while (active < concurrency) {
+        const i = dequeue();
+        if (i < 0) return;
         start(i);
       }
     };
+    pumpRef.current = pump;
 
-    // 空列表：直接放行，别让调用方永远等一个不会来的 ready
-    if (urls.length === 0) {
-      setState({ ready: true, complete: true, loadedCount: 0 });
-      return;
-    }
-
-    // 超时兜底：到点无条件放行，没下完的帧交给绘制端的 nearestLoadedLE 顶替。
-    // 必须放在 pump() 之前 —— markAllDone 里 clearTimeout(timer)，而 pump() 会同步
-    // 调进 markAllDone，若 timer 还没初始化就会撞上 TDZ（const 的暂时性死区）。
-    const timer = window.setTimeout(() => {
+    // 超时兜底：到点无条件放行。必须放在 pump() 之前 —— release 里 clearTimeout(timer)，
+    // 而 pump() 会同步调进 complete → release，若 timer 还没初始化就会撞上 TDZ。
+    timer = window.setTimeout(() => {
       if (cancelled) return;
       setState((s) => (s.complete ? s : { ready: true, complete: true, loadedCount: done }));
     }, timeoutMs);
@@ -157,16 +267,35 @@ export function useWindowedFrames(
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
+      pumpRef.current = () => {};
       images.forEach((img) => {
         if (!img) return;
         img.onload = null;
         img.onerror = null;
       });
     };
-  }, [urls, concurrency, timeoutMs, images]);
+  }, [urls, concurrency, timeoutMs, headCount, priorityTail, images]);
 
-  // 全量加载：focus 不再需要
-  const focus = useCallback(() => {}, []);
+  /**
+   * 滚动到第 `frame` 帧 → 把邻近未加载的帧插到队首。
+   * HomeSection 的 tick 在帧号变化时调它（原 `onFrameFocus`）。
+   */
+  const focus = useCallback(
+    (frame: number) => {
+      const n = urls.length;
+      if (!Number.isFinite(frame)) return;
+      const at = Math.max(0, Math.min(n - 1, Math.floor(frame)));
+      const urgent = urgentRef.current;
+      // 向前 2 帧（回滚时立刻要用）→ 向后 14 帧（下滚的主要方向）
+      for (let i = at - 2; i <= at + 14; i += 1) {
+        if (i < 0 || i >= n) continue;
+        if (!urgent.includes(i)) urgent.push(i);
+      }
+      // 唤醒 pump：当前可能有空闲并发位
+      pumpRef.current();
+    },
+    [urls.length],
+  );
 
   return {
     images,
@@ -174,5 +303,6 @@ export function useWindowedFrames(
     complete: state.complete,
     loadedCount: state.loadedCount,
     focus,
+    revisionRef,
   };
 }

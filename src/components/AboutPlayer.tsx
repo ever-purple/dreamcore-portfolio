@@ -1,6 +1,90 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Sparkles } from '@/components/Sparkles';
 import { platformLabel, usePlayer, usePlayerClock } from '@/context/PlayerContext';
+
+/* ------------------------------------------------------------------ */
+/* 歌词                                                                */
+/* ------------------------------------------------------------------ */
+
+type LyricLine = { t: number; text: string };
+
+/** 行首的时间标签 `[mm:ss.xx]`。多个标签（一句唱两遍）只取第一个 */
+const LRC_TIME = /\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?\]/;
+const LRC_STRIP = /\[\d{1,3}:\d{1,2}(?:[.:]\d{1,3})?\]/g;
+
+/**
+ * 解析歌词。两种输入都吃：
+ * · LRC —— 行首带 `[mm:ss.xx]`，逐句跟着播放进度高亮并滚动；
+ * · 纯文本 —— 一行一句，整块显示（t = -1 表示没有时间点）。
+ * 顺手丢掉空行，免得面板里夹一堆空白。
+ */
+function parseLyrics(raw: string): LyricLine[] {
+  if (!raw || !raw.trim()) return [];
+  const out: LyricLine[] = [];
+  for (const line of raw.split(/\r?\n/)) {
+    const text = line.replace(LRC_STRIP, '').trim();
+    if (!text) continue;
+    const m = LRC_TIME.exec(line);
+    if (!m) {
+      out.push({ t: -1, text });
+      continue;
+    }
+    const min = Number(m[1]);
+    const sec = Number(m[2]);
+    const frac = m[3] ? Number(m[3]) / (m[3].length === 3 ? 1000 : 100) : 0;
+    out.push({ t: min * 60 + sec + frac, text });
+  }
+  return out;
+}
+
+/** 播放器下方的歌词：跟着进度高亮当前句并把它滚到中间；没有时间轴的就整块显示 */
+function LyricsPanel({ lyrics, time }: { lyrics: string; time: number }) {
+  const lines = useMemo(() => parseLyrics(lyrics), [lyrics]);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const timed = useMemo(() => lines.some((l) => l.t >= 0), [lines]);
+
+  const current = useMemo(() => {
+    if (!timed) return -1;
+    let hit = -1;
+    for (let i = 0; i < lines.length; i += 1) {
+      if (lines[i].t < 0) continue;
+      if (lines[i].t <= time) hit = i;
+      else break;
+    }
+    return hit;
+  }, [lines, timed, time]);
+
+  // 当前句滚到可视区中间。用 scrollTo 而不是 scrollIntoView ——
+  // 后者会把整个 About 浮层一起滚，访客正在看的内容会被顶走
+  useEffect(() => {
+    const box = boxRef.current;
+    if (!box || current < 0) return;
+    const el = box.querySelector<HTMLElement>(`[data-line="${current}"]`);
+    if (!el) return;
+    const top = el.offsetTop - box.clientHeight / 2 + el.offsetHeight / 2;
+    box.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+  }, [current]);
+
+  if (!lines.length) return null;
+
+  return (
+    <div
+      className={`about-player-lyrics${timed ? ' is-timed' : ''}`}
+      ref={boxRef}
+      aria-label="歌词"
+    >
+      {lines.map((l, i) => (
+        <p
+          key={i}
+          data-line={i}
+          className={`about-player-lyric${i === current ? ' is-current' : ''}`}
+        >
+          {l.text}
+        </p>
+      ))}
+    </div>
+  );
+}
 
 const fmt = (s: number) => {
   if (!Number.isFinite(s) || s < 0) s = 0;
@@ -17,7 +101,8 @@ const fmt = (s: number) => {
  * 这里的进度条可以拖动，反过来改变播放进度。
  */
 export function AboutPlayer() {
-  const { track, playing, time, duration, external, toggle, next, prev, seek } = usePlayer();
+  const { track, playing, everPlayed, time, duration, external, toggle, next, prev, seek } =
+    usePlayer();
   const { buffering } = usePlayerClock();
   const barRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef(false);
@@ -98,7 +183,9 @@ export function AboutPlayer() {
         </button>
         <button
           type="button"
-          className="about-player-btn about-player-play"
+          className={`about-player-btn about-player-play${
+            track && !everPlayed && !playing ? ' is-hint' : ''
+          }`}
           aria-label={playing ? '暂停' : '播放'}
           aria-pressed={playing}
           onClick={toggle}
@@ -157,6 +244,8 @@ export function AboutPlayer() {
           )}
         </div>
       </div>
+
+      <LyricsPanel lyrics={track?.lyrics ?? ''} time={time} />
 
       <p className="about-player-time" aria-hidden="true">
         {external ? (

@@ -114,12 +114,15 @@ function EditButton({ onClick, label }: { onClick: () => void; label: string }) 
   );
 }
 
-/** 编辑表单的字段声明。`kind:'cover'` 的那个会渲染成可粘贴的封面字段。 */
+/**
+ * 编辑表单的字段声明。
+ * `kind:'cover'` 渲染成可粘贴的封面字段，`kind:'textarea'` 渲染成多行输入框（歌词用）。
+ */
 type EditField = {
   key: string;
   label: string;
   placeholder?: string;
-  kind?: 'text' | 'cover';
+  kind?: 'text' | 'cover' | 'textarea';
 };
 
 /**
@@ -188,6 +191,17 @@ function InlineEditForm({
             value={values[f.key] ?? ''}
             onChange={(url) => setValues((v) => ({ ...v, [f.key]: url }))}
             placeholder={f.placeholder ?? '封面：Ctrl/⌘+V 粘一张，或粘贴图片地址'}
+          />
+        ) : f.kind === 'textarea' ? (
+          // 歌词是多行的，这里不能用回车保存 —— 换行是内容，不是"提交"
+          <textarea
+            key={f.key}
+            className="about-insp-input about-insp-textarea"
+            rows={5}
+            value={values[f.key] ?? ''}
+            placeholder={f.placeholder ?? f.label}
+            aria-label={f.label}
+            onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
           />
         ) : (
           <input
@@ -314,6 +328,11 @@ async function redetectFields(link: string): Promise<Record<string, string> | nu
   if (meta.platform) out.platform = meta.platform;
   // 平台侧歌曲 id 一并存下（以后想换封面 / 换播放器就不用再抓一次页面）
   if (meta.extra?.songId) out.songId = String(meta.extra.songId);
+  // 歌词只在有后端（Vercel）那条通道上才抓得到：网易云的歌词接口和 song/detail 一样
+  // 没有 CORS 头，浏览器直连会被拦。纯静态托管上这里拿不到，作者在卡片里手填即可
+  if (typeof meta.extra?.lyric === 'string' && meta.extra.lyric.trim()) {
+    out.lyrics = meta.extra.lyric;
+  }
   // 识别成功后顺手把链接换成规范地址 —— 分享短链过一阵可能失效，
   // 而 `music.163.com/#/song?id=…` 这种地址长期有效
   if (meta.url) out.link = meta.url;
@@ -1028,6 +1047,8 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
     embed: string;
     platform: string;
     genre: string;
+    /** 识别时服务端顺手抓的歌词（LRC）。纯静态托管上没有后端，这里会是空的 */
+    lyrics: string;
   } | null>(null);
 
   const reset = () => {
@@ -1072,11 +1093,14 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
           embed: normalizeEmbed(meta.embed || embed),
           platform: meta.platform || (embed ? 'netease' : ''),
           genre: '',
+          lyrics: typeof meta.extra?.lyric === 'string' ? meta.extra.lyric : '',
         });
         setNote(
           isMusic
             ? `识别成功：${platformLabel(meta.platform) || meta.site || '音乐平台'}${
                 hasEmbed ? ' · 用平台外链播放器播放' : ''
+              }${
+                typeof meta.extra?.lyric === 'string' && meta.extra.lyric ? ' · 歌词已带回' : ''
               }${meta.title ? '' : '（歌名没认出来，可以直接手填）'}`
             : `没识别出音乐信息（${meta.site || '未知站点'}）。歌名 / 封面可以直接手填，也能换一个链接再试。`,
         );
@@ -1091,6 +1115,7 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
           embed: normalizeEmbed(embed),
           platform: embed ? 'netease' : '',
           genre: '',
+          lyrics: '',
         });
       } finally {
         setBusy(false);
@@ -1125,6 +1150,8 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
       platform: draft.platform || undefined,
       embed: embed || undefined,
       link: link || undefined,
+      // 歌词（识别时服务端带回的；没有后端时可以在 ✎ 编辑里手填）
+      lyrics: draft.lyrics.trim() || undefined,
     });
     reset();
   };
@@ -1292,6 +1319,13 @@ function MusicGrid({
                   { key: 'genre', label: '曲风标签，如 #Ambient #Dreamcore' },
                   { key: 'cover', label: '封面', kind: 'cover' },
                   { key: 'link', label: '原链接（可选）', placeholder: '原链接 https://…（可选）' },
+                  {
+                    key: 'lyrics',
+                    label: '歌词',
+                    kind: 'textarea',
+                    placeholder:
+                      '歌词（可选）—— 带 [mm:ss.xx] 时间轴会跟着播放高亮，纯文本就整块显示。留空不显示歌词区',
+                  },
                 ]}
                 initial={{
                   title: m.title,
@@ -1300,6 +1334,7 @@ function MusicGrid({
                   genre: m.genre.join(' '),
                   cover: m.cover.startsWith('idb:') ? '' : m.cover,
                   link: m.link ?? '',
+                  lyrics: m.lyrics ?? '',
                 }}
                 onRedetect={(v) => redetectFields(v.link ?? '')}
                 onSave={(val) => {
@@ -1324,6 +1359,8 @@ function MusicGrid({
                     link: val.link.trim() || undefined,
                     // 留空 = 不换封面
                     ...(val.cover.trim() ? { cover: val.cover.trim() } : {}),
+                    // 歌词可以清空（清了 jukebox 就不显示歌词区）
+                    lyrics: val.lyrics?.trim() ? val.lyrics : undefined,
                   });
                   setEditingId(null);
                 }}

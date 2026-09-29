@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { getCollection } from '@/lib/contentApi';
+import { getCollection, hydrate } from '@/lib/contentApi';
 import type { MusicItem } from '@/data/inspiration';
 
 /**
@@ -38,6 +38,8 @@ export type PlayerTrack = {
   link?: string;
   /** 平台标识，界面上显示「网易云音乐」之类的来源 */
   platform?: string;
+  /** 歌词（LRC 带时间轴，或纯文本） */
+  lyrics?: string;
 };
 
 /**
@@ -52,6 +54,11 @@ type PlayerTransport = {
   playing: boolean;
   /** 当前这首是不是走平台外链播放（是的话进度条不可控） */
   external: boolean;
+  /**
+   * 访客有没有按过播放键。
+   * 没按过时播放键给个呼吸光 —— 光秃秃的 ▶ 不会让人意识到"这里能放音乐"。
+   */
+  everPlayed: boolean;
   /** 点某一首：同一首则切换播放/暂停，否则从 0 开始播 */
   play: (t: PlayerTrack) => void;
   /** 无曲目时播第一首；有曲目时切换播放/暂停 */
@@ -138,7 +145,14 @@ export function toTrack(m: MusicItem): PlayerTrack {
     embed: m.embed,
     link: m.link,
     platform: m.platform,
+    lyrics: m.lyrics,
   };
+}
+
+/** 收藏里的第一首（用于打开页面时先把唱片摆上转盘，不播） */
+function firstTrack(): PlayerTrack | null {
+  const list = getCollection('music');
+  return list.length ? toTrack(list[0]) : null;
 }
 
 /** 把外链播放器地址改成「一加载就播」。各平台参数名不一样，按需拼。 */
@@ -163,6 +177,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [duration, setDuration] = useState(0);
   const [buffering, setBuffering] = useState(false);
   const bufferingRef = useRef(false);
+  const [everPlayed, setEverPlayed] = useState(false);
   /**
    * 直链（本站 `<audio>`）这一路放不出来时置位 —— VIP / 版权 / 防盗链都可能让它失败，
    * 这时退回平台外链播放器，不至于一声不响地"点了没反应"。
@@ -189,6 +204,28 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // 我们既读不到它的进度也控制不了它，暂停只能靠卸载 iframe，再播自然就从头开始。
   const isReal = !!track?.src && !audioFailed;
   const isExternal = !isReal && !!track?.embed;
+
+  /**
+   * 打开页面时先把第一首**摆上转盘，但不播**。
+   *
+   * 两个作用：播放器不会空着（空转盘看不出这块是干嘛的），
+   * 也顺带告诉访客「这里是可以放音乐的」—— 摆着封面和歌名，配上一闪一闪的播放键。
+   * 不播是关键：自动放歌会吓人一跳，而且浏览器本来也不允许没交互就出声。
+   *
+   * 要等 hydrate 完 —— 收藏可能是异步从云端 / 项目文件来的，
+   * 直接读会读到还没装好的空列表。
+   */
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      await hydrate().catch(() => {});
+      if (cancelled) return;
+      setTrack((cur) => cur ?? firstTrack());
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // 外链播放：播放时把 iframe 指向平台的播放器，暂停就摘掉 src（等于停下）
   useEffect(() => {
@@ -321,6 +358,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const startTrack = useCallback((m: PlayerTrack) => {
     setTrack(m);
     setTime(0);
+    setEverPlayed(true);
     // 外链播放读不到时长，进度条会切成"外链"状态；本站文件等 loadedmetadata 填真实值
     setDuration(m.src ? 0 : FAKE_DURATION);
     // 换歌 = 重新给直链一次机会（上一首失败不代表这首也失败）
@@ -334,24 +372,31 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const play = useCallback(
     (t: PlayerTrack) => {
       const cur = trackRef.current;
-      if (cur?.id === t.id) {
+      // 同一首 = 切换播放/暂停。
+      // 但「预摆在转盘上、还没真播过」的那首不算 —— 那要走 startTrack：
+      // 进度归零，播放键上的提示也跟着撤掉
+      if (cur?.id === t.id && everPlayed) {
         setPlaying((p) => !p);
         return;
       }
       startTrack(t);
     },
-    [startTrack],
+    [everPlayed, startTrack],
   );
 
   const toggle = useCallback(() => {
-    if (!trackRef.current) {
-      const list = getCollection('music');
-      const first = list[0];
-      if (first) startTrack(toTrack(first));
+    const cur = trackRef.current;
+    if (!cur) {
+      const first = firstTrack();
+      if (first) startTrack(first);
+      return;
+    }
+    if (!everPlayed) {
+      startTrack(cur);
       return;
     }
     setPlaying((p) => !p);
-  }, [startTrack]);
+  }, [everPlayed, startTrack]);
 
   const step = useCallback(
     (dir: 1 | -1) => {
@@ -385,8 +430,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   /** 操控：与进度无关，进度每秒变 4 次也不会带动这里重算 */
   const transport = useMemo<PlayerTransport>(
-    () => ({ track, playing, external: isExternal, play, toggle, next, prev, seek }),
-    [track, playing, isExternal, play, toggle, next, prev, seek],
+    () => ({ track, playing, everPlayed, external: isExternal, play, toggle, next, prev, seek }),
+    [track, playing, everPlayed, isExternal, play, toggle, next, prev, seek],
   );
   /** 走时：进度 / 时长 / 缓冲。只有真正要画进度的组件才订阅它 */
   const clock = useMemo<PlayerClock>(

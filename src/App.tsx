@@ -43,24 +43,64 @@ const FRAME_DIR = (() => {
   return shortSide <= 900 && canvasPx <= 2000 ? 'frames-sm' : 'frames';
 })();
 
+/**
+ * 帧序列 URL 的版本号。
+ *
+ * ⚠️ **改了 `public/frames` 或 `public/frames-sm` 里的图片内容，必须把这个数字 +1。**
+ *
+ * 为什么需要它：`vercel.json` 给这两个目录配了 `max-age=31536000, immutable`
+ * —— 回访浏览器**一整年都不会再问服务器**（这正是我们要的：10.69MB 的帧集
+ * 第二次打开就是零网络）。代价是不带版本号的 URL 会让老访客永远拿到旧图。
+ * 版本号进 query，URL 一变就是全新资源，老缓存自然作废，且不影响其他访问者。
+ *
+ * 2026-09-29 起：线上实测这些帧的响应头是 `public, max-age=0, must-revalidate`，
+ * 也就是**每次打开都要回源校验 120 次**（跨境 RTT 叠加，雪上加霜）。
+ */
+const FRAME_VERSION = 1;
+
 const frameUrls = Array.from(
   { length: TOTAL_FRAMES },
-  (_, i) => `/${FRAME_DIR}/${String(i + 1).padStart(4, '0')}.webp`,
+  (_, i) => `/${FRAME_DIR}/${String(i + 1).padStart(4, '0')}.webp?v=${FRAME_VERSION}`,
 );
 
 /**
- * 加载页**只等首页本体**（这 120 张帧），其余一律降到后台预热。
+ * 加载页**只等首窗**（前 `HEAD_FRAMES` 张），其余帧一律降到后台按优先级补。
  *
- * 原来的 wait 里还塞了 5 个 GLB（mascot/dvd/dv/mp3/tape，合计 3.4MB，rack.glb 另算 9.1MB）。
- * 但那 6 个模型**首页一个都用不到** —— 它们只在工作室里出现，而工作室必须先滚完
- * 这 300vh 的开门动画、再点 Open 才进得去，中间有大把时间让它们在后台下完。
- * 让一群看不见的资源把加载页多堵十几 MB，是「网站打开速度明显偏慢」的第二号原因。
- * 现在它们的语义和 rack.glb 完全一致：`prefetch`（只进 HTTP 缓存 + 等 wait 组跑完再开始，
- * 见 useAssetPreload 的「ready 之后才预热」），既有保障又不抢首屏带宽。
+ * 这个值被改了三次，每一次都建立在推翻上一次的前提上，所以三次都记在这里：
+ *
+ *   ① 最初 wait 里塞了 5 个 GLB（合计 3.4MB，rack.glb 另算 9.1MB）。但那 6 个模型
+ *      **首页一个都用不到** —— 它们只在工作室里出现，而工作室必须先滚完这 300vh 的
+ *      开门动画、再点 Open 才进得去，中间有大把时间让它们在后台下完。改成 `prefetch`。
+ *
+ *   ② 然后 wait = 全部 120 张帧（10.7MB）。当时的理由是「useWindowedFrames 反正也要
+ *      全量解码这 120 张，等它等于没多等」。**这个前提在慢网下不成立**：线上实测跨境
+ *      链路只有约 430 KB/s（单帧 108KB 要 0.99s），120 张全量要 **25.3 秒**，
+ *      而两个 hook 的兜底超时是 12s / 18s —— 于是门在帧只下到 60%~72% 时就开了，
+ *      **缺的正好是序号末尾的「门开露黄光」**。这就是用户报的「一直转、滚不全、
+ *      结尾不出画面」。
+ *
+ *   ③ 现在 wait = 前 `HEAD_FRAMES` 张。关键事实：**进入首页的那一刻只需要第 1 帧**。
+ *      300vh 的滚动行程走完要好几秒，后面的帧完全来得及在用户滚到之前到位。
+ *      首窗 8 张约 0.7MB（大屏）/ 0.22MB（小屏）→ 1~2 秒就有画面（加载页还有 3 秒
+ *      最短可见时间兜着）。等待量降到原来的 1/15，进入耗时从 25 秒降到 3 秒量级。
+ *
+ * ⚠️ 帧的加载**不再走 useAssetPreload 的 wait 组** —— 那条路会和 useWindowedFrames
+ * 拉同一批首帧，实测前 12 个网络请求里有 4 个是重复的（白占并发位与带宽）。
+ * 现在只有一个帧加载器：`useWindowedFrames(frameUrls, { headCount, priorityTail })`。
  */
-const WAIT_ASSETS = [...frameUrls];
+const HEAD_FRAMES = 8;
+/**
+ * 末尾优先帧数。滚动到 90% 才出现 OPEN、到 100% 才是「门开露黄光」的结局帧，
+ * 它是整个滚动动画的高潮 —— 把这 16 张提到队首，就不会出现「滚到最后没画面」。
+ * 必须与 useWindowedFrames 的 priorityTail 语义一致（>= 119 - 108 + 1 覆盖阈值帧）。
+ */
+const TAIL_FRAMES = 16;
 
-/** 后台预热：进工作室才用得上的大件。不计进度、不卡加载页，wait 组跑完才开始拉 */
+/**
+ * 后台预热：进工作室才用得上的大件。不计进度、不卡加载页，且**加载页消失之后**
+ * 才开始拉（App 传 `prefetchGate: entered`）—— 否则它们会在第 1 秒就跟序列帧抢带宽。
+ * 2026-09-29 实测：首屏下载的 4.02MB 里有 **1.48MB** 就是这几件。
+ */
 const PREFETCH_MODELS: string[] = [
   `${import.meta.env.BASE_URL}about/mascot.glb`,
   `${import.meta.env.BASE_URL}newsstand/dvd.glb`,
@@ -70,9 +110,6 @@ const PREFETCH_MODELS: string[] = [
   // rack.glb 一个人 9MB（贴图转 WebP 无损后从 17.9MB 降到 9.1MB），是全套最重的一件
   `${import.meta.env.BASE_URL}newsstand/rack.glb`,
 ];
-
-/** 同时最多下 8 个：120 张帧一起发会把带宽打满，关键资源反而被挤到后面 */
-const PRELOAD_CONCURRENCY = 8;
 
 function App() {
   // ?studio=1 / ?about=1 / ?greenos=1 预览模式：视为已过加载页，便于直接测试
@@ -91,18 +128,34 @@ function App() {
     }
     return window.location.hash === '#about' ? 'studio' : 'home';
   });
-  // 序列帧回到「全量加载」：120 张全部解码常驻，滚到哪一帧就有哪一帧
-  // （窗口式会冻帧/跳帧/黑屏，详见 useWindowedFrames 顶部说明）。
-  // 加载页本来就等了这 120 张，所以这里不增加额外等待。
-  const { images, complete: framesComplete, focus: focusFrame } = useWindowedFrames(frameUrls);
+  // 序列帧加载：**首窗放行 + 末窗优先 + 滚动插队**（详见 useWindowedFrames 顶部说明）。
+  // 仍是「全量解码常驻」（窗口式会冻帧/跳帧/黑屏），但**放行不再等全量** ——
+  // 门在首窗到齐时就开，剩下 112 张按 末窗 → 其余 的优先级在后台补。
+  // framesRevision 透传给绘制端：迟到的帧靠它触发补画（否则门永远不开）。
+  const {
+    images,
+    complete: framesComplete,
+    focus: focusFrame,
+    revisionRef: framesRevision,
+    loadedCount,
+  } = useWindowedFrames(frameUrls, { headCount: HEAD_FRAMES, priorityTail: TAIL_FRAMES });
 
-  /** 加载页的 0→100%：已下完的资源 / 该下的总数，纯真实值 */
-  const { done, total, ready: assetsReady } = useAssetPreload({
-    wait: WAIT_ASSETS,
-    prefetch: PREFETCH_MODELS,
-    concurrency: PRELOAD_CONCURRENCY,
-  });
-  const progress = total > 0 ? done / total : 1;
+  /**
+   * 只负责**后台预热**（那 6 个 GLB），不再参与首屏的进度与放行。
+   *
+   * 为什么不复用它的 wait 组来等首窗：那会和 useWindowedFrames 拉**同一批**首帧。
+   * 2026-09-29 实测：前 12 个网络请求里有 4 个是重复的（`1,2,3,4` 又来一遍），
+   * 白占并发位、白占带宽。现在帧的加载进度与放行判据**只有一个来源** ——
+   * useWindowedFrames。
+   *
+   * `prefetchGate: entered` = 加载页消失之后才预热。否则预热组会在第 1 秒就起跑，
+   * 跟剩下的 112 张帧抢带宽 —— 实测首屏下载的 4.02MB 里 **1.48MB 是这些 GLB**，
+   * 而它们首页一个都用不到（只在工作室里出现）。
+   */
+  useAssetPreload({ wait: [], prefetch: PREFETCH_MODELS, prefetchGate: entered });
+
+  /** 加载页的 0→100%：首窗的完成度（useWindowedFrames 在首窗期间逐张上报） */
+  const progress = Math.min(1, loadedCount / HEAD_FRAMES);
 
   const lenisRef = useRef<Lenis | null>(null);
   const downBlockedRef = useRef(false);
@@ -276,11 +329,7 @@ function App() {
       {stage === 'home' ? (
         <>
           {!entered && (
-            <LoadingScreen
-              ready={assetsReady && framesComplete}
-              progress={progress}
-              onEnter={handleEnter}
-            />
+            <LoadingScreen ready={framesComplete} progress={progress} onEnter={handleEnter} />
           )}
           <HomeSection
             images={images}
@@ -289,6 +338,7 @@ function App() {
             onFrameFocus={focusFrame}
             onOpen={handleOpen}
             setDownBlocked={setDownBlocked}
+            framesRevision={framesRevision}
           />
         </>
       ) : (

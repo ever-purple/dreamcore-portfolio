@@ -40,6 +40,16 @@ interface Options {
   timeoutMs?: number;
   /** 同时最多拉几个。120 张帧一起发会打满带宽、把关键资源挤没，必须限流 */
   concurrency?: number;
+  /**
+   * 预热组的门控，**覆盖**默认的「wait 组 ready」。
+   *
+   * 为什么需要它（2026-09-29 实测）：wait 组从「全部 120 张帧」改成「首窗 8 张」之后，
+   * wait 组 1 秒就跑完了 —— 预热组于是跟着提前到第 1 秒起跑，跟剩下的 112 张帧抢带宽。
+   * 实测首屏下载的 4.02MB 里**有 1.48MB 是这些 GLB**（mascot 344KB / dvd 325KB /
+   * dv 314KB …），而它们首页一个都用不到。现在由 App 传 `entered`：
+   * **加载页消失之后**才开始预热。
+   */
+  prefetchGate?: boolean;
 }
 
 const DEFAULT_TIMEOUT = 12000;
@@ -63,6 +73,7 @@ export function useAssetPreload({
   prefetch = [],
   timeoutMs = DEFAULT_TIMEOUT,
   concurrency = 8,
+  prefetchGate,
 }: Options): AssetPreload {
   const [done, setDone] = useState(0);
   const [ready, setReady] = useState(false);
@@ -136,11 +147,14 @@ export function useAssetPreload({
 
   useEffect(() => {
     if (prefetch.length === 0) return;
-    // **wait 组跑完（ready）之后**才允许预热。
+    // **wait 组跑完（ready）之后**才允许预热（调用方可用 prefetchGate 覆盖）。
     // 这里原来是「固定延迟 1.2s 就开跑」，等于在加载页还在等帧的时候跟它抢带宽 ——
     // 首屏最慢的那几秒里，一个 9MB 的 rack.glb 正在并行下载，把帧挤到后面。
-    // 现在改成 ready 门控：加载页期间带宽 100% 给序列帧，放行后再安静地拉模型。
-    if (!ready) return;
+    // ⚠️ 2026-09-29 补：wait 组缩到「首窗 8 张」之后，`ready` 1 秒就到，
+    // 这道闸门形同虚设 —— 实测首屏下载的 4.02MB 里 1.48MB 是这些 GLB。
+    // 所以 App 现在传 `prefetchGate = entered`，把预热推到**加载页消失之后**。
+    const gate = prefetchGate ?? ready;
+    if (!gate) return;
     let cancelled = false;
     // 省流量模式 / 2G/3G：别为了预热烧用户流量
     if (!worthPrefetching()) return;
@@ -181,7 +195,7 @@ export function useAssetPreload({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [prefetchKey, ready]);
+  }, [prefetchKey, ready, prefetchGate]);
 
   return { done, total: wait.length, ready, prefetchDone, prefetchTotal: prefetch.length };
 }

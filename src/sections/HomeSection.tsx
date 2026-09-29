@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { EASE } from '@/lib/ease';
+import { HOME_FIRST_FRAME } from '@/lib/placeholderFrames';
 import gsap from 'gsap';
 
 interface HomeSectionProps {
@@ -12,6 +13,12 @@ interface HomeSectionProps {
   /** 通知外层「我滚到第几帧了」，用于驱动窗口式预加载 */
   onFrameFocus: (frame: number) => void;
   setDownBlocked: (blocked: boolean) => void;
+  /**
+   * 帧定案计数器：每有一张帧加载成功/失败就 +1（见 useWindowedFrames.revisionRef）。
+   * tick 靠它知道「有迟到的帧到了」并补画一次 —— 否则下面那条「进度不变就不重绘」
+   * 的门禁会让迟到的帧**永远画不出来**（门永远不开的根因）。
+   */
+  framesRevision: { current: number };
 }
 
 const TOTAL_FRAMES = 120;
@@ -39,6 +46,7 @@ export function HomeSection({
   onOpen,
   onFrameFocus,
   setDownBlocked,
+  framesRevision,
 }: HomeSectionProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -49,6 +57,14 @@ export function HomeSection({
   // 静止时 tick 认为「进度没变」就不重绘，若此刻首帧还没解码完，canvas 会一直
   // 保持纯黑（实测进首页后黑屏约 2 秒）。用它保证「只要画得出来就一定画一次」。
   const paintedRef = useRef(false);
+  /** 上一次重绘时的「帧定案版本号」。版本变了 → 有迟到的帧到了 → 补画一次 */
+  const paintedRevisionRef = useRef(-1);
+  /**
+   * 内联兜底帧 —— 用户明确要求的「垫一帧」。
+   * 第一张真帧还没解码完时画它，绝不让 canvas 停在纯黑。
+   * 它是打包进 JS 的 data URI，零请求、零等待（见 lib/placeholderFrames.ts）。
+   */
+  const fallbackRef = useRef<HTMLImageElement | null>(null);
   const lastTsRef = useRef(0);
   const dimsRef = useRef({ width: 0, height: 0, dpr: 1 });
   const atEndRef = useRef(false);
@@ -66,6 +82,20 @@ export function HomeSection({
   // Prepare the bell sound (played on OPEN click — a guaranteed user gesture)
   useEffect(() => {
     bellRef.current = getBell();
+  }, []);
+
+  /**
+   * 内联兜底帧：mount 时就建好。
+   * data URI 的解码在当前任务后完成，而下面的 tick 每帧都会重试（`!paintedRef.current`），
+   * 所以最迟第 2 帧就能画上 —— 相对网络上的第 1 帧（冷缓存要 0.15~1s）是数量级的提前。
+   */
+  useEffect(() => {
+    const img = new Image();
+    img.src = HOME_FIRST_FRAME;
+    fallbackRef.current = img;
+    return () => {
+      fallbackRef.current = null;
+    };
   }, []);
 
   // cover-fit 矩形：基于画布尺寸与单帧宽高比
@@ -128,15 +158,27 @@ export function HomeSection({
     const ctx = canvas.getContext('2d', { alpha: false });
     if (!ctx) return false;
 
+    const { dpr } = dimsRef.current;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
     const N = images.length - 1;
     const f = Math.max(0, Math.min(N, progress * N));
     const i0 = Math.floor(f);
     // 兜底帧：冷加载时 i0 可能还没下完，落到最近已就绪的那张，避免整段冻结
     const i0r = nearestLoadedLE(i0);
-    if (i0r < 0) return false; // 连第一帧都没下完，先不画
 
-    const { dpr } = dimsRef.current;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // 连一张真帧都没有 → 画内联兜底帧（「垫一帧」）。
+    // 这个窗口在慢网下是真实存在的：线上实测第 1 帧 62KB / 链路 430 KB/s ≈ 0.15s，
+    // 而「首访冷缓存」时首窗那 8 张要 1~2 秒 —— 原来这里直接 return false，
+    // canvas 就停在纯黑，用户看到的「背景出不来」正是这一段。
+    if (i0r < 0) {
+      const fb = fallbackRef.current;
+      if (!fb || fb.naturalWidth === 0) return false; // 兜底帧本身还没解码好，下一帧再试
+      const rf = getRect(fb);
+      ctx.globalAlpha = 1;
+      ctx.drawImage(fb, rf.drawX, rf.drawY, rf.drawW, rf.drawH);
+      return true;
+    }
 
     const img0 = images[i0r];
     const t = f - i0r; // 相对兜底帧的小数进度
@@ -221,9 +263,23 @@ export function HomeSection({
       // 任何帧率下观感一致，且不会因掉帧而阶跃。
       const prev = displayedRef.current;
       displayedRef.current += (raw - prev) * (1 - Math.exp(-SMOOTH_K * dt));
-      // 进度变了才重绘；但只要还没成功画过一次，就每帧都试，直到画上为止
-      if (Math.abs(displayedRef.current - prev) > 1e-4 || !paintedRef.current) {
-        if (drawCrossfade(displayedRef.current)) paintedRef.current = true;
+      // 三个重绘条件，缺一不可：
+      //   ① 进度真的变了（正常滚动）；
+      //   ② 还没成功画过一次（进首页时的黑屏保护）；
+      //   ③ **帧定案版本变了** —— 说明有迟到的帧刚到。
+      // ③ 是必须的：平滑后的 displayed 会无限逼近 raw，用户一停手 ① 就恒为假，
+      // 此时若「滚到的那一帧」才刚下完，它永远等不到一次重绘 ——
+      // 表现就是「滚到最后还是那张糊帧」「门开露黄光死活不出现」。
+      const rev = framesRevision.current;
+      if (
+        Math.abs(displayedRef.current - prev) > 1e-4 ||
+        !paintedRef.current ||
+        rev !== paintedRevisionRef.current
+      ) {
+        if (drawCrossfade(displayedRef.current)) {
+          paintedRef.current = true;
+          paintedRevisionRef.current = rev;
+        }
       }
 
       rafRef.current = requestAnimationFrame(tick);

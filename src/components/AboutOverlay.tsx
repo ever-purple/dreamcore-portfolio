@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { AboutPet } from '@/components/AboutPet';
 import { AsciiPortrait } from '@/components/AsciiPortrait';
 import { Sparkles } from '@/components/Sparkles';
@@ -11,6 +11,7 @@ import { AboutGuestbook } from '@/components/AboutGuestbook';
 import { AboutVisitor } from '@/components/AboutVisitor';
 import { GreenOsBar, GreenOsBoot, GreenOsTitle } from '@/components/GreenOs';
 import { PlayerProvider } from '@/context/PlayerContext';
+import { ABOUT_BG_PATTERN } from '@/lib/placeholderFrames';
 import { aboutNav } from '@/data/about';
 import { useEscape } from '@/lib/escape-stack';
 import { markSection } from '@/lib/visitLog';
@@ -134,8 +135,14 @@ export function AboutOverlay({ open, onClose, onHoverChange, greenOs = false, bo
       aria-label="About me"
       data-lenis-prevent
     >
-      {/* 底图：薄荷绿浅紫圆点图（固定不随内容滚动） */}
-      <div className="about-bg" aria-hidden="true" />
+      {/* 底图：薄荷绿浅紫圆点图（固定不随内容滚动）。
+          注入的内联缩略图是第二层背景，见 index.css 的 .about-bg ——
+          真实图案 174KB 到位前，靠它避免「整页只剩底色 + 扫描线」的空白期。 */}
+      <div
+        className="about-bg"
+        aria-hidden="true"
+        style={{ '--about-bg-inline': `url("${ABOUT_BG_PATTERN}")` } as CSSProperties}
+      />
 
       {/* 页面级漂浮闪星（固定层） */}
       <div className="about-sparkle-field" aria-hidden="true">

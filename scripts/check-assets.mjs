@@ -41,7 +41,9 @@ const dirs = [...appSrc.matchAll(/return\s+shortSide[\s\S]{0,120}?\?\s*'([^']+)'
 const frameDirs = dirs.length ? [...new Set(dirs)] : [];
 if (!frameDirs.length) problems.push('src/App.tsx 里读不到 FRAME_DIR 的两个候选目录名');
 
-const ext = (appSrc.match(/`\/\$\{FRAME_DIR\}\/.*?\.(\w+)`/) || [])[1];
+// 扩展名后面可能跟 query —— 帧 URL 带 `?v=${FRAME_VERSION}` 做长缓存失效
+// （vercel.json 给 /frames 配了 immutable），所以不能要求反引号紧跟在扩展名后面。
+const ext = (appSrc.match(/`\/\$\{FRAME_DIR\}\/.*?\.(\w+)(?:\?[^`]*)?`/) || [])[1];
 if (!ext) problems.push('src/App.tsx 里读不到帧文件扩展名');
 
 if (total && frameDirs.length && ext) {

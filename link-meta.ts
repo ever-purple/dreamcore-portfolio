@@ -267,6 +267,30 @@ async function neteaseSongIdResolved(url: string, ms = TIMEOUT): Promise<string 
   return undefined;
 }
 
+/**
+ * 网易云的歌词（LRC，每行带 `[mm:ss.xx]` 时间轴）。
+ *
+ * ⚠️ 只能在服务端通道里调：这个接口和 `song/detail` 一样**不带 `access-control-*` 头**，
+ * 浏览器直连会被 CORS 拦掉 —— 也就是说纯静态托管（GitHub Pages）上拿不到，
+ * 那种环境只能靠作者在卡片里手填歌词。
+ * 拿不到就返回空串，绝不拖累整次识别。
+ */
+async function neteaseLyric(id: string, ms: number): Promise<string> {
+  try {
+    const api = `https://music.163.com/api/song/lyric?os=pc&id=${encodeURIComponent(id)}&lv=-1&kv=-1&tv=-1`;
+    const res = await timedFetch(
+      api,
+      { headers: { referer: 'https://music.163.com/', accept: 'application/json' } },
+      ms,
+    );
+    if (!res.ok) return '';
+    const j = (await res.json()) as { lrc?: { lyric?: string } };
+    return (j.lrc?.lyric ?? '').trim();
+  } catch {
+    return '';
+  }
+}
+
 async function neteaseMeta(url: string, ms = TIMEOUT): Promise<LinkMeta | null> {
   const id = await neteaseSongIdResolved(url, ms);
   if (!id) return null;
@@ -303,6 +327,9 @@ async function neteaseMeta(url: string, ms = TIMEOUT): Promise<LinkMeta | null> 
         artist: artist || undefined,
         album: song.album?.name,
         songId: id,
+        // 歌词是该接口顺手能拿到的（LRC 带时间轴），拿不到就留空 ——
+        // 空了也不影响识别成功，作者可以在卡片里手填
+        lyric: (await neteaseLyric(id, 3000)) || undefined,
       },
     };
   } catch {

@@ -1754,11 +1754,23 @@ body.is-diary-dragging * {
   transition: none;
 }
 
-/* 底图：视口固定，内容在其上滚动 */
+/* 底图：视口固定，内容在其上滚动。
+   ⚠️ 两层 background —— 多背景里**先列的在上层**：
+     ① `/about/bg-pattern.webp`（174KB）真实图案，到位后盖住 ②；
+     ② `var(--about-bg-inline)` 内联缩略图，由 AboutOverlay 注入
+        （见 lib/placeholderFrames.ts）。它随 JS bundle 一起到达、零请求，
+        所以图案还在网络上飞的时候，底下也已经是一张像样的图案而不是一片纯色。
+     ③ background-color 是最后兜底（连缩略图都还没解析出来时）。
+   2026-09-29：用户报「About 页背景只有一片绿条纹」就是 ① 未到位、
+   只剩 ③ 与 Green OS 扫描线叠加的那一段。 */
 .about-bg {
   position: fixed;
   inset: 0;
-  background: url('/about/bg-pattern.webp') center / cover no-repeat #e8f1df;
+  background-image: url('/about/bg-pattern.webp'), var(--about-bg-inline, none);
+  background-position: center, center;
+  background-size: cover, cover;
+  background-repeat: no-repeat, no-repeat;
+  background-color: #e8f1df;
   pointer-events: none;
 }
 .about-bg::after {
@@ -6139,10 +6151,19 @@ body.is-diary-dragging * {
 /* ① 底图：ShaderMount 是「先 await 海报图 → 再 new ShaderMount → 才建 canvas」，
    图没到位之前畸变层里什么都没有（以前这段时间就是纯黑，慢网下能黑好几秒）。
    把同一张海报预铺成根节点的 CSS 背景：立刻有像素，shader 起来后被 canvas 完全盖住。
-   ⚠️ 刻意不写 background-color —— 底下的房间本色就是暗的，
-      凭空猜一个色号反而会在图片解码前闪一下不协调的颜色。 */
+   同样用两层（先列的在上层）：
+     ① `/studio/studio-poster.jpg`（103KB）高清版，到位后盖住 ②；
+     ② `var(--studio-poster-inline)` 内联缩略图（StudioLensBackground 注入，
+        见 lib/placeholderFrames.ts）—— 零请求，门还没进就有画面。
+   ⚠️ 2026-09-29 加回 background-color：用户报「进 My Studio 背景出不来、只剩深棕底」，
+      实测是海报 103KB 被同源 2.4MB 的 studio-loop.mp4 抢带宽挤掉了。现在 ② 让它
+      根本不用等网络；万一 ② 也没解析出来，这个暖棕比"房间本色"更接近海报主色调。 */
 .studio-lens-root {
-  background: url('/studio/studio-poster.jpg') center / cover no-repeat;
+  background-image: url('/studio/studio-poster.jpg'), var(--studio-poster-inline, none);
+  background-position: center, center;
+  background-size: cover, cover;
+  background-repeat: no-repeat, no-repeat;
+  background-color: #4a3428;
 }
 
 /* ② 降级：不挂畸变层，把"清晰原视频"从"mask 局部揭示"改成整幅铺满。
@@ -16865,6 +16886,63 @@ article.dx-sec1::before {
 /* 等数据时把跳动条按下去，视觉上「停住了」 */
 .about-player.is-buffering .about-player-eq {
   opacity: 0.28;
+}
+
+/* ---- 歌词：播放器下方，跟着进度高亮当前句 ---- */
+.about-player-lyrics {
+  position: relative;
+  margin-top: 6px;
+  max-height: 62px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  text-align: center;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 22%, #000 78%, transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 22%, #000 78%, transparent);
+}
+.about-player-lyrics::-webkit-scrollbar {
+  display: none;
+}
+/* 没有时间轴的纯文本歌词：不裁上下、也不遮，整块让访客自己翻 */
+.about-player-lyrics:not(.is-timed) {
+  max-height: 92px;
+  -webkit-mask-image: none;
+  mask-image: none;
+  text-align: left;
+}
+.about-player-lyric {
+  margin: 0;
+  padding: 2px 0;
+  font-size: 10px;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+  color: var(--ab-ink-soft);
+  transition: color 0.35s ease, opacity 0.35s ease;
+  opacity: 0.62;
+}
+.about-player-lyric.is-current {
+  color: var(--ab-ink);
+  font-weight: 700;
+  opacity: 1;
+}
+/* 播放键提示：还没按过播放时轻轻呼吸一下，暗示这里能放音乐 */
+.about-player-btn.is-hint {
+  animation: about-play-hint 1.8s ease-in-out infinite;
+}
+@keyframes about-play-hint {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(90, 122, 82, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(90, 122, 82, 0.18);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .about-player-btn.is-hint {
+    animation: none;
+    box-shadow: 0 0 0 3px rgba(90, 122, 82, 0.16);
+  }
 }
 
 /* ---- 封面字段：粘贴 / 拖拽 / 点选三种都能进 ---- */

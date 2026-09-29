@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { InspLightbox, type LightboxItem } from '@/components/InspLightbox';
 import { CoverField } from '@/components/InspCoverField';
 import { useAdmin } from '@/context/AdminContext';
-import { usePlayer } from '@/context/PlayerContext';
+import { usePlayerTransport } from '@/context/PlayerContext';
 import {
   addItem,
   clearStore,
@@ -1267,7 +1267,9 @@ function MusicGrid({
   onDelete: (id: string) => void;
   onEdit: (id: string, patch: Record<string, unknown>) => void;
 }) {
-  const { track, playing, play } = usePlayer();
+  // 只要「放哪首 / 在不在播」——用 transport 而不是 usePlayer：
+  // 后者把进度也算进来，会让整片音乐卡每秒跟着重渲染 4 次。
+  const { track, playing, play } = usePlayerTransport();
   const [editingId, setEditingId] = useState<string | null>(null);
 
   return (

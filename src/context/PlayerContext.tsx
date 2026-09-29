@@ -40,13 +40,16 @@ export type PlayerTrack = {
   platform?: string;
 };
 
-type PlayerApi = {
+/**
+ * 「操控」部分：只在换歌 / 播放暂停时变。**不含进度**。
+ *
+ * 单独拆出来是因为进度每秒变约 4 次（timeupdate）。如果进度和它放在同一个
+ * context 里，整个音乐网格会跟着每秒白重渲染 4 次 —— 而那些卡片只用得上
+ * 「当前是哪首、在不在播」。拆开后它们就彻底不参与进度更新了。
+ */
+type PlayerTransport = {
   track: PlayerTrack | null;
   playing: boolean;
-  /** 当前进度（秒） */
-  time: number;
-  /** 总时长（秒） */
-  duration: number;
   /** 当前这首是不是走平台外链播放（是的话进度条不可控） */
   external: boolean;
   /** 点某一首：同一首则切换播放/暂停，否则从 0 开始播 */
@@ -58,6 +61,24 @@ type PlayerApi = {
   /** 跳到第 seconds 秒 */
   seek: (seconds: number) => void;
 };
+
+/** 「走时」部分：进度 / 时长 / 是否正在缓冲。每秒都在变。 */
+type PlayerClock = {
+  /** 当前进度（秒） */
+  time: number;
+  /** 总时长（秒） */
+  duration: number;
+  /**
+   * 音频正在等数据（缓冲）。
+   *
+   * 为什么要有这个：网易云直链偶尔会断流，表现为「声音停住 → 过一会儿自己接着放」。
+   * 以前界面没有任何提示，看起来就像网站卡死了 —— 其实只是音频在重新拉流。
+   * 亮这个状态，用户就知道是网络在缓冲，不是页面挂了。
+   */
+  buffering: boolean;
+};
+
+type PlayerApi = PlayerTransport & PlayerClock;
 
 const FAKE_DURATION = 180; // 无音源时的模拟时长（秒）
 
@@ -132,13 +153,16 @@ export function autoPlayUrl(embed: string): string {
   }
 }
 
-const PlayerCtx = createContext<PlayerApi | null>(null);
+const TransportCtx = createContext<PlayerTransport | null>(null);
+const ClockCtx = createContext<PlayerClock | null>(null);
 
 export function PlayerProvider({ children }: { children: ReactNode }) {
   const [track, setTrack] = useState<PlayerTrack | null>(null);
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [buffering, setBuffering] = useState(false);
+  const bufferingRef = useRef(false);
   /**
    * 直链（本站 `<audio>`）这一路放不出来时置位 —— VIP / 版权 / 防盗链都可能让它失败，
    * 这时退回平台外链播放器，不至于一声不响地"点了没反应"。
@@ -209,17 +233,72 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         setPlaying(false);
       }
     };
+
+    /* ---- 缓冲状态：让「声音停住」这件事在界面上看得出来 ----
+     *
+     * 为什么不在这里「自动重新 load() 一次」把卡流救回来：load() 会丢掉已经缓冲好的
+     * 数据，如果只是网速慢（而不是连接死了），重取反而把缓冲清零、更卡。
+     * 浏览器自己本来就会重试并接着放 —— 我们要做的是别让它看起来像网站卡死，
+     * 而不是替浏览器做它已经在做的事。
+     *
+     * 判定分两路，因为光靠事件不够用（实测：网速被压到低于码率时，播放头明显卡住，
+     * 但 `waiting` 根本没触发、readyState 还停在 3，只看事件会一直显示「正常播放」）：
+     *   ① 事件：waiting / loadstart 立刻亮，playing / canplay / seeked 立刻灭；
+     *   ② 看门狗：每秒量一次播放头实际走了多少。真在播就该接近实时，
+     *      走得明显慢 → 就是在缓冲。
+     */
+    const markBuffering = (v: boolean) => {
+      if (bufferingRef.current === v) return;
+      bufferingRef.current = v;
+      setBuffering(v);
+    };
+    const onWaiting = () => markBuffering(true);
+    const onLoadStart = () => markBuffering(true);
+    const onSeeking = () => markBuffering(true);
+    const onPlaying = () => markBuffering(false);
+    const onCanPlay = () => markBuffering(false);
+    const onSeeked = () => markBuffering(false);
+    const onPause = () => markBuffering(false);
+
+    let lastT = el.currentTime;
+    let lastAt = performance.now();
+    const watch = window.setInterval(() => {
+      const now = performance.now();
+      const dt = (now - lastAt) / 1000;
+      const moved = el.currentTime - lastT;
+      lastT = el.currentTime;
+      lastAt = now;
+      if (el.paused || dt <= 0) return;
+      // 拖进度会让播放头跳变（moved 很大），不会误判成卡住
+      markBuffering(moved < dt * 0.6);
+    }, 1000);
+
     el.addEventListener('timeupdate', onTime);
     el.addEventListener('loadedmetadata', onDur);
     el.addEventListener('durationchange', onDur);
     el.addEventListener('ended', onEnd);
     el.addEventListener('error', onErr);
+    el.addEventListener('waiting', onWaiting);
+    el.addEventListener('loadstart', onLoadStart);
+    el.addEventListener('seeking', onSeeking);
+    el.addEventListener('playing', onPlaying);
+    el.addEventListener('canplay', onCanPlay);
+    el.addEventListener('seeked', onSeeked);
+    el.addEventListener('pause', onPause);
     return () => {
+      window.clearInterval(watch);
       el.removeEventListener('timeupdate', onTime);
       el.removeEventListener('loadedmetadata', onDur);
       el.removeEventListener('durationchange', onDur);
       el.removeEventListener('ended', onEnd);
       el.removeEventListener('error', onErr);
+      el.removeEventListener('waiting', onWaiting);
+      el.removeEventListener('loadstart', onLoadStart);
+      el.removeEventListener('seeking', onSeeking);
+      el.removeEventListener('playing', onPlaying);
+      el.removeEventListener('canplay', onCanPlay);
+      el.removeEventListener('seeked', onSeeked);
+      el.removeEventListener('pause', onPause);
     };
   }, [isReal]);
 
@@ -247,6 +326,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     // 换歌 = 重新给直链一次机会（上一首失败不代表这首也失败）
     audioFailedRef.current = false;
     setAudioFailed(false);
+    bufferingRef.current = false;
+    setBuffering(false);
     setPlaying(true);
   }, []);
 
@@ -302,46 +383,58 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const api = useMemo<PlayerApi>(
-    () => ({
-      track,
-      playing,
-      time,
-      duration,
-      external: isExternal,
-      play,
-      toggle,
-      next,
-      prev,
-      seek,
-    }),
-    [track, playing, time, duration, isExternal, play, toggle, next, prev, seek],
+  /** 操控：与进度无关，进度每秒变 4 次也不会带动这里重算 */
+  const transport = useMemo<PlayerTransport>(
+    () => ({ track, playing, external: isExternal, play, toggle, next, prev, seek }),
+    [track, playing, isExternal, play, toggle, next, prev, seek],
+  );
+  /** 走时：进度 / 时长 / 缓冲。只有真正要画进度的组件才订阅它 */
+  const clock = useMemo<PlayerClock>(
+    () => ({ time, duration, buffering }),
+    [time, duration, buffering],
   );
 
   return (
-    <PlayerCtx.Provider value={api}>
-      {children}
-      <audio ref={audioRef} hidden preload="none" />
-      {/*
-        外链播放器：网易云 / Spotify 这类平台只给 iframe 播放器，音频由它们自己放。
-        用 1×1 + 透明而不是 display:none —— 隐藏的 iframe 在部分浏览器里会被判定为
-        "不可见"而静音或直接不加载。视觉上由 jukebox 显示曲目与状态。
-      */}
-      <iframe
-        ref={frameRef}
-        className="about-player-embed"
-        title="外链音乐播放器"
-        aria-hidden="true"
-        tabIndex={-1}
-        allow="autoplay; encrypted-media; picture-in-picture"
-        referrerPolicy="no-referrer"
-      />
-    </PlayerCtx.Provider>
+    <TransportCtx.Provider value={transport}>
+      <ClockCtx.Provider value={clock}>
+        {children}
+        <audio ref={audioRef} hidden preload="none" />
+        {/*
+          外链播放器：网易云 / Spotify 这类平台只给 iframe 播放器，音频由它们自己放。
+          用 1×1 + 透明而不是 display:none —— 隐藏的 iframe 在部分浏览器里会被判定为
+          "不可见"而静音或直接不加载。视觉上由 jukebox 显示曲目与状态。
+        */}
+        <iframe
+          ref={frameRef}
+          className="about-player-embed"
+          title="外链音乐播放器"
+          aria-hidden="true"
+          tabIndex={-1}
+          allow="autoplay; encrypted-media; picture-in-picture"
+          referrerPolicy="no-referrer"
+        />
+      </ClockCtx.Provider>
+    </TransportCtx.Provider>
   );
 }
 
-export function usePlayer(): PlayerApi {
-  const ctx = useContext(PlayerCtx);
-  if (!ctx) throw new Error('usePlayer 必须在 <PlayerProvider> 内使用');
+/** 只要「放什么 / 在不在播 / 怎么切歌」时用它 —— 不会因为进度更新而重渲染 */
+export function usePlayerTransport(): PlayerTransport {
+  const ctx = useContext(TransportCtx);
+  if (!ctx) throw new Error('usePlayerTransport 必须在 <PlayerProvider> 内使用');
   return ctx;
+}
+
+/** 只要「进度 / 时长 / 缓冲状态」时用它 */
+export function usePlayerClock(): PlayerClock {
+  const ctx = useContext(ClockCtx);
+  if (!ctx) throw new Error('usePlayerClock 必须在 <PlayerProvider> 内使用');
+  return ctx;
+}
+
+/** 播控 + 进度全都要（jukebox 那种） */
+export function usePlayer(): PlayerApi {
+  const t = usePlayerTransport();
+  const c = usePlayerClock();
+  return useMemo(() => ({ ...t, ...c }), [t, c]);
 }

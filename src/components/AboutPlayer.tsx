@@ -1,6 +1,6 @@
 import { useCallback, useRef } from 'react';
 import { Sparkles } from '@/components/Sparkles';
-import { platformLabel, usePlayer } from '@/context/PlayerContext';
+import { platformLabel, usePlayer, usePlayerClock } from '@/context/PlayerContext';
 
 const fmt = (s: number) => {
   if (!Number.isFinite(s) || s < 0) s = 0;
@@ -18,11 +18,14 @@ const fmt = (s: number) => {
  */
 export function AboutPlayer() {
   const { track, playing, time, duration, external, toggle, next, prev, seek } = usePlayer();
+  const { buffering } = usePlayerClock();
   const barRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef(false);
 
   const ratio = duration > 0 ? Math.min(1, time / duration) : 0;
   const from = platformLabel(track?.platform);
+  /** 外链播放器不受我们控制，它自己缓冲不归我们显示 */
+  const stalling = buffering && playing && !external;
 
   const seekFromClientX = useCallback(
     (clientX: number) => {
@@ -36,7 +39,10 @@ export function AboutPlayer() {
   );
 
   return (
-    <section className="about-card about-player" aria-label="灵感收藏音乐播放器">
+    <section
+      className={`about-card about-player${stalling ? ' is-buffering' : ''}`}
+      aria-label="灵感收藏音乐播放器"
+    >
       <h3 className="about-widget-title">♪ 灵感收藏 · jukebox ♪</h3>
 
       <div className="about-player-body">
@@ -109,6 +115,7 @@ export function AboutPlayer() {
           role="slider"
           tabIndex={external ? -1 : 0}
           aria-disabled={external || undefined}
+          aria-busy={stalling || undefined}
           aria-label={external ? '外链播放，进度由平台控制' : '播放进度，可拖动'}
           aria-valuemin={0}
           aria-valuemax={Math.round(duration)}
@@ -157,7 +164,11 @@ export function AboutPlayer() {
         ) : (
           <>
             <span>{fmt(time)}</span>
-            <span>{duration > 0 ? fmt(duration) : '--:--'}</span>
+            {stalling ? (
+              <span className="about-player-time-buffering">♪ 缓冲中…</span>
+            ) : (
+              <span>{duration > 0 ? fmt(duration) : '--:--'}</span>
+            )}
           </>
         )}
       </p>

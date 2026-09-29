@@ -16841,6 +16841,32 @@ article.dx-sec1::before {
   color: #4a6aa8;
 }
 
+/* 缓冲中：网易云直链偶尔断流时会亮，提示「声音停住 = 在等数据」，不是页面卡死 */
+.about-player-time-buffering {
+  font-size: 10px;
+  color: #b07d2b;
+  animation: about-buffering-blink 1.1s ease-in-out infinite;
+}
+@keyframes about-buffering-blink {
+  0%,
+  100% {
+    opacity: 0.42;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .about-player-time-buffering {
+    animation: none;
+    opacity: 1;
+  }
+}
+/* 等数据时把跳动条按下去，视觉上「停住了」 */
+.about-player.is-buffering .about-player-eq {
+  opacity: 0.28;
+}
+
 /* ---- 封面字段：粘贴 / 拖拽 / 点选三种都能进 ---- */
 .about-insp-cover {
   display: flex;

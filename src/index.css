@@ -6970,25 +6970,48 @@ body.is-diary-dragging * {
   display: block;
 }
 
-/* 横向扫描线：2px 一周期，透明度压到很低，只在纯色块上才看得出来 */
+/* 横向扫描线：4px 一周期。4 是 100/125/150/200% 缩放下都成「整数设备像素」的数，
+   可消除分数 DPR 下 3px 周期在 GPU 合成时产生的竖向摩尔纹（一段深一段浅竖着排）。
+   透明度压到很低，只在纯色块上才看得出来。 */
 .crt-screen .crt-scan {
   background: repeating-linear-gradient(
     to bottom,
     rgba(18, 32, 26, 0.16) 0 1px,
-    rgba(18, 32, 26, 0) 1px 3px
+    rgba(18, 32, 26, 0) 1px 4px
   );
   mix-blend-mode: multiply;
 }
 
-/* 孔栅（aperture grille）：竖向 RGB 极细条纹 */
+/* 孔栅（aperture grille）：竖向 RGB 极细条纹。周期同样取 4px，理由同上，
+   避免竖向条纹在分数 DPR 下拍频成横向明暗带。 */
 .crt-screen .crt-grille {
   background: repeating-linear-gradient(
     to right,
     rgba(126, 232, 199, 0.05) 0 1px,
     rgba(255, 255, 255, 0.02) 1px 2px,
-    rgba(63, 156, 127, 0.05) 2px 3px
+    rgba(63, 156, 127, 0.05) 2px 3px,
+    rgba(63, 156, 127, 0) 3px 4px
   );
   opacity: 0.7;
+}
+
+/* 133% 缩放：此时 4px 周期 = 5.33 设备像素会拍频，退回 3px（×1.33≈4 整数设备像素）。 */
+@media (min-resolution: 1.3dppx) and (max-resolution: 1.36dppx) {
+  .crt-screen .crt-scan {
+    background: repeating-linear-gradient(
+      to bottom,
+      rgba(18, 32, 26, 0.16) 0 1px,
+      rgba(18, 32, 26, 0) 1px 3px
+    );
+  }
+  .crt-screen .crt-grille {
+    background: repeating-linear-gradient(
+      to right,
+      rgba(126, 232, 199, 0.05) 0 1px,
+      rgba(255, 255, 255, 0.02) 1px 2px,
+      rgba(63, 156, 127, 0.05) 2px 3px
+    );
+  }
 }
 
 /* 缓慢下移的亮带（vertical hold 没锁死的感觉） */

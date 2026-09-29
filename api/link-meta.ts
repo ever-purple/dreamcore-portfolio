@@ -508,25 +508,20 @@ function appleMeta(url: string): LinkMeta | null {
 /* ------------------------------------------------------------------ */
 
 /**
- * 歌曲宝：把「网易云放不出的 VIP / 版权歌」「能试听整首的外链歌」等，
- * 以一个普通的歌曲页（/m/歌id 或 /music/歌id）对外提供。
+ * 歌曲宝（gequbao.com）：一个把「网易云放不出的 VIP / 版权歌」免费外放的站点。
+ * 这里只借它的**页面元数据**（歌名 / 歌手 / 封面 / 歌词），而且**刻意不暴露来源**：
+ *   · 不写 `site`、不存 `link`、不存 `embed` —— 站内绝不出现「歌曲宝」字样，也不跳回原站；
+ *   · 音频一律不扒：它的播放依赖加密 `play_id` + 交互验证码（`/api/verify-kami`），
+ *     服务端拿不到直链，且这属于未经授权的分发，不应再转到本站重分发。
+ *     要真有声音，由作者在卡片里「上传自己已下载的音频」（见 MusicLinkAddForm 的「上传音频」）。
  *
- * 页面是服务端直出的 HTML，关键数据全在 `window.appData = JSON.parse('<payload>')` 里：
- *   · mp3_title / mp3_author / mp3_cover / mp3_duration
- *   · lrc（歌词）单独在 `<lrc id="content-lrc">…</lrc>` 这块
+ * ⚠️ 生产环境现实：gequbao 整站在 Cloudflare 后面，服务端（含 Vercel 与各公共代理）
+ *    一抓就被拦成 "Just a moment..." 验证页 —— 这时 `window.appData` 不在响应里，
+ *    我们返回**干净的空结果**（platform:'gequbao' 但 title/cover 全空），让上层把它当
+ *    「识别被拦截」处理，而不是掉到通用解析去吐一屏 "Just a moment..." 乱码。
+ *    代码逻辑本身是对的（本地不被拦时能正常解析），只是线上大概率过不了 Cloudflare。
  *
- * ⚠️ 重要限制（决定这个平台「能识别到什么」）：
- *   1. **没有专辑名** —— gequbao 的 appData 只给作者与封面 URL，不暴露专辑字符串，
- *      所以 `album` 这里一律留空（网易云 / QQ 那种会带专辑名的平台走各自的接口）；
- *   2. **没有可嵌入 / 可直连的音频** —— 它的「播放」依赖一个加密 `play_id` 令牌，
- *      要带浏览器会话 + 验证码（`/api/verify-kami`、`/api/captcha`）才换得到真实地址，
- *      服务端直抓会被拦，且换回来的 CDN 多半也不给 CORS。所以这里**不**试图扒音频直链，
- *      只把 `link` 指向歌曲宝页面，由「去歌曲宝听 ↗」承载实际播放；
- *      站内这一侧则用「模拟时间轴 + 歌词滚动」把听感补全（见 MusicItem 的 src 留空约定）。
- *
- * 这样「粘贴歌曲宝链接」就能自动认出 歌名 / 歌手 / 封面 / 歌词，VIP 歌也能进了收藏，
- * 点击后歌词照着 LRC 时间轴一句句高亮 —— 跟用户要的「识别专辑、歌手、歌名、歌词」对齐
- * （专辑这一项 gequbao 本身没有，已在上面说明）。
+ * 真能解析到时，只回 歌名 / 歌手 / 封面 / 歌词，album 留空（页面不暴露专辑）。
  */
 async function gequbaoMeta(url: string): Promise<LinkMeta | null> {
   try {
@@ -538,7 +533,10 @@ async function gequbaoMeta(url: string): Promise<LinkMeta | null> {
 
     // 1) 抠 window.appData 的 payload（JSON 被包在 JS 字符串字面量里，双层编码）
     const appData = /window\.appData\s*=\s*JSON\.parse\(\s*'([\s\S]*?)'\s*\)/i.exec(html);
-    if (!appData) return null;
+    // Cloudflare 验证页 / 其它非歌曲页：没有 appData → 干净拦截标记，别掉通用解析
+    if (!appData) {
+      return { url, title: '', cover: '', platform: 'gequbao' };
+    }
     let data: Record<string, unknown>;
     try {
       data = JSON.parse(jsUnescape(appData[1])) as Record<string, unknown>;
@@ -568,12 +566,11 @@ async function gequbaoMeta(url: string): Promise<LinkMeta | null> {
       title,
       cover,
       desc: artist ? `歌手：${artist}` : undefined,
-      site: '歌曲宝',
+      // 不写 site：站内绝不出现「歌曲宝」字样
       platform: 'gequbao',
-      // 无 iframe 播放器、无直链：播放交给「去歌曲宝听」原链接
+      // 无外链、无 iframe 播放器：音频由作者上传自己的文件，不在站内重分发 gequbao 的资源
       extra: {
         artist: artist || undefined,
-        // gequbao 页面不暴露专辑名，留空（网易云 / QQ 会因各自接口带上 album）
         album: undefined,
         lyric: lyric || undefined,
       },
@@ -746,13 +743,20 @@ export async function resolveLinkMeta(rawUrl: string): Promise<LinkMeta> {
   const url = normalizeUrl(rawUrl);
   const platform = platformOf(url);
 
+  // 歌曲宝单独处理：它在 Cloudflare 后面，服务端（含 Vercel 与各公共代理）基本抓不到
+  // 真实页面，gequbaoMeta 会返回「干净拦截标记」（platform:'gequbao' 但 title/cover 全空）。
+  // 这里直接返回，绝不掉到下面的通用解析去吐一屏 "Just a moment..." 乱码。
+  if (platform === 'gequbao') {
+    const got = await gequbaoMeta(url);
+    return got ?? { url, title: '', cover: '', platform: 'gequbao' };
+  }
+
   // 1) 平台特化：网易云 / QQ 音乐 / Spotify / GitHub 的官方接口比 og 标签准得多
   const specialized: Record<string, () => Promise<LinkMeta | null>> = {
     netease: () => neteaseMeta(url),
     qqmusic: () => qqMusicMeta(url),
     spotify: () => spotifyMeta(url),
     github: () => githubRepoMeta(url),
-    gequbao: () => gequbaoMeta(url),
   };
   const fn = platform ? specialized[platform] : undefined;
   if (fn) {

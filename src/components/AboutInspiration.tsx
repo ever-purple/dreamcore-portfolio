@@ -1035,8 +1035,13 @@ function SongAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
   );
 }
 
-/** 会被当成「音乐链接」的平台；其它链接也能加，只是拿不到播放器 */
-const MUSIC_PLATFORMS = new Set(['netease', 'qqmusic', 'spotify', 'apple', 'gequbao']);
+/**
+ * 会被当成「音乐链接」、且能拿到外链播放器的平台。
+ * 注意：**不含 gequbao** —— 它整站在 Cloudflare 后面、音频还要过验证码，
+ * 既没有可直连的音频也没有外链播放器，而且站内刻意不显示其来源，所以不当成
+ * 「音乐链接」处理（见了只给一句"请用上传音频"的引导，见 MusicLinkAddForm）。
+ */
+const MUSIC_PLATFORMS = new Set(['netease', 'qqmusic', 'spotify', 'apple']);
 
 /**
  * 粘贴音乐链接 → 自动认歌名 / 歌手 / 封面 → 都能手改。
@@ -1053,6 +1058,8 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [note, setNote] = useState('');
+  const audioRef = useRef<HTMLInputElement>(null);
+  const [audioBusy, setAudioBusy] = useState(false);
   const [draft, setDraft] = useState<{
     title: string;
     artist: string;
@@ -1061,10 +1068,12 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
     embed: string;
     platform: string;
     genre: string;
-    /** 专辑名（网易云 / QQ 识别时带回；歌曲宝不暴露，通常空） */
+    /** 专辑名（网易云 / QQ 识别时带回；gequbao 不暴露，通常空） */
     album: string;
     /** 识别时服务端顺手抓的歌词（LRC）。纯静态托管上没有后端，这里会是空的 */
     lyrics: string;
+    /** 作者自己上传的音频地址（Vercel Blob）。gequbao 这类拿不到直链的，靠它出声 */
+    src: string;
   } | null>(null);
 
   const reset = () => {
@@ -1091,6 +1100,37 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
     void (async () => {
       try {
         const meta = await fetchLinkMeta(target);
+        // 歌曲宝：站内不显示来源、也不跳回原站。能认到信息就存成「无来源普通歌」，
+        // 认不到（被 Cloudflare 拦）就引导作者上传自己已下载的音频。
+        if (meta.platform === 'gequbao') {
+          const recognized = !!(
+            meta.title ||
+            meta.cover ||
+            (typeof meta.extra?.lyric === 'string' && meta.extra.lyric)
+          );
+          // ⚠️ `??` 与 `||` 不能混用（TS5076）—— 右侧那串必须整体括起来
+          const artist =
+            (meta.extra?.artist as string | undefined) ??
+            ((meta.desc?.startsWith('歌手：') ? meta.desc.slice(3) : '') || '');
+          setDraft({
+            title: meta.title || '',
+            artist,
+            cover: meta.cover || '',
+            link: '',
+            embed: '',
+            platform: '',
+            genre: '',
+            album: typeof meta.extra?.album === 'string' ? meta.extra.album : '',
+            lyrics: typeof meta.extra?.lyric === 'string' ? meta.extra.lyric : '',
+            src: '',
+          });
+          setNote(
+            recognized
+              ? '已从歌曲宝识别到歌名 / 歌手 / 封面 / 歌词，本站不显示来源。想真播放，点下面的「上传音频」传你已下载的文件即可。'
+              : '歌曲宝 有 Cloudflare 防护，本站无法自动识别，也拿不到它的音频（需过验证码）。请直接点下面的「上传音频」把你已下载的文件传上来播放，全程不显示任何来源。',
+          );
+          return;
+        }
         const artist =
           (meta.extra?.artist as string | undefined) ??
           (meta.desc?.startsWith('歌手：') ? meta.desc.slice(3) : '');
@@ -1111,6 +1151,7 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
           genre: '',
           album: typeof meta.extra?.album === 'string' ? meta.extra.album : '',
           lyrics: typeof meta.extra?.lyric === 'string' ? meta.extra.lyric : '',
+          src: '',
         });
         setNote(
           isMusic
@@ -1123,18 +1164,26 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
         );
       } catch {
         // 识别服务全挂也别丢掉粘贴进来的播放器代码 —— 有它就播得出声，只是歌名要手填
-        setErr('自动识别失败，歌名 / 歌手可以直接手填');
+        const isGq = /gequbao\.com/.test(target);
+        setErr(isGq ? '' : '自动识别失败，歌名 / 歌手可以直接手填');
         setDraft({
           title: '',
           artist: '',
           cover: '',
-          link: embed ? '' : pasted.startsWith('http') ? pasted : `https://${pasted}`,
+          // 歌曲宝：绝不把原链接存进条目（站内不跳回来源站）
+          link: isGq ? '' : embed ? '' : pasted.startsWith('http') ? pasted : `https://${pasted}`,
           embed: normalizeEmbed(embed),
           platform: embed ? 'netease' : '',
           genre: '',
           album: '',
           lyrics: '',
+          src: '',
         });
+        if (isGq) {
+          setNote(
+            '识别服务暂时连不上歌曲宝。请直接点下面的「上传音频」把你已下载的文件传上来播放，本站不显示任何来源。',
+          );
+        }
       } finally {
         setBusy(false);
       }
@@ -1145,32 +1194,33 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
     if (!draft) return;
     const link = draft.link.trim();
     const embed = draft.embed.trim();
-    // 有播放器地址就够了 —— 纯静态托管上识别不出链接很正常，
-    // link 只是给访客「去原站听」用的，不该卡住保存
-    if (!link && !embed) {
-      setErr('链接和播放器地址至少填一个');
+    const audio = draft.src.trim();
+    // 至少要有「歌名 / 封面 / 音频」之一才能存：
+    // · 纯链接型（外链播放器）靠 link / embed；
+    // · 歌曲宝这类认不到链接的，允许只存歌名+封面+歌词（信息卡），或上传音频出声。
+    if (!link && !embed && !audio && !(draft.title.trim() || draft.cover.trim())) {
+      setErr('至少需要歌名 / 封面 / 音频其中一项');
       return;
     }
     const genres = parseTags(draft.genre, 4);
-    // 能拼出直链就存一条：本站 <audio> 直接放，暂停后从暂停处继续、进度条也能拖
-    // （纯 iframe 外链做不到这两件事）
     const songId = embedSongId(embed);
+    // 优先用作者自己上传的音频（歌曲宝 / 任意来源都能靠它出声，且不显示任何来源）；
+    // 其次网易云能拼直链就拼一条（本站 <audio> 直接放，暂停后续播、进度条可拖）
+    const src = audio || (draft.platform === 'netease' && songId ? neteaseAudioUrl(songId) : undefined);
     onAdd({
       id: `music-${Date.now()}`,
       title: draft.title.trim() || '未命名音乐',
       artist: draft.artist.trim() || undefined,
       cover: draft.cover.trim(),
-      src: draft.platform === 'netease' && songId ? neteaseAudioUrl(songId) : undefined,
-      // 识别出平台了就不必再挂「#外链」这个兜底标签
-      genre: genres.length ? genres : draft.platform ? [] : ['#外链'],
-      // 只存链接与外链播放器地址，不存音频文件
-      source: 'link',
+      src,
+      genre: genres.length ? genres : link || embed ? ['#外链'] : [],
+      // 上传了音频就是本站文件；识别到平台且没上传音频才标 link
+      source: audio ? 'local' : draft.platform ? 'link' : undefined,
       platform: draft.platform || undefined,
       embed: embed || undefined,
       link: link || undefined,
-      // 专辑（网易云 / QQ 识别带回；歌曲宝这类不暴露专辑的会留空）
+      // 专辑（网易云 / QQ 识别带回；gequbao 这类不暴露专辑的会留空）
       album: draft.album.trim() || undefined,
-      // 歌词（识别时服务端带回的；没有后端时可以在 ✎ 编辑里手填）
       lyrics: draft.lyrics.trim() || undefined,
     });
     reset();
@@ -1253,10 +1303,44 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
             </div>
           </div>
 
+          {/* 上传音频：歌曲宝 / 任意拿不到直链的来源，传你自己已下载的文件即可出声，且不显示任何来源 */}
+          <div className="about-insp-form-audio">
+            <button
+              type="button"
+              className="about-insp-btn"
+              disabled={audioBusy}
+              onClick={() => audioRef.current?.click()}
+            >
+              {audioBusy ? '上传中…' : draft.src ? '✓ 已上传音频（点击更换）' : '🎵 上传音频（可选，用于播放）'}
+            </button>
+            <input
+              ref={audioRef}
+              type="file"
+              accept="audio/*,.mp3,.m4a,.flac,.wav,.ogg"
+              hidden
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (!f) return;
+                setAudioBusy(true);
+                void (async () => {
+                  try {
+                    const { url: u } = await uploadFile(f);
+                    patch({ src: u });
+                    setNote('已上传音频，将用它在本站播放（不显示任何来源）。');
+                  } catch {
+                    setErr('音频上传失败，请重试');
+                  } finally {
+                    setAudioBusy(false);
+                  }
+                })();
+              }}
+            />
+          </div>
+
           <input
             className="about-insp-input"
             value={draft.link}
-            placeholder="原链接（点卡片会跳过去）"
+            placeholder="原链接（可选；填了卡片会显示「去原站听」）"
             onChange={(e) => patch({ link: e.target.value })}
           />
           <CoverField
@@ -1276,9 +1360,13 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
               <span className="about-insp-form-ok" title={draft.embed}>
                 ✓ 已拿到{draft.platform ? platformLabel(draft.platform) : ''}外链播放器
               </span>
-            ) : (
+            ) : draft.link ? (
               <span className="about-insp-form-note is-inline">
                 没拿到播放器地址，卡片仍可跳转原链接
+              </span>
+            ) : (
+              <span className="about-insp-form-note is-inline">
+                没有原链接，卡片只展示信息（可上传音频出声）
               </span>
             )}
           </div>

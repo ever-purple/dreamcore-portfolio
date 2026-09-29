@@ -251,6 +251,22 @@ function parseEmbedCode(text: string): string {
   return EMBED_PATH_RE.test(url) ? url : '';
 }
 
+/**
+ * 网易云的音频直链（平台自己的外链音频地址，不是第三方盗链）：
+ *   `https://music.163.com/song/media/outer/url?id=<id>.mp3` → 302 → CDN 上的 mp3
+ *
+ * 为什么要存它：只走平台 iframe 播放器的话，那个播放器是**跨域**的 ——
+ * 我们读不到它的进度，也控制不了它：暂停只能靠把 iframe 卸掉（于是再播就从头开始），
+ * 进度条也只能禁用。换成本站 `<audio>` 直接放这条直链，暂停/续播/拖进度就都正常了。
+ *
+ * ⚠️ 存的是「会 302 的那个地址」，**不要**存某次跳转后的具体 CDN 地址：
+ *    CDN 链接带时效签名（实测形如 `.../20260929…/xxx.mp3?vuutv=…`），硬存下来过一阵就失效；
+ *    每次加载现跳一次，才能拿到当时的有效签名。
+ */
+function neteaseAudioUrl(songId: string): string {
+  return songId ? `https://music.163.com/song/media/outer/url?id=${songId}.mp3` : '';
+}
+
 /** 从外链播放器地址里抠出平台侧的歌曲 id（`?id=123` / `#/song?id=123`） */
 function embedSongId(embed: string): string {
   return /[?&#]id=(\d{1,20})/.exec(embed)?.[1] ?? '';
@@ -1093,11 +1109,15 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
       return;
     }
     const genres = parseTags(draft.genre, 4);
+    // 能拼出直链就存一条：本站 <audio> 直接放，暂停后从暂停处继续、进度条也能拖
+    // （纯 iframe 外链做不到这两件事）
+    const songId = embedSongId(embed);
     onAdd({
       id: `music-${Date.now()}`,
       title: draft.title.trim() || '未命名音乐',
       artist: draft.artist.trim() || undefined,
       cover: draft.cover.trim(),
+      src: draft.platform === 'netease' && songId ? neteaseAudioUrl(songId) : undefined,
       // 识别出平台了就不必再挂「#外链」这个兜底标签
       genre: genres.length ? genres : draft.platform ? [] : ['#外链'],
       // 只存链接与外链播放器地址，不存音频文件
@@ -1284,12 +1304,18 @@ function MusicGrid({
                   const tags = parseTags(val.genre, 4);
                   // 已经拿到平台播放器了，「#外链」这个兜底标签就该退场（可能一个标签都不剩）
                   const pruned = tags.filter((g) => g !== '#外链');
+                  const sid = (val.songId || embedSongId(val.embed)).trim();
+                  const isNetease = val.platform === 'netease' || /outchain\/player/.test(val.embed);
                   onEdit(m.id, {
                     title: val.title.trim() || m.title,
                     artist: val.artist.trim() || undefined,
                     // 播放器地址直接覆盖（可以清空）；允许粘整段 iframe 代码 —— 这里只取 src，
                     // 并把 auto 归零：声音什么时候响由本站播放键说了算，不跟平台参数自动播
                     embed: normalizeEmbed(parseEmbedCode(val.embed)) || undefined,
+                    // 有网易云歌曲 id 就顺带存一条音频直链：本站 <audio> 直接放，
+                    // 暂停后从暂停处继续、进度条也能拖 —— 外链 iframe 做不到这两件事。
+                    // 直链万一放不出来（VIP / 版权），播放器会自动退回上面那个 embed。
+                    src: sid && isNetease ? neteaseAudioUrl(sid) : undefined,
                     ...(val.platform ? { platform: val.platform } : {}),
                     ...(val.songId ? { songId: val.songId } : {}),
                     genre: val.platform ? pruned : tags,

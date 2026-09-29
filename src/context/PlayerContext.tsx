@@ -75,13 +75,45 @@ export function platformLabel(p?: string): string {
   return (p && PLATFORM_LABEL[p]) || '';
 }
 
-/** 收藏里的音乐 → 播放器曲目。外链（embed）优先于本站文件（src）。 */
+/** 从网易云的各类地址里抠歌曲 id：专属 id 字段 / 外链播放器 / 歌曲页 / 移动端页都认 */
+function neteaseSongIdOf(m: MusicItem): string {
+  if (m.songId && /^\d+$/.test(m.songId.trim())) return m.songId.trim();
+  for (const p of [m.embed ?? '', m.link ?? '']) {
+    const hit = /[?&]id=(\d{3,})/.exec(p);
+    if (hit) return hit[1];
+  }
+  return '';
+}
+
+/**
+ * 网易云的直链音频地址。
+ *
+ * 注意存的是 `outer/url?id=xxx.mp3` 这一层（它只是个 302 转发），
+ * **不是**302 之后那个 CDN 地址 —— 后者带时效签名，隔一会儿就失效了。
+ * 让浏览器每次现跳一次，才能长期有效。
+ */
+function neteaseDirectUrl(id: string): string {
+  return id ? `https://music.163.com/song/media/outer/url?id=${id}.mp3` : '';
+}
+
+/**
+ * 收藏里的音乐 → 播放器曲目。
+ *
+ * 音源优先级：本站文件（src）> 网易云直链（现推）> 平台外链播放器（embed）。
+ * 网易云这一档是运行时推出来的，所以**以前存的老条目不用重新编辑** ——
+ * 只要条目里有歌曲 id 或外链地址，点播放就自动拿到能拖进度条的真音频。
+ * 直链要是被版权 / VIP / 防盗链挡了，PlayerProvider 会自动退回 embed。
+ */
 export function toTrack(m: MusicItem): PlayerTrack {
+  const looksNetease =
+    m.platform === 'netease' || /music\.163\.com/.test(`${m.embed ?? ''} ${m.link ?? ''}`);
+  const src =
+    m.src || (looksNetease ? neteaseDirectUrl(neteaseSongIdOf(m)) || undefined : undefined);
   return {
     id: m.id,
     title: m.title,
     cover: m.cover,
-    src: m.src,
+    src,
     embed: m.embed,
     link: m.link,
     platform: m.platform,
@@ -107,6 +139,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  /**
+   * 直链（本站 `<audio>`）这一路放不出来时置位 —— VIP / 版权 / 防盗链都可能让它失败，
+   * 这时退回平台外链播放器，不至于一声不响地"点了没反应"。
+   * 用 ref + state 两份：ref 给回调里同步读，state 用来触发重渲染。
+   */
+  const [audioFailed, setAudioFailed] = useState(false);
+  const audioFailedRef = useRef(false);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   /** 外链播放器（iframe）。不能 display:none —— 有的浏览器会直接不加载/静音。 */
@@ -121,8 +160,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     durationRef.current = duration;
   }, [duration]);
 
-  const isReal = !!track?.src;
-  const isExternal = !!track?.embed;
+  // 有可直连的音频地址就走本站 <audio>：暂停后再播从暂停处继续、进度条也能拖。
+  // 只有「没有直链、只有平台播放器」时才走 iframe —— 那是跨域的，
+  // 我们既读不到它的进度也控制不了它，暂停只能靠卸载 iframe，再播自然就从头开始。
+  const isReal = !!track?.src && !audioFailed;
+  const isExternal = !isReal && !!track?.embed;
 
   // 外链播放：播放时把 iframe 指向平台的播放器，暂停就摘掉 src（等于停下）
   useEffect(() => {
@@ -158,15 +200,26 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const onTime = () => setTime(el.currentTime);
     const onDur = () => setDuration(Number.isFinite(el.duration) ? el.duration : 0);
     const onEnd = () => setPlaying(false);
+    // 直链放不出来（VIP / 版权 / 防盗链）：有平台播放器就退回它，否则老实停下
+    const onErr = () => {
+      if (trackRef.current?.embed && !audioFailedRef.current) {
+        audioFailedRef.current = true;
+        setAudioFailed(true);
+      } else {
+        setPlaying(false);
+      }
+    };
     el.addEventListener('timeupdate', onTime);
     el.addEventListener('loadedmetadata', onDur);
     el.addEventListener('durationchange', onDur);
     el.addEventListener('ended', onEnd);
+    el.addEventListener('error', onErr);
     return () => {
       el.removeEventListener('timeupdate', onTime);
       el.removeEventListener('loadedmetadata', onDur);
       el.removeEventListener('durationchange', onDur);
       el.removeEventListener('ended', onEnd);
+      el.removeEventListener('error', onErr);
     };
   }, [isReal]);
 
@@ -191,6 +244,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setTime(0);
     // 外链播放读不到时长，进度条会切成"外链"状态；本站文件等 loadedmetadata 填真实值
     setDuration(m.src ? 0 : FAKE_DURATION);
+    // 换歌 = 重新给直链一次机会（上一首失败不代表这首也失败）
+    audioFailedRef.current = false;
+    setAudioFailed(false);
     setPlaying(true);
   }, []);
 
@@ -236,8 +292,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const s = Math.max(0, Math.min(d, seconds));
     setTime(s);
     const el = audioRef.current;
-    // 外链播放由平台自己控制进度，这里拖不动 —— 只更新显示位置
-    if (el && trackRef.current?.src && !trackRef.current?.embed) {
+    // 只有本站 <audio> 这一路能真正 seek；外链播放器由平台自己控制，拖不动
+    if (el && trackRef.current?.src && !audioFailedRef.current) {
       try {
         el.currentTime = s;
       } catch {

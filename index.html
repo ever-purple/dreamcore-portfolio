@@ -49,6 +49,41 @@
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content="https://www.everpurple.top/og/card-share-wide.png" />
     <meta name="theme-color" content="#7ee8c7" />
+
+    <!-- ── 序列帧「首窗」预载 ────────────────────────────────────────────────
+         进首页要等整片序列帧下完（见 App.tsx 的 READY_FRAMES），所以下载吞吐
+         直接决定加载页停留时长。这里在 <head> 就替**前 12 张**发起 preload ——
+         它和 JS 主包**并行**开始下载，比等 React 起来、探测完 AVIF 再发要早
+         0.3~0.8s（少一次「JS 下载+解析」的串行等待）。首张给 fetchpriority=high。
+
+         ⚠️ `type="image/avif"` 不是可选项：不支持 AVIF 的浏览器会**自动跳过**
+            这几条 preload（不浪费一个字节），随后由 App 的 supportsAvif() 探测
+            落到 WebP 档正常加载。
+
+         ⚠️ 尺寸档判据（frames / frames-sm）与 URL 拼法必须和 App.tsx 的
+            FRAME_SIZE_DIR / buildFrameUrls **逐字一致**（含 ?v= 版本号），
+            否则 preload 命不中 <img> 的缓存请求，反而白下 12 张。
+            改 App.tsx 里那两处中的任何一处，都要同步改这里。
+    -->
+    <script>
+      (function () {
+        var vw = window.innerWidth;
+        var canvasPx = vw * Math.min(window.devicePixelRatio || 1, 2);
+        var shortSide = Math.min(window.innerWidth, window.innerHeight);
+        var dir = shortSide <= 900 && canvasPx <= 2000 ? 'frames-sm-avif' : 'frames-avif';
+        var VERSION = 2;
+        var HEAD = 12;
+        for (var i = 1; i <= HEAD; i++) {
+          var link = document.createElement('link');
+          link.rel = 'preload';
+          link.as = 'image';
+          link.type = 'image/avif';
+          link.href = '/' + dir + '/' + String(i).padStart(4, '0') + '.avif?v=' + VERSION;
+          if (i === 1) link.setAttribute('fetchpriority', 'high');
+          document.head.appendChild(link);
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

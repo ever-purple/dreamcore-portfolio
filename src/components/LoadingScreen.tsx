@@ -3,7 +3,10 @@ import { EASE } from '@/lib/ease';
 import gsap from 'gsap';
 
 interface LoadingScreenProps {
-  /** 关键素材是否到齐（序列帧首窗 + 模型）。到齐才允许淡出 */
+  /**
+   * 首页素材是否到齐 = 整片序列帧全部定案 **或** 撞上 App 的 15s 硬上限。
+   * 到齐（readyToEnter）才允许淡出 —— 这样进门时 buffer 已满，首页不会「没加载完就锁滚动」。
+   */
   ready: boolean;
   /** 真实加载进度 0~1，由 App 按「已下载资源 / 应下载资源」算出来 */
   progress: number;
@@ -19,15 +22,16 @@ interface LoadingScreenProps {
 const MIN_VISIBLE = 3000;
 
 /**
- * 时间爬升基线（ms）。与 `useWindowedFrames` 的兜底超时（7000ms）对齐：
- * 超时那一刻数字刚好爬到 ~99%，接着跳 100% 放行。
+ * 时间爬升基线（ms）。与 App 的 `ENTER_MAX_WAIT`（15000ms 硬上限）**同一条时间轴**：
+ * 数字约在第 12s 爬到 ~99%，第 15s 撞上硬上限 → 跳 100% 放行（慢网兜底）。
  *
- * 为什么需要它：进度本应随「真实下载量」走，但慢网/丢包时首窗 8 张帧可能
- * 一张都下不下来 —— 若只看真实进度，数字会**永远冻在 0%**，用户以为网站挂了
- * （原话「一直在转圈」）。用「时间爬升」兜底，数字始终在动，观感是「正在加载」
- * 而不是「卡死」。取真实进度与时间爬升的**较大值**。
+ * 为什么需要它：进度本应随「真实下载量」走，但慢网/丢包时序列帧可能一张都下不下来
+ * —— 若只看真实进度，数字会**永远冻在 0%**，用户以为网站挂了（原话「一直在转圈」）。
+ * 用「时间爬升」兜底，数字始终在动，观感是「正在加载」而不是「卡死」。
+ * 取真实进度与时间爬升的**较大值** —— 所以网速正常时，数字由真实进度主导，
+ * 爬升只是「最坏情况也不冻屏」的下限。
  */
-const CREEP_MS = 7000;
+const CREEP_MS = 12000;
 
 export function LoadingScreen({ ready, progress, onEnter }: LoadingScreenProps) {
   const [shown, setShown] = useState(0); // 屏幕上显示的百分比

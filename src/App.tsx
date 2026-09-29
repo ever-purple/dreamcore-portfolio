@@ -109,9 +109,11 @@ const buildFrameUrls = (format: keyof typeof FRAME_FORMATS): string[] => {
 const NO_FRAME_URLS: string[] = [];
 
 /**
- * 加载页**只等首窗**（前 `HEAD_FRAMES` 张），其余帧一律降到后台按优先级补。
+ * 序列帧**首窗**大小：这前 N 张在 `useWindowedFrames` 里优先级最高（最先下），
+ * 且它们到齐时向 App 报 `complete`（= HomeSection 的 ready 旗标）。
+ * **它不再决定加载页何时放行** —— 那件事已交给 App 的 `READY_FRAMES`（整片）。
  *
- * 这个值被改了三次，每一次都建立在推翻上一次的前提上，所以三次都记在这里：
+ * 这个值被改了四次，每一次都建立在推翻上一次的前提上，所以四次都记在这里：
  *
  *   ① 最初 wait 里塞了 5 个 GLB（合计 3.4MB，rack.glb 另算 9.1MB）。但那 6 个模型
  *      **首页一个都用不到** —— 它们只在工作室里出现，而工作室必须先滚完这 300vh 的
@@ -128,6 +130,12 @@ const NO_FRAME_URLS: string[] = [];
  *      300vh 的滚动行程走完要好几秒，后面的帧完全来得及在用户滚到之前到位。
  *      首窗 8 张约 0.7MB（大屏）/ 0.22MB（小屏）→ 1~2 秒就有画面（加载页还有 3 秒
  *      最短可见时间兜着）。等待量降到原来的 1/15，进入耗时从 25 秒降到 3 秒量级。
+ *
+ *   ④ **2026-09-30 推翻了 ③ 的「只等首窗」**：那个决定让用户进门时后面 112 张还没到，
+ *      于是 HomeSection 的「滚动夹到缓冲前沿」频繁触发 —— 用户原话「首页设置了没加载
+ *      出来就锁定，这样不好」。现在加载页等的是**整片**（见 App 的 READY_FRAMES），
+ *      进门即满缓冲，那条锁退化成「滚到片尾停住」这一个正常边界。
+ *      HEAD_FRAMES 从此只管两件事：定义首窗优先级队列 + 首窗就绪时报 complete。
  *
  * ⚠️ 帧的加载**不再走 useAssetPreload 的 wait 组** —— 那条路会和 useWindowedFrames
  * 拉同一批首帧，实测前 12 个网络请求里有 4 个是重复的（白占并发位与带宽）。
@@ -153,6 +161,34 @@ const HEAD_FRAMES = 8;
  * 只是首页这条链路不再需要。滚动插队 `focus` 仍在用，它保证「下一帧永远在队列最前」。）
  */
 const TAIL_FRAMES = 0;
+
+/**
+ * 进首页的**硬上限**（ms）：超过它，哪怕序列帧还没下完也放行进首页。
+ *
+ * 为什么不设「永远等」：加载页锁死是比「首页缺几帧」更糟的体验 —— 慢网/断网时
+ * 用户会对着 99% 干等。到点就进，缺的帧由绘制端 `nearestLoadedLE()` 用邻近帧顶替，
+ * 画面照常往前推（只是那几格是复用帧）。所以它是**安全阀**，不是常规路径。
+ *
+ * 为什么是 15000：整片（大屏 7.0MB / 小屏 2.9MB）在正常的 4G/家宽下几秒内下得完，
+ * 15s 留足余量；再慢的链路基本等于不可用，早进比干等强。
+ */
+const ENTER_MAX_WAIT = 15000;
+
+/**
+ * 进首页的**正常门槛** = 整片序列帧全部定案（`loadedCount >= TOTAL_FRAMES`）。
+ *
+ * ⚠️ 这里推翻了 2026-09-29「只等首窗 8 张」（见 HEAD_FRAMES 注释里的 ③）。当时的
+ * 目标是「尽快进门」，但那个决定的副作用是：**用户进门时后面 112 张还没到**，
+ * 于是 HomeSection 的「滚轮只推进到已缓冲处」在用户正常下滚时频繁触发 ——
+ * 观感就是用户报的「首页没加载出来就锁定滚动，很别扭」。
+ *
+ * 现在改成「等整片下完再进门」：进门那一刻 buffer 已经满了，滚动永远跟得上画面，
+ * 那条锁从结构上就不会触发（退化成「滚到片尾停住」这一条正常边界）。代价是加载页
+ * 停得更久 —— 所以配套做了两件事：① `<head>` 里 preload 首窗帧（和 JS 并行下载，
+ * 见 index.html）；② 把 useWindowedFrames 的并发从 12 提到 16。慢链路由上面那条
+ * 15s 硬上限兜底。
+ */
+const READY_FRAMES = TOTAL_FRAMES;
 
 /**
  * 后台预热：进工作室才用得上的大件。不计进度、不卡加载页，且**加载页消失之后**
@@ -283,8 +319,29 @@ function App() {
     prefetchGate: entered && framesMostlyLoaded,
   });
 
-  /** 加载页的 0→100%：首窗的完成度（useWindowedFrames 在首窗期间逐张上报） */
-  const progress = Math.min(1, loadedCount / HEAD_FRAMES);
+  /**
+   * 加载页的 0→100%：**整片**的完成度。
+   * 分母是 TOTAL_FRAMES（不是首窗 HEAD_FRAMES）—— 现在等的是整片，百分比就得反映整片。
+   * useWindowedFrames 每 16 张上报一次、全量到齐时补满，所以数字是分档前进的
+   * （配合 LoadingScreen 内部的插值 + 时间兜底，观感仍然连续）。
+   */
+  const progress = Math.min(1, loadedCount / TOTAL_FRAMES);
+
+  /**
+   * 15s 硬上限的计时器。只在**加载页期间**计时；进门后卸载。
+   * 到点置位 → readyToEnter 变真 → 加载页放行（见 ENTER_MAX_WAIT 注释）。
+   */
+  const [enterTimeoutHit, setEnterTimeoutHit] = useState(false);
+  useEffect(() => {
+    if (entered) return;
+    const t = window.setTimeout(() => setEnterTimeoutHit(true), ENTER_MAX_WAIT);
+    return () => window.clearTimeout(t);
+  }, [entered]);
+
+  /** 整片序列帧是否已全部定案（成功或失败都算，见 useWindowedFrames） */
+  const filmBuffered = loadedCount >= READY_FRAMES;
+  /** 加载页放行判据：整片下完 或 撞上硬上限 */
+  const readyToEnter = filmBuffered || enterTimeoutHit;
 
   const lenisRef = useRef<Lenis | null>(null);
   const downBlockedRef = useRef(false);
@@ -462,7 +519,8 @@ function App() {
       {stage === 'home' ? (
         <>
           {!entered && (
-            <LoadingScreen ready={framesComplete} progress={progress} onEnter={handleEnter} />
+            // readyToEnter = 整片下完 或 撞上 15s 硬上限（不再是「首窗 8 张」）
+            <LoadingScreen ready={readyToEnter} progress={progress} onEnter={handleEnter} />
           )}
           <HomeSection
             images={images}

@@ -76,7 +76,17 @@ export interface WindowedFrames {
 }
 
 export interface WindowedFramesOptions {
-  /** 并发解码上限，默认 12。120 张同时发会把主线程和带宽一起打满 */
+  /**
+   * 并发解码上限，默认 16（2026-09-30 从 12 提上来）。
+   *
+   * 为什么提到 16：现在加载页要**等整片下完才放行**（见 App 的 READY_FRAMES），
+   * 下载总量从「首窗 8 张」变成「整片 120 张」，吞吐直接决定加载页停留时长。
+   * Vercel 走 HTTP/2（一条连接多路复用，不受 6 连接/域限制），跨境高 RTT 链路上
+   * 「在飞请求数」正是填满带宽-时延积的关键 —— 12 个流填不满，16 明显更快。
+   *
+   * 为什么不敢更高：解码虽然 `decoding='async'`，但同时在飞太多张会让低端机
+   * 的解码线程排队、拖慢首帧出现。16 是「填管 + 不压垮解码」的折中。
+   */
   concurrency?: number;
   /**
    * 兜底超时：到点即使首窗还没下完也算 `complete`，把用户放行。
@@ -139,7 +149,7 @@ export function useWindowedFrames(
   options: WindowedFramesOptions = {},
 ): WindowedFrames {
   const {
-    concurrency = 12,
+    concurrency = 16,
     timeoutMs = DEFAULT_TIMEOUT,
     headCount = DEFAULT_HEAD,
     priorityTail = DEFAULT_TAIL,

@@ -16,7 +16,7 @@ export type LinkMeta = {
   cover: string;
   desc?: string;
   site?: string;
-  /** 平台标识：netease / qqmusic / spotify / apple / github / bilibili / web */
+  /** 平台标识：netease / qqmusic / spotify / apple / github / bilibili / xhs / gequbao / web */
   platform?: string;
   /** 可 iframe 嵌入的播放器地址（音乐类才有） */
   embed?: string;
@@ -119,6 +119,45 @@ function decodeEntities(text: string): string {
     const key = body.toLowerCase();
     return ENTITIES[key] ?? whole;
   });
+}
+
+/**
+ * 还原「JS 字符串字面量」里的转义 —— 只用于解析 gequbao 那种
+ * `window.appData = JSON.parse('<payload>')` 里嵌的 <payload>。
+ *
+ * 这种 payload 是双层编码：先是 JS 字符串字面量（浏览器跑 `JSON.parse('…')`
+ * 时先按 JS 规则解一层），再是 JSON（JSON.parse 再解一层）。
+ * 比如 `\\\/` 在 JS 层变成 `\/`、JSON 层才变成 `/`。这里只负责「JS 层」这一步，
+ * 解完就是合法 JSON，再 JSON.parse 一次即可。
+ *
+ * 只放行数据，不执行任何代码（正则替换，无 eval），所以拿恶意页面进来也只会
+ * 解析出一个普通对象，不会跑任何逻辑。
+ */
+function jsUnescape(text: string): string {
+  return text
+    // 先处理 \uXXXX（歌曲宝把双引号也写成 \u0022），避免和下面的 . 通配冲突
+    .replace(/\\u([0-9a-fA-F]{4})/g, (_whole, hex: string) =>
+      String.fromCodePoint(parseInt(hex, 16)),
+    )
+    // 再处理其它单字符转义：\\ \/ \" \' \n \t \r \b \f \\0 等
+    .replace(/\\(.)/g, (_whole, c: string) => {
+      switch (c) {
+        case 'n':
+          return '\n';
+        case 't':
+          return '\t';
+        case 'r':
+          return '\r';
+        case 'b':
+          return '\b';
+        case 'f':
+          return '\f';
+        case '0':
+          return '\0';
+        default:
+          return c; // \\→\ 、\/→/ 、“→" 、'→' 都落到这里
+      }
+    });
 }
 
 /** 按声明的 charset 把字节解成字符串（国内不少老站还是 gb18030 / gbk）。 */
@@ -236,6 +275,7 @@ function platformOf(url: string): string | undefined {
   if (/github\.com/.test(h)) return 'github';
   if (/bilibili\.com|b23\.tv/.test(h)) return 'bilibili';
   if (/xiaohongshu\.com|xhslink\.com/.test(h)) return 'xhs';
+  if (/gequbao\.com/.test(h)) return 'gequbao';
   return undefined;
 }
 
@@ -440,6 +480,86 @@ function appleMeta(url: string): LinkMeta | null {
 }
 
 /* ------------------------------------------------------------------ */
+/* 歌曲宝 gequbao.com                                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 歌曲宝：把「网易云放不出的 VIP / 版权歌」「能试听整首的外链歌」等，
+ * 以一个普通的歌曲页（/m/歌id 或 /music/歌id）对外提供。
+ *
+ * 页面是服务端直出的 HTML，关键数据全在 `window.appData = JSON.parse('<payload>')` 里：
+ *   · mp3_title / mp3_author / mp3_cover / mp3_duration
+ *   · lrc（歌词）单独在 `<lrc id="content-lrc">…</lrc>` 这块
+ *
+ * ⚠️ 重要限制（决定这个平台「能识别到什么」）：
+ *   1. **没有专辑名** —— gequbao 的 appData 只给作者与封面 URL，不暴露专辑字符串，
+ *      所以 `album` 这里一律留空（网易云 / QQ 那种会带专辑名的平台走各自的接口）；
+ *   2. **没有可嵌入 / 可直连的音频** —— 它的「播放」依赖一个加密 `play_id` 令牌，
+ *      要带浏览器会话 + 验证码（`/api/verify-kami`、`/api/captcha`）才换得到真实地址，
+ *      服务端直抓会被拦，且换回来的 CDN 多半也不给 CORS。所以这里**不**试图扒音频直链，
+ *      只把 `link` 指向歌曲宝页面，由「去歌曲宝听 ↗」承载实际播放；
+ *      站内这一侧则用「模拟时间轴 + 歌词滚动」把听感补全（见 MusicItem 的 src 留空约定）。
+ *
+ * 这样「粘贴歌曲宝链接」就能自动认出 歌名 / 歌手 / 封面 / 歌词，VIP 歌也能进了收藏，
+ * 点击后歌词照着 LRC 时间轴一句句高亮 —— 跟用户要的「识别专辑、歌手、歌名、歌词」对齐
+ * （专辑这一项 gequbao 本身没有，已在上面说明）。
+ */
+async function gequbaoMeta(url: string): Promise<LinkMeta | null> {
+  try {
+    const res = await timedFetch(url);
+    if (!res.ok) return null;
+    const buf = await res.arrayBuffer();
+    const raw = new TextDecoder('utf-8').decode(buf);
+    const html = decodeBody(buf, raw);
+
+    // 1) 抠 window.appData 的 payload（JSON 被包在 JS 字符串字面量里，双层编码）
+    const appData = /window\.appData\s*=\s*JSON\.parse\(\s*'([\s\S]*?)'\s*\)/i.exec(html);
+    if (!appData) return null;
+    let data: Record<string, unknown>;
+    try {
+      data = JSON.parse(jsUnescape(appData[1])) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+
+    const title = String(data.mp3_title ?? '').trim();
+    const artist = String(data.mp3_author ?? '').trim();
+    const cover = httpsify(String(data.mp3_cover ?? ''));
+    if (!title && !cover) return null;
+
+    // 2) 歌词：页面用 `<div class="content-lrc" id="content-lrc">…</div>` 装 LRC，
+    //    行与行之间是 <br />（LRC 每行带 [mm:ss.xx] 时间轴，原样保留，交给 jukebox 高亮）。
+    //    按 id 而不是标签名匹配，避免页面哪天把 div 换成 pre/lrc 就失灵。
+    const lrcHit = /<[a-z0-9]+[^>]*id="content-lrc"[^>]*>([\s\S]*?)<\/[a-z0-9]+>/i.exec(html);
+    let lyric = '';
+    if (lrcHit) {
+      lyric = decodeEntities(lrcHit[1])
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<[^>]+>/g, '')
+        .trim();
+    }
+
+    return {
+      url,
+      title,
+      cover,
+      desc: artist ? `歌手：${artist}` : undefined,
+      site: '歌曲宝',
+      platform: 'gequbao',
+      // 无 iframe 播放器、无直链：播放交给「去歌曲宝听」原链接
+      extra: {
+        artist: artist || undefined,
+        // gequbao 页面不暴露专辑名，留空（网易云 / QQ 会因各自接口带上 album）
+        album: undefined,
+        lyric: lyric || undefined,
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /* GitHub 仓库（AI 项目多是开源仓库，比 og 标签准）                        */
 /* ------------------------------------------------------------------ */
 
@@ -608,6 +728,7 @@ export async function resolveLinkMeta(rawUrl: string): Promise<LinkMeta> {
     qqmusic: () => qqMusicMeta(url),
     spotify: () => spotifyMeta(url),
     github: () => githubRepoMeta(url),
+    gequbao: () => gequbaoMeta(url),
   };
   const fn = platform ? specialized[platform] : undefined;
   if (fn) {

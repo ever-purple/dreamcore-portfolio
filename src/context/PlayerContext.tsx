@@ -110,6 +110,7 @@ const PLATFORM_LABEL: Record<string, string> = {
   apple: 'Apple Music',
   bilibili: '哔哩哔哩',
   xhs: '小红书',
+  gequbao: '歌曲宝',
 };
 
 export function platformLabel(p?: string): string {

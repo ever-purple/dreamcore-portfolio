@@ -323,6 +323,10 @@ async function redetectFields(link: string): Promise<Record<string, string> | nu
   const out: Record<string, string> = {};
   if (meta.title) out.title = meta.title;
   if (artist) out.artist = artist;
+  // 专辑：网易云 / QQ 这类接口会带，歌曲宝（gequbao）页面不暴露所以通常是空
+  if (typeof meta.extra?.album === 'string' && meta.extra.album.trim()) {
+    out.album = meta.extra.album.trim();
+  }
   if (meta.cover) out.cover = meta.cover;
   if (meta.embed) out.embed = meta.embed;
   if (meta.platform) out.platform = meta.platform;
@@ -854,6 +858,8 @@ type SongDraft = {
   /** 标题：优先标签里的 TIT2，其次文件名 */
   title: string;
   artist: string;
+  /** 专辑：ID3 的 TALB，没有就空 */
+  album: string;
   genre: string;
   /** 当前生效的封面 */
   cover: string;
@@ -898,6 +904,7 @@ function SongAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
         src: url,
         title,
         artist: tags.artist ?? '',
+        album: tags.album ?? '',
         genre: (tags.genre ?? []).join(' '),
         cover: tags.cover ?? '',
         tagCover: tags.cover ?? '',
@@ -910,14 +917,15 @@ function SongAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
   const save = () => {
     if (!draft) return;
     const genres = parseTags(draft.genre, 4);
-    onAdd({
-      id: `music-${Date.now()}`,
-      title: draft.title.trim() || '未命名音乐',
-      artist: draft.artist.trim() || undefined,
-      cover: draft.cover,
-      genre: genres,
-      src: draft.src,
-    });
+      onAdd({
+        id: `music-${Date.now()}`,
+        title: draft.title.trim() || '未命名音乐',
+        artist: draft.artist.trim() || undefined,
+        album: draft.album.trim() || undefined,
+        cover: draft.cover,
+        genre: genres,
+        src: draft.src,
+      });
     reset();
   };
 
@@ -977,6 +985,12 @@ function SongAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
                 placeholder="歌手（可选）"
                 onChange={(e) => patch({ artist: e.target.value })}
               />
+              <input
+                className="about-insp-input"
+                value={draft.album}
+                placeholder="专辑（可选）"
+                onChange={(e) => patch({ album: e.target.value })}
+              />
             </div>
           </div>
 
@@ -1022,7 +1036,7 @@ function SongAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
 }
 
 /** 会被当成「音乐链接」的平台；其它链接也能加，只是拿不到播放器 */
-const MUSIC_PLATFORMS = new Set(['netease', 'qqmusic', 'spotify', 'apple']);
+const MUSIC_PLATFORMS = new Set(['netease', 'qqmusic', 'spotify', 'apple', 'gequbao']);
 
 /**
  * 粘贴音乐链接 → 自动认歌名 / 歌手 / 封面 → 都能手改。
@@ -1047,6 +1061,8 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
     embed: string;
     platform: string;
     genre: string;
+    /** 专辑名（网易云 / QQ 识别时带回；歌曲宝不暴露，通常空） */
+    album: string;
     /** 识别时服务端顺手抓的歌词（LRC）。纯静态托管上没有后端，这里会是空的 */
     lyrics: string;
   } | null>(null);
@@ -1093,6 +1109,7 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
           embed: normalizeEmbed(meta.embed || embed),
           platform: meta.platform || (embed ? 'netease' : ''),
           genre: '',
+          album: typeof meta.extra?.album === 'string' ? meta.extra.album : '',
           lyrics: typeof meta.extra?.lyric === 'string' ? meta.extra.lyric : '',
         });
         setNote(
@@ -1115,6 +1132,7 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
           embed: normalizeEmbed(embed),
           platform: embed ? 'netease' : '',
           genre: '',
+          album: '',
           lyrics: '',
         });
       } finally {
@@ -1150,6 +1168,8 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
       platform: draft.platform || undefined,
       embed: embed || undefined,
       link: link || undefined,
+      // 专辑（网易云 / QQ 识别带回；歌曲宝这类不暴露专辑的会留空）
+      album: draft.album.trim() || undefined,
       // 歌词（识别时服务端带回的；没有后端时可以在 ✎ 编辑里手填）
       lyrics: draft.lyrics.trim() || undefined,
     });
@@ -1223,6 +1243,12 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
                 value={draft.artist}
                 placeholder="歌手（可选）"
                 onChange={(e) => patch({ artist: e.target.value })}
+              />
+              <input
+                className="about-insp-input"
+                value={draft.album}
+                placeholder="专辑（可选）"
+                onChange={(e) => patch({ album: e.target.value })}
               />
             </div>
           </div>
@@ -1310,6 +1336,7 @@ function MusicGrid({
                 fields={[
                   { key: 'title', label: '歌曲标题' },
                   { key: 'artist', label: '歌手' },
+                  { key: 'album', label: '专辑（可选）' },
                   {
                     key: 'embed',
                     label: '外链播放器地址',
@@ -1330,6 +1357,7 @@ function MusicGrid({
                 initial={{
                   title: m.title,
                   artist: m.artist ?? '',
+                  album: m.album ?? '',
                   embed: m.embed ?? '',
                   genre: m.genre.join(' '),
                   cover: m.cover.startsWith('idb:') ? '' : m.cover,
@@ -1346,6 +1374,7 @@ function MusicGrid({
                   onEdit(m.id, {
                     title: val.title.trim() || m.title,
                     artist: val.artist.trim() || undefined,
+                    album: val.album?.trim() || undefined,
                     // 播放器地址直接覆盖（可以清空）；允许粘整段 iframe 代码 —— 这里只取 src，
                     // 并把 auto 归零：声音什么时候响由本站播放键说了算，不跟平台参数自动播
                     embed: normalizeEmbed(parseEmbedCode(val.embed)) || undefined,
@@ -1405,6 +1434,7 @@ function MusicGrid({
                   <div className="about-insp-mtext">
                     <p className="about-insp-mtitle">{m.title}</p>
                     {m.artist ? <p className="about-insp-martist">{m.artist}</p> : null}
+                    {m.album ? <p className="about-insp-martist">专辑 · {m.album}</p> : null}
                     <p className="about-insp-mgenres">
                       {m.genre.map((g) => (
                         <span className="about-insp-mgenre" key={g}>

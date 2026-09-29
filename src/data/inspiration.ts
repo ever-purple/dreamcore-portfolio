@@ -37,6 +37,8 @@ export type MusicItem = {
   title: string;
   /** 歌手，来自 ID3 的 TPE1 / 平台接口 */
   artist?: string;
+  /** 专辑名。网易云 / QQ 音乐识别时从各自接口带过来；歌曲宝（gequbao）页面不暴露专辑，留空 */
+  album?: string;
   /** 曲风标签，会挤在一行里 */
   genre: string[];
   /**
@@ -55,7 +57,7 @@ export type MusicItem = {
    * 不填时按 src 有没有值推断。
    */
   source?: 'local' | 'link';
-  /** 平台标识：netease / qqmusic / spotify / apple / bilibili */
+  /** 平台标识：netease / qqmusic / spotify / apple / bilibili / xhs / gequbao */
   platform?: string;
   /** 平台外链播放器地址（iframe）。有它就走平台播放器，不下载任何音频 */
   embed?: string;

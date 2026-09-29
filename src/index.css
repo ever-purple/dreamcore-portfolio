@@ -16892,6 +16892,9 @@ article.dx-sec1::before {
 .about-player-lyrics {
   position: relative;
   margin-top: 6px;
+  /* 左右缩进一点：歌词若一直顶到卡片边缘，会被读成「被拉满一整行、贴在左边」，
+     留出内边距才看得出是居中的一列文字 */
+  padding-inline: 10px;
   max-height: 62px;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -16903,12 +16906,27 @@ article.dx-sec1::before {
 .about-player-lyrics::-webkit-scrollbar {
   display: none;
 }
-/* 没有时间轴的纯文本歌词：不裁上下、也不遮，整块让访客自己翻 */
+/* 没有时间轴的纯文本歌词：整块让访客自己翻（所以不遮上下边），
+   但**照样居中、照样只有 62px 高**。
+   以前这里是「左对齐 + 92px」——视觉上就是一段被拉长、贴在左边的段落，
+   和整张卡片居中的排版对不上，于是改成和时间轴歌词同高、同样居中。 */
 .about-player-lyrics:not(.is-timed) {
-  max-height: 92px;
+  max-height: 62px;
   -webkit-mask-image: none;
   mask-image: none;
-  text-align: left;
+  text-align: center;
+}
+/* 「歌词加载中…」「🎵 纯音乐，请欣赏」这种单行状态：只占一条、居中，
+   别撑出一整块空高度（它们同样没有 .is-timed，会被上面那条规则带上更高的旧高度） */
+.about-player-lyrics.is-loading,
+.about-player-lyrics.is-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-height: none;
+  min-height: 30px;
+  -webkit-mask-image: none;
+  mask-image: none;
 }
 .about-player-lyric {
   margin: 0;
@@ -16924,6 +16942,17 @@ article.dx-sec1::before {
   color: var(--ab-ink);
   font-weight: 700;
   opacity: 1;
+}
+/* 直链取不到音频（VIP / 版权限制）时明说一句原因 ——
+   否则「点了 ▶ 却一声不响」看起来就像站坏了。
+   配色沿用「缓冲中」那支琥珀色：同属「非正常但可解释」的状态。 */
+.about-player-blocked {
+  margin: 2px 0 0;
+  font-size: 9.5px;
+  line-height: 1.7;
+  text-align: center;
+  color: #b07d2b;
+  opacity: 0.9;
 }
 /* 播放键提示：还没按过播放时轻轻呼吸一下，暗示这里能放音乐 */
 .about-player-btn.is-hint {

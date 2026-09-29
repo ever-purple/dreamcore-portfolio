@@ -121,7 +121,11 @@ function loadLocal(): Envelope {
 }
 
 let current: Envelope = loadLocal();
-let hydrated = false;
+/**
+ * 进行中的 hydrate 任务。**不是布尔标志** —— 见 hydrate() 的注释：
+ * 第二个并发调用必须能 await 到「同一个」完成，而不是在磁盘读完前就返回。
+ */
+let hydratePromise: Promise<void> | null = null;
 let diskReady: boolean | null = null;
 let lastError = '';
 
@@ -181,17 +185,29 @@ async function loadFromRemote(): Promise<Envelope | null> {
 /**
  * 补齐持久化数据：远端 > 项目文件（比浏览器本地新才覆盖）。
  * 组件挂载时调一次即可；在此之前 getCollection 已经能返回 localStorage 的快照。
+ *
+ * ⚠️ 为什么缓存的是 **Promise** 而不是一个 done 标志：
+ * 有两个地方会调它（PlayerProvider 预摆曲目、AboutInspiration 渲染收藏），
+ * 而 StrictMode 下 effect 会「挂载→卸载→再挂载」跑两遍。若只记一个布尔，
+ * 第二遍会在**磁盘/远端还没读完**时就直接 return —— 调用方以为数据好了，
+ * 去读 getCollection('music') 拿到的还是空种子，于是「打开页面没歌 / 歌词不出来」。
+ * 共享同一个 Promise，第二个调用者就会一直等到真正读完。
  */
-export async function hydrate(): Promise<void> {
-  if (hydrated) return;
-  hydrated = true;
+function loadHydrated(): Promise<void> {
   if (USE_REMOTE) {
-    const got = await loadFromRemote();
-    if (got) current = got;
-    return;
+    return loadFromRemote().then((got) => {
+      // 远端返回空（store:null）时保留本地那层，别把浏览器里的内容清掉
+      if (got) current = got;
+    });
   }
-  const disk = await loadFromProjectFile();
-  if (disk && disk.savedAt >= current.savedAt) current = disk;
+  return loadFromProjectFile().then((disk) => {
+    if (disk && disk.savedAt >= current.savedAt) current = disk;
+  });
+}
+
+export function hydrate(): Promise<void> {
+  if (!hydratePromise) hydratePromise = loadHydrated();
+  return hydratePromise;
 }
 
 /**

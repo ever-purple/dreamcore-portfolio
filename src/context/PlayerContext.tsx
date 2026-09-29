@@ -69,6 +69,17 @@ type PlayerTransport = {
   prev: () => void;
   /** 跳到第 seconds 秒 */
   seek: (seconds: number) => void;
+  /**
+   * 站内直链取不到音频 —— VIP / 版权是最常见的原因。
+   *
+   * 网易云的公开直链 `outer/url?id=x.mp3` 对 VIP 专享（fee=1）与无版权歌曲会
+   * **302 跳到 music.163.com/404**（实测：周杰伦《晴天》186016、Monica《Believing In Me》
+   * 17229930 都是这样），`<audio>` 拿到一页 HTML，直接报错。
+   *
+   * 置这个位是为了让界面把「为什么点了没声」写出来：直链一失败就静默停下，
+   * 访客只会以为网站坏了。
+   */
+  blocked: boolean;
 };
 
 /** 「走时」部分：进度 / 时长 / 是否正在缓冲。每秒都在变。 */
@@ -147,7 +158,9 @@ export function toTrack(m: MusicItem): PlayerTrack {
     embed: m.embed,
     link: m.link,
     platform: m.platform,
-    songId: m.songId && /^\d+$/.test(m.songId.trim()) ? m.songId.trim() : undefined,
+    // songId：优先用条目里存的；老条目没存就去 embed / link 里抠一个。
+    // 播放时实时拉歌词（/api/lyric）全指着它 —— 缺了歌词就出不来。
+    songId: neteaseSongIdOf(m) || undefined,
     lyrics: m.lyrics,
   };
 }
@@ -264,14 +277,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const onTime = () => setTime(el.currentTime);
     const onDur = () => setDuration(Number.isFinite(el.duration) ? el.duration : 0);
     const onEnd = () => setPlaying(false);
-    // 直链放不出来（VIP / 版权 / 防盗链）：有平台播放器就退回它，否则老实停下
+    // 直链放不出来（VIP / 版权 / 防盗链）：
+    //   ① 有平台播放器 → 退回它（isExternal 跟着亮起来）；
+    //   ② 没有 → 只能老实停下。
+    // 两种情况都把 blocked 置位，界面会写明原因，不会「点了没反应」。
     const onErr = () => {
-      if (trackRef.current?.embed && !audioFailedRef.current) {
-        audioFailedRef.current = true;
-        setAudioFailed(true);
-      } else {
-        setPlaying(false);
-      }
+      if (audioFailedRef.current) return; // error 会连着来几遍，置一次就够
+      audioFailedRef.current = true;
+      setAudioFailed(true);
+      if (!trackRef.current?.embed) setPlaying(false);
     };
 
     /* ---- 缓冲状态：让「声音停住」这件事在界面上看得出来 ----
@@ -394,6 +408,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       if (first) startTrack(first);
       return;
     }
+    // 直链已失败、又没有平台播放器可退：再按一次播放就当成「重试」。
+    // 不能直接 setPlaying(true) —— 那会点亮那条「模拟时间轴」，变成进度条在走却没声音，更迷惑。
+    if (audioFailedRef.current && !cur.embed) {
+      startTrack(cur);
+      return;
+    }
     if (!everPlayed) {
       startTrack(cur);
       return;
@@ -433,8 +453,20 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   /** 操控：与进度无关，进度每秒变 4 次也不会带动这里重算 */
   const transport = useMemo<PlayerTransport>(
-    () => ({ track, playing, everPlayed, external: isExternal, play, toggle, next, prev, seek }),
-    [track, playing, everPlayed, isExternal, play, toggle, next, prev, seek],
+    () => ({
+      track,
+      playing,
+      everPlayed,
+      external: isExternal,
+      // 直链失败 → 界面把原因（VIP / 版权）写出来，见 AboutPlayer 的 .about-player-blocked
+      blocked: audioFailed,
+      play,
+      toggle,
+      next,
+      prev,
+      seek,
+    }),
+    [track, playing, everPlayed, isExternal, audioFailed, play, toggle, next, prev, seek],
   );
   /** 走时：进度 / 时长 / 缓冲。只有真正要画进度的组件才订阅它 */
   const clock = useMemo<PlayerClock>(

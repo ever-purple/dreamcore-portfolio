@@ -128,7 +128,7 @@ const fmt = (s: number) => {
  * 这里的进度条可以拖动，反过来改变播放进度。
  */
 export function AboutPlayer() {
-  const { track, playing, everPlayed, time, duration, external, toggle, next, prev, seek } =
+  const { track, playing, everPlayed, time, duration, external, blocked, toggle, next, prev, seek } =
     usePlayer();
   const { buffering } = usePlayerClock();
   const barRef = useRef<HTMLDivElement>(null);
@@ -326,6 +326,19 @@ export function AboutPlayer() {
           </>
         )}
       </p>
+
+      {/*
+        VIP / 版权歌曲：站内直链一定放不出来（网易云对 fee=1 的歌会把公开直链 302 到 /404），
+        平台外链播放器通常也不给放。这里把原因写出来 —— 不然「点了 ▶ 一声不响」
+        看着就像站坏了。文案按「有没有平台播放器可退」分两种。
+      */}
+      {blocked ? (
+        <p className="about-player-blocked">
+          {external
+            ? '🔒 受版权 / VIP 限制，外链播放器多半也放不出声 —— 可点上方「去原站听完整版」'
+            : '🔒 直链取不到音频（多为 VIP / 版权限制），这首暂时放不出来'}
+        </p>
+      ) : null}
 
       <Sparkles count={4} seed={21} />
     </section>

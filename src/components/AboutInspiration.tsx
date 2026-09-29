@@ -134,13 +134,50 @@ function InlineEditForm({
   initial,
   onSave,
   onCancel,
+  onRedetect,
 }: {
   fields: EditField[];
   initial: Record<string, string>;
   onSave: (values: Record<string, string>) => void;
   onCancel: () => void;
+  /**
+   * 「用链接重新识别」：拿表单里当前的链接再跑一次识别，把结果**回填到表单**（不直接保存）。
+   * 返回 null = 没识别出内容。
+   *
+   * 为什么需要：历史脏数据要能就地修好 —— 比如分享短链当初只抓到短码，
+   * 歌名存成了 "Bhr5rXOI"、封面空白、也没有外链播放器地址（点播放没声音）。
+   * 有了它就点一下重新识别、再保存，不必删掉重加。
+   *
+   * 返回值除了表单字段，也可以带上表单里没有的键（如 `platform`），
+   * 保存时由各卡自己决定写不写回条目。
+   */
+  onRedetect?: (values: Record<string, string>) => Promise<Record<string, string> | null>;
 }) {
   const [values, setValues] = useState<Record<string, string>>(initial);
+  const [busy, setBusy] = useState(false);
+  const [tip, setTip] = useState('');
+
+  const redetect = () => {
+    if (!onRedetect || busy) return;
+    setBusy(true);
+    setTip('');
+    void (async () => {
+      try {
+        const patch = await onRedetect(values);
+        if (!patch) {
+          setTip('没识别出内容。确认链接是「单曲 / 条目详情页」而不是聚合页，也可以直接手填。');
+          return;
+        }
+        setValues((v) => ({ ...v, ...patch }));
+        setTip('已重新识别，确认无误后点保存。');
+      } catch {
+        setTip('识别失败，字段可以直接手填。');
+      } finally {
+        setBusy(false);
+      }
+    })();
+  };
+
   return (
     <div className="about-insp-form about-insp-cardform" onClick={(e) => e.stopPropagation()}>
       <p className="about-insp-form-title">✎ 编辑（改完点保存）</p>
@@ -167,6 +204,11 @@ function InlineEditForm({
         ),
       )}
       <div className="about-insp-form-actions">
+        {onRedetect ? (
+          <button type="button" className="about-insp-btn" disabled={busy} onClick={redetect}>
+            {busy ? '识别中…' : '🔍 重新识别'}
+          </button>
+        ) : null}
         <button type="button" className="about-insp-btn is-primary" onClick={() => onSave(values)}>
           保存
         </button>
@@ -174,8 +216,35 @@ function InlineEditForm({
           取消
         </button>
       </div>
+      {tip ? <p className="about-insp-form-note">{tip}</p> : null}
     </div>
   );
+}
+
+/**
+ * 识别结果 → 表单字段（歌名 / 歌手 / 封面 / 外链播放器地址 / 平台）。
+ * 音乐卡和链接卡的「🔍 重新识别」共用这一份映射，免得两处各写一遍解析。
+ */
+async function redetectFields(link: string): Promise<Record<string, string> | null> {
+  const u = link.trim();
+  if (!u) return null;
+  const meta = await fetchLinkMeta(u);
+  if (!meta.title && !meta.cover && !meta.embed) return null;
+  const artist =
+    (meta.extra?.artist as string | undefined) ??
+    (meta.desc?.startsWith('歌手：') ? meta.desc.slice(3) : '');
+  const out: Record<string, string> = {};
+  if (meta.title) out.title = meta.title;
+  if (artist) out.artist = artist;
+  if (meta.cover) out.cover = meta.cover;
+  if (meta.embed) out.embed = meta.embed;
+  if (meta.platform) out.platform = meta.platform;
+  // 平台侧歌曲 id 一并存下（以后想换封面 / 换播放器就不用再抓一次页面）
+  if (meta.extra?.songId) out.songId = String(meta.extra.songId);
+  // 识别成功后顺手把链接换成规范地址 —— 分享短链过一阵可能失效，
+  // 而 `music.163.com/#/song?id=…` 这种地址长期有效
+  if (meta.url) out.link = meta.url;
+  return out;
 }
 
 /**
@@ -1117,6 +1186,11 @@ function MusicGrid({
                 fields={[
                   { key: 'title', label: '歌曲标题' },
                   { key: 'artist', label: '歌手' },
+                  {
+                    key: 'embed',
+                    label: '外链播放器地址',
+                    placeholder: '外链播放器地址（embed）—— 有它才播得出声；点「重新识别」可自动填',
+                  },
                   { key: 'genre', label: '曲风标签，如 #Ambient #Dreamcore' },
                   { key: 'cover', label: '封面', kind: 'cover' },
                   { key: 'link', label: '原链接（可选）', placeholder: '原链接 https://…（可选）' },
@@ -1124,15 +1198,24 @@ function MusicGrid({
                 initial={{
                   title: m.title,
                   artist: m.artist ?? '',
+                  embed: m.embed ?? '',
                   genre: m.genre.join(' '),
                   cover: m.cover.startsWith('idb:') ? '' : m.cover,
                   link: m.link ?? '',
                 }}
+                onRedetect={(v) => redetectFields(v.link ?? '')}
                 onSave={(val) => {
+                  const tags = parseTags(val.genre, 4);
+                  // 已经拿到平台播放器了，「#外链」这个兜底标签就该退场（可能一个标签都不剩）
+                  const pruned = tags.filter((g) => g !== '#外链');
                   onEdit(m.id, {
                     title: val.title.trim() || m.title,
                     artist: val.artist.trim() || undefined,
-                    genre: parseTags(val.genre, 4),
+                    // 播放器地址直接覆盖（可以清空），不像封面那样「留空 = 不改」
+                    embed: val.embed.trim() || undefined,
+                    ...(val.platform ? { platform: val.platform } : {}),
+                    ...(val.songId ? { songId: val.songId } : {}),
+                    genre: val.platform ? pruned : tags,
                     link: val.link.trim() || undefined,
                     // 留空 = 不换封面
                     ...(val.cover.trim() ? { cover: val.cover.trim() } : {}),
@@ -1367,6 +1450,7 @@ function LinkGrid({
                 // 留空 = 不换封面；想换就粘一张新图
                 cover: it.cover.startsWith('idb:') ? '' : it.cover,
               }}
+              onRedetect={(v) => redetectFields(v.link ?? '')}
               onSave={(val) => {
                 onEdit(it.id, {
                   title: val.title.trim() || it.title,

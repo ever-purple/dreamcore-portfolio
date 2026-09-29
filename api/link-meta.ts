@@ -1,4 +1,28 @@
 /**
+ * 「粘贴链接 → 自动识别标题 / 封面 / 播放器」的**线上**通道（Vercel Serverless，零依赖）。
+ *
+ *   GET /api/link-meta?url=<绝对地址>
+ *        → 200 { ok: true,  meta: { url, title, cover, desc?, site?, platform?, embed?, extra? } }
+ *        → 200 { ok: false, reason: 'no-meta' }   识别不出内容，前端继续走它自己的回退链
+ *        → 400 { ok: false, reason: 'bad-url' }
+ *
+ * 为什么需要它：
+ *   本地 `vite dev` 有一条同名通道（/__studio/link-meta，挂在 studio-writer.ts 上），
+ *   它跑在 Node 里、没有同源限制，还能调平台官方接口。线上没有这条通道，前端只能靠
+ *   microlink / allorigins 两个公开代理抓 og 标签 —— 对「分享短链」基本无能为力：
+ *   `https://163cn.tv/bhr5rXOI` 抓回来只有一个短码，于是歌名被填成 "Bhr5rXOI"、
+ *   封面空白、也拿不到外链播放器（点播放自然没声音）。
+ *   有了这个函数，线上也能走平台官方接口，识别能力与本地 dev 对齐。
+ *
+ * ⚠️ BEGIN / END 标记之间的那段是从根目录 `link-meta.ts` **自动同步**来的
+ *    （`node scripts/sync-link-meta.mjs`，已挂在 npm run build 最前面）。
+ *    原因见 api/visit.ts 顶部：Vercel 对 /api 下的函数按文件独立转译，跨文件
+ *    import 在部分管线下解析不到且无日志，所以这里把共享实现内联成单文件。
+ *    **要改识别逻辑请改根目录 `link-meta.ts`**，不要手改这一段的副本。
+ */
+
+// @@LINK-META-CORE:BEGIN@@
+/**
  * 「粘贴链接 → 自动识别标题 / 封面」的**服务端**实现。
  *
  * 为什么不在浏览器里直接抓：目标页几乎都不给 CORS 头，浏览器 fetch 会被拦，
@@ -614,4 +638,97 @@ export async function resolveLinkMeta(rawUrl: string): Promise<LinkMeta> {
     if (apple) return { ...generic, embed: apple.embed, site: 'Apple Music' };
   }
   return generic;
+}
+// @@LINK-META-CORE:END@@
+
+/* ---------------- Vercel 最小类型（@vercel/node 不在依赖里，就地声明） ---------------- */
+type VercelRequest = {
+  method?: string;
+  query?: Record<string, string | string[] | undefined>;
+  headers?: Record<string, string | string[] | undefined>;
+};
+
+type VercelResponse = {
+  status(code: number): VercelResponse;
+  setHeader(key: string, value: string): void;
+  json(body: unknown): void;
+  send(body: string): void;
+};
+
+/** 地址长度上限（正常分享链接远不会这么长，超了直接判为异常输入）。 */
+const MAX_URL = 2048;
+
+/**
+ * 总时长闸门。Vercel 的函数有执行上限（默认 10s），
+ * 识别链里最坏会串好几次外网请求 —— 与其被平台掐成 500，不如自己提前返回。
+ */
+const DEADLINE = 7000;
+
+/**
+ * 只允许「公网 http(s)」目标：这个接口本质是「服务端替你抓任意地址」，
+ * 不设防就成了内网探测工具（SSRF）。私有网段 / 本机 / 内网域名一律拒掉。
+ */
+function isPublicHttpUrl(raw: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+  const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (!host || host.indexOf('.') < 0) return false; // 裸主机名（含 localhost）一律拒
+  if (host.endsWith('.local') || host.endsWith('.internal') || host.endsWith('.localhost')) return false;
+  if (/^(127|10)\./.test(host)) return false;
+  if (/^192\.168\./.test(host)) return false;
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(host)) return false;
+  if (/^169\.254\./.test(host)) return false;
+  if (host === '0.0.0.0' || host === '::1' || /^(fc|fd|fe80)/.test(host)) return false;
+  return true;
+}
+
+/** 给识别过程套一层总时长上限；超时返回 null（调用方按「没识别出来」处理）。 */
+function withDeadline<T>(p: Promise<T>, ms: number): Promise<T | null> {
+  let timer: ReturnType<typeof setTimeout>;
+  const gate = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), ms);
+  });
+  return Promise.race([p.catch(() => null), gate]).finally(() => clearTimeout(timer)) as Promise<T | null>;
+}
+
+/* ---------------- 接口本体 ---------------- */
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'GET') {
+    res.status(405).json({ ok: false, reason: 'method-not-allowed' });
+    return;
+  }
+
+  const q = req.query?.url;
+  const raw = Array.isArray(q) ? q[0] : q;
+  const input = typeof raw === 'string' ? raw.trim() : '';
+  if (!input || input.length > MAX_URL) {
+    res.status(400).json({ ok: false, reason: 'bad-url' });
+    return;
+  }
+  const target = normalizeUrl(input);
+  if (!isPublicHttpUrl(target)) {
+    res.status(400).json({ ok: false, reason: 'bad-url' });
+    return;
+  }
+
+  try {
+    const meta = await withDeadline(resolveLinkMeta(target), DEADLINE);
+    if (!meta || (!meta.title && !meta.cover && !meta.embed)) {
+      // 200 而不是 4xx：这不是错误，只是「这条链接没识别出东西」，前端要能照常静默降级
+      res.status(200).json({ ok: false, reason: 'no-meta' });
+      return;
+    }
+    // 识别结果基本不变，让 CDN 缓存一整天，顺带挡掉重复抓取
+    res.setHeader('Cache-Control', 'public, s-maxage=86400, stale-while-revalidate=604800');
+    res.status(200).json({ ok: true, meta });
+  } catch (err) {
+    console.error('[link-meta]', err);
+    res.status(502).json({ ok: false, reason: 'resolve-failed' });
+  }
 }

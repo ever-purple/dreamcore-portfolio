@@ -146,8 +146,19 @@ POST {base}/upload  → multipart/form-data，字段 file，返回 { "url": "htt
 
 1. **本地 dev 走服务端通道** `/__studio/link-meta`（`link-meta.ts`）—— 没有同源限制，
    还能直接调网易云 / QQ音乐 / GitHub 的官方接口，比 og 标签准得多；
-2. 线上没有这个通道时，依次回退 microlink → allorigins 抓 og 标签 → 从 URL 推断标题 + 稳定占位封面。
-3. 无论哪一级成功，标题 / 封面 / 标签都能手动改。
+2. **线上走同一份逻辑的 serverless 版** `/api/link-meta`（`api/link-meta.ts`）——
+   部署后也具备平台级识别能力。该文件里那段实现是构建时从 `link-meta.ts` 同步过去的
+   （`npm run sync:link-meta`，已挂在 `npm run build` 最前面），**改识别逻辑只改 `link-meta.ts`**；
+   之所以不直接 import，是因为 Vercel 对 `/api` 下的函数按文件独立转译，跨文件 import 有过
+   解析不到且无日志的先例（见 `api/visit.ts` 顶部注释）；
+3. 两个服务端通道都拿不到东西时，回退 microlink → allorigins 抓 og 标签 → 从 URL 推断标题 + 稳定占位封面；
+4. 无论哪一级成功，标题 / 封面 / 播放器地址都能手动改；**已经存下的条目**可以在卡片上点
+   「✎ 编辑 → 🔍 重新识别」就地修好，不用删掉重加。
+
+> **分享短链**（`https://163cn.tv/xxxxx`）本身不含 song id。服务端会先逐跳跟随重定向还原出
+> 真实地址，再拿 id 调平台接口 —— 少了这一步，识别结果会退化成短码：歌名变成 `Bhr5rXOI`、
+> 封面空白、也拿不到外链播放器（点播放没声音）。
+> 回归验证：`BASE=http://127.0.0.1:5199 node verify-music-link.mjs`。
 
 ## 目录结构
 

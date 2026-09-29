@@ -438,6 +438,17 @@ const hostOf = (url: string) => {
 const normalizeUrl = (rawUrl: string) =>
   /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
 
+/**
+ * 分享短链的短码长这样：`bhr5rXOI`、`aB3xK9pQ` —— 一串没有分隔符的 base62。
+ * 拿它当标题显示出来毫无意义（用户看到的就是「歌名：Bhr5rXOI」），
+ * 这种情况宁可退回域名（「163cn.tv」），至少一眼能看出是哪家的链接。
+ * 判据：纯字母数字、5~14 位，且含数字或大小写混排 —— 普通单词（`about`、`music`）不会误伤。
+ */
+function looksLikeShortCode(slug: string): boolean {
+  if (!/^[A-Za-z0-9]{5,14}$/.test(slug)) return false;
+  return /\d/.test(slug) || (/[a-z]/.test(slug) && /[A-Z]/.test(slug));
+}
+
 /** URL 推断标题（兜底用）：取最后一段 slug，去连字符、去扩展名、转 Title Case */
 function slugTitle(url: string): string {
   const host = hostOf(url);
@@ -448,6 +459,8 @@ function slugTitle(url: string): string {
   } catch {
     /* ignore */
   }
+  // 短码不是标题（识别全挂时至少别把 Bhr5rXOI 当成歌名）
+  if (looksLikeShortCode(slug)) return host;
   const pretty = (slug || host)
     .replace(/[-_]+/g, ' ')
     .replace(/\.(html?|php|aspx?)$/i, '')
@@ -505,14 +518,41 @@ function parseHtmlMeta(html: string, pageUrl: string): { title?: string; cover?:
 }
 
 /**
+ * 线上识别通道：Vercel 函数 `/api/link-meta`（见 api/link-meta.ts）。
+ *
+ * 它和本地 dev 的 `/__studio/link-meta` 是**同一份识别逻辑**（构建期由
+ * scripts/sync-link-meta.mjs 同步过去的那段），作用就是让「部署后的站点」也能走
+ * 平台官方接口。少了这一级，线上只剩 microlink / allorigins 两个公开代理，
+ * 遇到分享短链（`https://163cn.tv/bhr5rXOI`）就只能抓到短码 —— 歌名被填成
+ * "Bhr5rXOI"、封面空白、拿不到外链播放器，于是点播放也没声音。
+ *
+ * 返回 null 表示这条通道不可用（dev 下没有这个路由 / 线上识别不出内容），
+ * 调用方继续往下回退，不会因此变慢太多。
+ */
+async function fetchApiLinkMeta(rawUrl: string): Promise<LinkMeta | null> {
+  try {
+    const res = await timedFetch(`/api/link-meta?url=${encodeURIComponent(rawUrl)}`);
+    if (!res.ok) return null;
+    // dev 下 /api/* 会被 Vite 的 SPA 兜底成 index.html（text/html），
+    // 这里必须校验 content-type，否则会在 JSON.parse 上绕一圈才知道没戏
+    if (!(res.headers.get('content-type') ?? '').includes('json')) return null;
+    const data = (await res.json()) as { ok?: boolean; meta?: LinkMeta };
+    return data?.ok && data.meta ? data.meta : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * 粘贴链接 → 自动识别标题与封面（音乐还能拿到外链播放器地址）。
  *
- * 四级回退，尽量别让作者手填：
+ * 五级回退，尽量别让作者手填：
  *   1. 本地 dev 的服务端通道 /__studio/link-meta —— 不受 CORS 限制，成功率最高，
  *      还能走网易云 / QQ音乐 / GitHub 官方接口（比 og 标签准得多）；
- *   2. microlink.io —— 结构化数据（线上没有本地通道时最省事）；
- *   3. allorigins 代理抓 HTML，本地 DOMParser 抠 og: 标签；
- *   4. 都失败 → 从 URL 推断标题 + 稳定占位封面。
+ *   2. 线上服务端通道 /api/link-meta —— 同一份逻辑的 serverless 版本；
+ *   3. microlink.io —— 结构化数据（两个服务端通道都没有时的第一选择）；
+ *   4. allorigins 代理抓 HTML，本地 DOMParser 抠 og: 标签；
+ *   5. 都失败 → 从 URL 推断标题 + 稳定占位封面。
  * 无论哪级成功，界面都允许手动改标题 / 封面。
  */
 export async function fetchLinkMeta(rawUrl: string): Promise<LinkMeta> {
@@ -534,7 +574,26 @@ export async function fetchLinkMeta(rawUrl: string): Promise<LinkMeta> {
     };
   }
 
-  // 2) microlink：免费额度内最省事，返回 title / image / logo
+  // 2) 线上服务端通道（Vercel 函数，与上一级同一份识别逻辑）
+  //    dev 下跳过：同一份逻辑的本地版刚试过，再发一次没意义
+  //    （而且 Vite 会把 `/api/*.ts` 当模块转译回来，content-type 是 text/javascript）
+  if (!import.meta.env.DEV) {
+    const remote = await fetchApiLinkMeta(url);
+    if (remote && (remote.title || remote.cover || remote.embed)) {
+      return {
+        title: remote.title || slugTitle(url),
+        cover: remote.cover || coverFor(url),
+        url: remote.url || url,
+        desc: remote.desc,
+        site: remote.site,
+        platform: remote.platform,
+        embed: remote.embed,
+        extra: remote.extra,
+      };
+    }
+  }
+
+  // 3) microlink：免费额度内最省事，返回 title / image / logo
   try {
     const r = await timedFetch(`https://api.microlink.io/?url=${enc}`);
     if (r.ok) {
@@ -551,7 +610,7 @@ export async function fetchLinkMeta(rawUrl: string): Promise<LinkMeta> {
     /* 掉到下一级 */
   }
 
-  // 3) allorigins 代理拉 HTML，自己解析 og 标签
+  // 4) allorigins 代理拉 HTML，自己解析 og 标签
   try {
     const r = await timedFetch(`https://api.allorigins.win/raw?url=${enc}`);
     if (r.ok) {
@@ -569,7 +628,7 @@ export async function fetchLinkMeta(rawUrl: string): Promise<LinkMeta> {
     /* 掉到兜底 */
   }
 
-  // 4) 兜底：URL 推断 + 稳定占位封面
+  // 5) 兜底：URL 推断 + 稳定占位封面
   return { title: slugTitle(url), cover: coverFor(url), url };
 }
 

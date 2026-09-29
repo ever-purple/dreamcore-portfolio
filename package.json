@@ -8,9 +8,10 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/check-assets.mjs && tsc -b && vite build",
+    "build": "node scripts/sync-link-meta.mjs && node scripts/check-assets.mjs && tsc -b && vite build",
     "check:assets": "node scripts/check-assets.mjs",
-    "test:api": "tsc api/visit.ts api/guestbook.ts api/admin.ts api/author.ts api/visitlog.ts api/insp.ts --outDir _apitest --module esnext --target es2022 --moduleResolution bundler --rewriteRelativeImportExtensions --skipLibCheck --types node && node scripts/api-selftest.mjs",
+    "sync:link-meta": "node scripts/sync-link-meta.mjs",
+    "test:api": "tsc api/visit.ts api/guestbook.ts api/admin.ts api/author.ts api/visitlog.ts api/insp.ts api/link-meta.ts --outDir _apitest --module esnext --target es2022 --moduleResolution bundler --rewriteRelativeImportExtensions --skipLibCheck --types node && node scripts/api-selftest.mjs",
     "preview": "vite preview",
     "compress:glb": "node scripts/compress-glb.mjs"
   },

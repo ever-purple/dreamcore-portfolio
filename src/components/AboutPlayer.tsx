@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Sparkles } from '@/components/Sparkles';
 import { platformLabel, usePlayer, usePlayerClock } from '@/context/PlayerContext';
 
@@ -38,7 +38,34 @@ function parseLyrics(raw: string): LyricLine[] {
 }
 
 /** 播放器下方的歌词：跟着进度高亮当前句并把它滚到中间；没有时间轴的就整块显示 */
-function LyricsPanel({ lyrics, time }: { lyrics: string; time: number }) {
+function LyricsPanel({
+  lyrics,
+  time,
+  loading,
+  empty,
+}: {
+  lyrics: string;
+  time: number;
+  /** 正在向 /api/lyric 拉取 */
+  loading?: boolean;
+  /** 拉到了，但歌曲是纯音乐 / 无词 */
+  empty?: boolean;
+}) {
+  if (loading) {
+    return (
+      <div className="about-player-lyrics is-loading" aria-label="歌词">
+        <p className="about-player-lyric">歌词加载中…</p>
+      </div>
+    );
+  }
+  if (empty) {
+    return (
+      <div className="about-player-lyrics is-empty" aria-label="歌词">
+        <p className="about-player-lyric">🎵 纯音乐，请欣赏</p>
+      </div>
+    );
+  }
+
   const lines = useMemo(() => parseLyrics(lyrics), [lyrics]);
   const boxRef = useRef<HTMLDivElement>(null);
   const timed = useMemo(() => lines.some((l) => l.t >= 0), [lines]);
@@ -106,6 +133,39 @@ export function AboutPlayer() {
   const { buffering } = usePlayerClock();
   const barRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef(false);
+
+  /**
+   * 网易云歌词：**随播随取，不存任何本地 / 云端存储**。
+   *
+   * 网易云歌曲带 `songId`，播放时由服务端函数 `/api/lyric` 实时去网易云抓 LRC，
+   * 抓回来直接喂给 LyricsPanel。非网易云歌曲（或没 id）就退回条目自带的歌词
+   * （作者手填 / 历史残留）。拉取失败也安全回退，绝不让面板崩。
+   */
+  const [lyric, setLyric] = useState<{ status: 'idle' | 'loading' | 'empty' | 'ready'; text: string }>(
+    { status: 'idle', text: '' },
+  );
+  useEffect(() => {
+    if (track?.platform !== 'netease' || !track?.songId) {
+      setLyric({ status: 'idle', text: track?.lyrics ?? '' });
+      return;
+    }
+    let cancelled = false;
+    setLyric({ status: 'loading', text: '' });
+    fetch(`/api/lyric?id=${encodeURIComponent(track.songId)}`, { cache: 'force-cache' })
+      .then((r) => r.json())
+      .then((j: { ok?: boolean; lrc?: string; tlyric?: string }) => {
+        if (cancelled) return;
+        const lrc = (j && (j.lrc || j.tlyric)) || '';
+        setLyric({ status: lrc ? 'ready' : 'empty', text: lrc });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setLyric({ status: 'idle', text: track?.lyrics ?? '' });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [track?.id, track?.platform, track?.songId, track?.lyrics]);
 
   const ratio = duration > 0 ? Math.min(1, time / duration) : 0;
   const from = platformLabel(track?.platform);
@@ -245,7 +305,12 @@ export function AboutPlayer() {
         </div>
       </div>
 
-      <LyricsPanel lyrics={track?.lyrics ?? ''} time={time} />
+      <LyricsPanel
+        lyrics={lyric.text}
+        time={time}
+        loading={lyric.status === 'loading'}
+        empty={lyric.status === 'empty'}
+      />
 
       <p className="about-player-time" aria-hidden="true">
         {external ? (

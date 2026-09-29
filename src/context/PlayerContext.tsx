@@ -38,6 +38,8 @@ export type PlayerTrack = {
   link?: string;
   /** 平台标识，界面上显示「网易云音乐」之类的来源 */
   platform?: string;
+  /** 平台侧歌曲 id（网易云用，播放时实时去 /api/lyric 拉歌词用） */
+  songId?: string;
   /** 歌词（LRC 带时间轴，或纯文本） */
   lyrics?: string;
 };
@@ -145,6 +147,7 @@ export function toTrack(m: MusicItem): PlayerTrack {
     embed: m.embed,
     link: m.link,
     platform: m.platform,
+    songId: m.songId && /^\d+$/.test(m.songId.trim()) ? m.songId.trim() : undefined,
     lyrics: m.lyrics,
   };
 }

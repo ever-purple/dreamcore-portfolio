@@ -395,7 +395,7 @@ export const WORK_PAGES: Record<string, WorkPageCopy> = {
         layout: 'grid2',
       },
       message: {
-        images: [`${import.meta.env.BASE_URL}works/kuaike/p05-keymsg-w1600.jpg`],
+        images: [`${import.meta.env.BASE_URL}works/kuaike/p05-keymsg-w1600.webp`],
       },
       // 2026-09-15 用户要求：创意脚本 → 影片调性，删原脚本图，换 P14，内嵌新片场视频
       highlight: {
@@ -412,7 +412,7 @@ export const WORK_PAGES: Record<string, WorkPageCopy> = {
       },
       role: {
         images: [
-          `${import.meta.env.BASE_URL}works/kuaike/p16-color-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/kuaike/p16-color-w1600.webp`,
           `${import.meta.env.BASE_URL}works/kuaike/p19-style-w1600.jpg`,
           `${import.meta.env.BASE_URL}works/kuaike/p28-storyboard-w1600.webp`,
         ],

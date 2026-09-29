@@ -241,7 +241,7 @@ export function AboutOverlay({ open, onClose, onHoverChange, greenOs = false, bo
               <div className="about-main-empty">
                 <span className="about-tape" aria-hidden="true" />
                 <img
-                  src="/about/banner-sticker.png"
+                  src="/about/banner-sticker.webp"
                   alt=""
                   className="about-empty-sticker"
                   aria-hidden="true"

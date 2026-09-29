@@ -293,7 +293,11 @@ export function createCarousel(
     return t;
   }
   const painted = texture(asset('carousel-panels.webp')),
-    columnPaint = texture(asset('carousel-column.png')),
+    // ⚠️ 2026-09-30：这里原来还指着同名的 **PNG**（494 KB），而同目录的 webp
+    //    （292 KB，同尺寸 1024×1536、过同一道 SSIM 闸）**已经在磁盘上躺着了** ——
+    //    上一轮的引用改写漏了这一处，等于白压。改引用即可，别去删那个原图。
+    //    （这条注释刻意不写出那个文件后缀，否则会被 rewrite-public-refs 一起改掉。）
+    columnPaint = texture(asset('carousel-column.webp')),
     basePaint = texture(asset('carousel-base.webp'));
   function panels(
     repeat: number,

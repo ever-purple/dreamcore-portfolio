@@ -91,6 +91,18 @@ const POINT_BY_ID = Object.fromEntries(studioObjects.map((o) => [o.id, o.point])
 >;
 
 /**
+ * 「About 页首屏四张图 + 两个像素字体」的投机预取延后时长，毫秒。
+ *
+ * ⚠️ **这个定时器只配给这不到 0.6MB 的小件用。** 12MB 级的 `rack.glb` 与日记单文件
+ * 一律**只认悬停**，别再加进来 —— 理由见下面那段 `useEffect` 的注释：
+ * 冷访问 427 KB/s 下管子要 25s 以上才空，任何「延后 N 秒」都会继续和背景视频抢带宽。
+ *
+ * 取值依据（2026-09-30，CDP 3.5 Mbps 跨境链路复刻）：进工作室后用户此刻真正在看的是
+ * 背景循环视频 2.4MB（427 KB/s 下约 5.7s）与帧集首窗，留一倍余量 → 12s。
+ */
+const LATE_PREFETCH_DELAY = 12000;
+
+/**
  * Studio 主空间：循环视频铺满全屏的房间。
  * - **鼠标景深视差**（2026-09-16 第六轮）：鼠标一动，画面板 / 暗角 / 脉冲点三层
  *   各按不同倍率位移 —— 见 src/lib/useRoomParallax.ts 与 index.css 的同名段。
@@ -104,16 +116,27 @@ const POINT_BY_ID = Object.fromEntries(studioObjects.map((o) => [o.id, o.point])
  */
 export function StudioSection({ onSelectObject, onBack }: Props) {
   const [hoveredId, setHoveredId] = useState<StudioObject['id'] | null>(null);
-  /* —— 预热实习日记单文件（2026-09-28）——
+  /* —— 预热实习日记单文件（2026-09-28，2026-09-30 改为**只认悬停**）——
      日记整本是 public/diary-book/index.html 一个 3MB 单文件（封面照片也内联在其 CSS 里）。
      Vercel 上等用户点开笔记本才去拉：书壳先渲染、封面照片 1s 后才到（"白封面"），
      且滑入动画全在"还没内容"时播完（看起来不是从右边进来的）。
-     这里在进工作室时就用**与 iframe 完全相同的 URL**（含 ?embed=1&v=… 查询串，
-     HTTP 缓存按完整 URL 区分，少一个参数就是两份缓存）拉一遍进缓存；
-     点开时 iframe 命中缓存（304 重验证），书即刻渲染、滑入动画带着内容播。 */
+     所以用**与 iframe 完全相同的 URL**（含 ?embed=1&v=… 查询串，HTTP 缓存按完整 URL
+     区分，少一个参数就是两份缓存）先拉一遍进缓存；点开时 iframe 命中缓存（304 重验证），
+     书即刻渲染、滑入动画带着内容播。
+
+     ⚠️ **别再改回「一进工作室就拉」**（2026-09-30 用户报「所有都很慢」的真凶之一）：
+     这条 3MB 与下面的 rack.glb 9.3MB 会在 t=1.2s 同时发起，和**用户此刻真正在看的**
+     工作室背景视频、帧集抢同一条链路。跨境 427 KB/s 下实测这两条**到观察窗口结束
+     一个字节都没传完**（CDP 里 `bytes=0`），而它们要占的带宽是背景视频的 5 倍。
+     ⚠️ **也别加「延后 N 秒」的兜底**：先试过 12s —— 复测那条管子**仍然是满的**
+     （同一窗口里 `about/banner-sticker.png` 219 KB 花了 11.3s ≈ 19 KB/s）。
+     冷访问下「视频 2.4MB + 帧集 6.7MB」要 25s 以上才下完，定时器猜不准。
+     所以这两个 12MB 级的大件**只在鼠标真进到感应区（`hoveredId`）时才拉** ——
+     工作室的点击按钮本来就是靠悬停才露出来的，用户点之前必然先悬停。 */
   useEffect(() => {
+    if (hoveredId !== 'notebook') return;
     fetch(DIARY_BOOK_URL).catch(() => {});
-  }, []);
+  }, [hoveredId]);
   /* ?diary=1 可直接预览实习日记浮层（与 ?works=1 / ?media=1 / ?newsstand=1 同一套
      调试参数约定）。加它的直接原因：日记挂在一个 3D 笔记本物件上，
      想反复看翻页动效就得先等场景加载、再把镜头转到那个角度去点它 —— 太慢了。 */
@@ -583,30 +606,41 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
     void import('@/components/NewsstandScene');
   }, [hoveredId]);
 
-  // 进入工作室即并行预取两个重 3D 分包 + 书架 GLB（2026-09-16 合并自桌面副本）：
-  // 用户「直接点开」木马 / 报刊亭（没经过悬停预取）时，包和模型已经在下载，
-  // 不用在转场里干等。import 幂等（已加载直接 resolve），fetch 命中浏览器缓存后
-  // NewsstandScene 的 GLTFLoader 不再重新拉这 18MB。
+  // 悬停报刊亭同时把那个 9.3MB 的展架 GLB 也拉起来 —— 这是全站最大的单文件，
+  // 只在用户**表现出意图**的时候才值得花带宽（一进场就拉的老写法见下面那段注释）
   useEffect(() => {
-    void import('@/components/WorksCarousel');
-    void import('@/components/NewsstandScene');
+    if (hoveredId !== 'newsstand') return;
     void fetch(`${import.meta.env.BASE_URL}newsstand/rack.glb`, { mode: 'cors' }).catch(
       () => {},
     );
+  }, [hoveredId]);
 
-    /* 预取 About 页首屏资源：GreenOsBoot 会等这四张图 + 两个像素字体
-       全部 load 完才放行（9s 兜底）—— 实测开机黑屏比打字机多出约 1s 就是在等它们。
-       放到 requestIdleCallback 里：3D 场景首帧跑起来之后的空闲带宽再做，两不耽误。
-       img.src 命中缓存后，真正开机时的 new Image() 立即 resolve。 */
-    const idle =
-      'requestIdleCallback' in window
-        ? window.requestIdleCallback
-        : (cb: () => void) => window.setTimeout(cb, 1200);
-    idle(() => {
+  /* 进入工作室后**先让画面跑顺，再做投机预取**（2026-09-30 重做）。
+     ⚠️ 老写法是「一挂载就并行发起 rack.glb 9.3MB + 日记单文件 3MB + About 四张图 +
+        两个像素字体」，理由写的是「用户直接点开时东西已经在下载了，不用在转场里干等」。
+        但 CDP 体检（3.5 Mbps 跨境链路复刻）里这批请求 **t=1.2s 同时发起、
+        到观察窗口结束一个字节都没传完**（`bytes=0`，见 _audit-routes.mjs 的「起/耗」两列）——
+        它们和用户此刻真正在看的工作室背景视频（2.4MB，实测 25.6s 才下完）+ 帧集抢同一条
+        427 KB/s 的管子，结果谁也下不完。用户原话：「所有都很慢，还不如以前顺畅」。
+     ⚠️ **别用 `requestIdleCallback` 当闸门**：它等的是 **CPU 空闲，不是网络空闲**。
+        实测挂在它里的 About 预取照样在 t=1.2s 就发起了 —— 上一版就是这么写的。
+     ⚠️ **也别用「延后 N 秒」兜底那两个重件**：改成 12s 之后复测，管子**仍然是满的** ——
+        `about/banner-sticker.png` 在 13.3s 发起，219 KB 却花了 **11.3s**（≈19 KB/s）。
+        冷访问的 427 KB/s 链路，把「视频 2.4MB + 帧集 6.7MB」下完要 25s 以上，
+        任何定时器都猜不准。所以那两个 12MB 级的大件**只认悬停**（见上面两个 `hoveredId` 分支）；
+        这里只留 About 那不到 0.6MB 的预热 —— 它本身也很小，晚一点起跑就够了。
+     动态 import 那两个分包（177KB + 19KB）太小，留着立即发。 */
+  useEffect(() => {
+    void import('@/components/WorksCarousel');
+    void import('@/components/NewsstandScene');
+    const t = window.setTimeout(() => {
+      /* 预取 About 页首屏资源：GreenOsBoot 会等这四张图 + 两个像素字体
+         全部 load 完才放行（9s 兜底）—— 实测开机黑屏比打字机多出约 1s 就是在等它们。
+         img.src 命中缓存后，真正开机时的 new Image() 立即 resolve。 */
       [
         'about/banner-visual.webp',
         'about/bg-pattern.webp',
-        'about/banner-sticker.png',
+        'about/banner-sticker.webp',
         'about/avatar.webp',
       ].forEach((p) => {
         const img = new Image();
@@ -618,7 +652,8 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
       } catch {
         /* 字体 API 不可用就跳过 —— 开机屏自己的预载还在兜底 */
       }
-    });
+    }, LATE_PREFETCH_DELAY);
+    return () => window.clearTimeout(t);
   }, []);
 
   // URL 同步：打开时 #about；Green OS 模式下同时写入 ?greenos=1，

@@ -6,7 +6,7 @@
     "projects": [
       {
         "id": "projects-1789558872000",
-        "cover": "/insp/media/gh-pbakaus-impeccable.png",
+        "cover": "/insp/media/gh-pbakaus-impeccable.webp",
         "name": "impeccable",
         "tags": [
           "#设计语言",
@@ -19,7 +19,7 @@
       },
       {
         "id": "projects-1789558840000",
-        "cover": "/insp/media/gh-nextlevelbuilder-ui-ux-pro-max-skill.png",
+        "cover": "/insp/media/gh-nextlevelbuilder-ui-ux-pro-max-skill.webp",
         "name": "ui-ux-pro-max-skill",
         "tags": [
           "#UI/UX",
@@ -32,7 +32,7 @@
       },
       {
         "id": "projects-1788873504000",
-        "cover": "/insp/media/gh-greensock-gsap-skills.png",
+        "cover": "/insp/media/gh-greensock-gsap-skills.webp",
         "name": "gsap-skills",
         "tags": [
           "#动效",
@@ -45,7 +45,7 @@
       },
       {
         "id": "projects-1788873005000",
-        "cover": "/insp/media/gh-img2threejs-img2threejs.png",
+        "cover": "/insp/media/gh-img2threejs-img2threejs.webp",
         "name": "img2threejs",
         "tags": [
           "#3D",
@@ -58,7 +58,7 @@
       },
       {
         "id": "projects-1788700217000",
-        "cover": "/insp/media/gh-MengTo-threeui.png",
+        "cover": "/insp/media/gh-MengTo-threeui.webp",
         "name": "threeui",
         "tags": [
           "#Three.js",
@@ -75,7 +75,7 @@
       {
         "id": "link-1790501208121",
         "title": "天猫绿动生活用行动给小流浪一个家 | SocialBeta",
-        "cover": "/insp/media/image-image-mujm6qip.png",
+        "cover": "/insp/media/image-image-mujm6qip.webp",
         "link": "https://socialbeta.com/campaign/28239",
         "tags": [
           "#TVC",
@@ -85,7 +85,7 @@
       {
         "id": "link-1790502188800",
         "title": "喜茶首届全国联考来了！ | SocialBeta",
-        "cover": "/insp/media/image-image-mujmrt9d.png",
+        "cover": "/insp/media/image-image-mujmrt9d.webp",
         "link": "https://socialbeta.com/campaign/28297",
         "tags": [
           "#线下营销"
@@ -94,7 +94,7 @@
       {
         "id": "link-1790502360316",
         "title": "爱「搞试」的年轻人，为什么都在小红书？｜SocialBeta",
-        "cover": "/insp/media/image-image-mujmvi21.png",
+        "cover": "/insp/media/image-image-mujmvi21.webp",
         "link": "https://socialbeta.com/article/111383"
       }
     ],

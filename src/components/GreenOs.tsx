@@ -97,7 +97,7 @@ export function GreenOsBoot({ onDone }: { onDone: () => void }) {
       const imgPs = [
         '/about/banner-visual.webp',
         '/about/bg-pattern.webp',
-        '/about/banner-sticker.png',
+        '/about/banner-sticker.webp',
         '/about/avatar.webp',
       ].map(
         (src) =>

@@ -2767,7 +2767,9 @@ body.is-diary-dragging * {
   z-index: 4;
 }
 
-/* 空面板里的贴纸插画（原来的 banner-sticker.png，已把烤进去的棋盘格背景洗掉）
+/* 空面板里的贴纸插画（`about/banner-sticker`，已把烤进去的棋盘格背景洗掉）
+   注：这里刻意不写出图片后缀 —— `scripts/rewrite-public-refs.py` 会把
+   带后缀的文件名（含注释里的）一起改写，写死一个「原来的 xxx」会被改成谎话。
    mix-blend-mode: multiply → 白色底自动"消失"进面板底色，边缘不需要抠图也很干净。 */
 .about-empty-sticker {
   width: min(208px, 48%);

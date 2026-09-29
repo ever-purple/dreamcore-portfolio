@@ -50,8 +50,10 @@ PUB = REPO / "public"
 # 不动的目录：og/ 是分享卡（必须保持不透明 PNG），frames* 是序列帧（已单独处理过）
 SKIP_DIRS = {"frames", "frames-sm", "frames-avif", "frames-sm-avif", "og", "resume"}
 TARGET_EXTS = {".jpg", ".jpeg", ".png"}
+# 会被扫「引用了哪些图」的文本文件类型（src/ 与 public/ 下的都算，见 collect()）
+REFERENCE_EXTS = {".ts", ".tsx", ".css", ".html", ".json", ".js", ".mjs", ".webmanifest"}
 
-PHOTO_LADDER = [80, 85, 88, 90, 93]
+PHOTO_LADDER = [80, 85, 88, 90, 93, 95]
 SSIM_LONG_SIDE = 1280
 
 
@@ -206,8 +208,12 @@ def process_one(job: tuple) -> dict:
         res["reason"] = f"打不开: {type(e).__name__}"
         return res
 
-    # 带 alpha → 只走无损；不透明 → 走有损阶梯
-    ladder: list[int | None] = [None] if alpha else list(PHOTO_LADDER)
+    # 带 alpha → 只走无损；不透明 → 走有损阶梯，**全不过闸时再补一档无损**。
+    # ⚠️ 补这一档的直接原因（2026-09-30）：`about/banner-sticker.png`（218 KB，不透明）
+    #    在 q80→q95 全档都过不了「最差 1%」闸（q95 只有 0.9724，闸线 0.975），于是被
+    #    当成「压不动」保留了原图 —— 而**同一张图的无损 WebP 只要 114 KB（省 48%），
+    #    且逐像素完全相同**。不透明 ≠ 无损没戏：PNG 的调色板 / 行滤波开销常常白送一大块。
+    ladder: list[int | None] = [None] if alpha else list(PHOTO_LADDER) + [None]
 
     for q in ladder:
         img = rgba if alpha else rgb
@@ -223,12 +229,16 @@ def process_one(job: tuple) -> dict:
 
         if q is None:
             with Image.open(io.BytesIO(data)) as dec:
-                got = np.asarray(dec.convert("RGBA"))
-            want = np.asarray(rgba)
-            # 只比**可见**像素：全透明区域的 RGB 是无意义的（exact=True 已尽量保留，
-            # 但不同 libwebp 版本仍可能归一化），拿它判失败会误伤好图。
-            vis = want[:, :, 3] > 0
-            same = bool(np.array_equal(want[vis], got[vis]))
+                got = np.asarray(dec.convert("RGBA" if alpha else "RGB"))
+            want = np.asarray(rgba if alpha else rgb)
+            if alpha:
+                # 只比**可见**像素：全透明区域的 RGB 是无意义的（exact=True 已尽量保留，
+                # 但不同 libwebp 版本仍可能归一化），拿它判失败会误伤好图。
+                vis = want[:, :, 3] > 0
+                same = bool(np.array_equal(want[vis], got[vis]))
+            else:
+                # 不透明图直接整张逐字节比 —— 无损就该是**完全相同**
+                same = bool(np.array_equal(want, got))
             if not same:
                 res["reason"] = "无损但可见像素不一致"
                 continue
@@ -272,9 +282,16 @@ def collect(only_referenced: bool = False) -> list[str]:
     """收出目标文件。
 
     ⚠️ `only_referenced` 不是「优化选项」，而是**别把力气花在死重量上**：
-    实测 `public/works/` 里有 100 张 2880px 母版（61.8 MB）**在 src/ 里一张都没被引用**
+    实测 `public/works/` 里有 100 张 2880px 母版（61.8 MB）**在代码里一张都没被引用**
     （代码只用 `-w1600` 变体），`-w640` 也全部没引用。它们不会产生任何网络请求，
     转成 WebP 只会让仓库更乱、不会让网站快一毫秒。
+
+    ⚠️⚠️ **扫描范围必须同时包含 `src/` 和 `public/` 里的文本文件**。
+    2026-09-30 踩到的坑：第一版只扫 `src/`，于是**只被数据文件引用的图全部漏掉** ——
+    结果是站点上最重的三张图（1.54 / 2.33 / **7.15 MB**，来自 `public/insp/data.json`
+    的案例封面）和整个 `public/diary-book/imgs/`（18.2 MB / 56 张）**一张都没转**，
+    用户在跨境链路上等十几秒。这类图的共同特征：**引用方是运行时 fetch 的 JSON/HTML，
+    而不是打包进 bundle 的源码**。
     """
     strict: set[str] = set()
     base: set[str] = set()
@@ -282,13 +299,25 @@ def collect(only_referenced: bool = False) -> list[str]:
         import re
 
         pat = re.compile(r"([A-Za-z0-9_\-/.]+\.(?:jpg|jpeg|png|webp))", re.I)
-        for p in (REPO / "src").rglob("*"):
-            if p.suffix.lower() not in {".ts", ".tsx", ".css", ".html"}:
+        # src/ 是打包进 bundle 的源码；public/ 里的文本文件是**运行时才被 fetch** 的数据
+        # （`insp/data.json` 是作者模式发布的正式内容、`diary-book/index.html` 是独立页面）
+        for root in (REPO / "src", PUB):
+            if not root.exists():
                 continue
-            for s in pat.findall(p.read_text(encoding="utf-8", errors="replace")):
-                s = s.lstrip("/")
-                strict.add(s)
-                base.add(s.rsplit("/", 1)[-1].lower())
+            for p in root.rglob("*"):
+                if not p.is_file() or p.suffix.lower() not in REFERENCE_EXTS:
+                    continue
+                # 跳过已单独处理过的目录，避免把帧集/分享卡又翻出来。
+                # ⚠️ 只有 public/ 下的文件才需要这一步 —— 对 src/ 下的路径调
+                #    `relative_to(PUB)` 会抛 ValueError，别图省事直接写。
+                if root is PUB:
+                    parts = p.relative_to(PUB).parts
+                    if parts and parts[0] in SKIP_DIRS:
+                        continue
+                for s in pat.findall(p.read_text(encoding="utf-8", errors="replace")):
+                    s = s.lstrip("/")
+                    strict.add(s)
+                    base.add(s.rsplit("/", 1)[-1].lower())
 
     out = []
     for p in sorted(PUB.rglob("*")):

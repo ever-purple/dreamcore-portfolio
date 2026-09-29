@@ -222,6 +222,63 @@ function InlineEditForm({
 }
 
 /**
+ * 网易云「生成外链播放器」给的是**一整段 iframe 代码**：
+ *   <iframe frameborder="no" ... src="//music.163.com/outchain/player?type=2&id=1968217744&auto=1&height=66"></iframe>
+ * 作者最省事的做法就是整段粘过来 —— 这里负责把 src 抠出来。
+ * 也接受「直接粘 URL」和「粘成 https 或 // 开头」两种情况。
+ *
+ * 顺带说明为什么要支持整段粘：官方那段代码里的 `id` 就是歌曲 id，
+ * 站点在纯静态托管（GitHub Pages）上没有后端、无从解析分享短链时，
+ * 这是唯一能确定拿到播放器地址的途径 —— 粘进来就能播，不依赖任何识别服务。
+ */
+/** 只有这些路径才算「平台外链播放器」地址 —— 免得把普通歌曲链接误当成播放器存进 embed */
+const EMBED_PATH_RE =
+  /\/outchain\/player|\/playsong\.html|\/embed\/|\/embed\/track|\/embed\/album|embed\.music\.apple\.com/i;
+
+function parseEmbedCode(text: string): string {
+  const raw = text.trim();
+  if (!raw) return '';
+  const fromSrc = /src\s*=\s*["']([^"']+)["']/i.exec(raw)?.[1];
+  let url = (fromSrc ?? raw).trim();
+  if (!url) return '';
+  // 裸文本（不是从 src= 里取的）里带空格或尖括号，说明粘的是别的 HTML，不是地址
+  if (fromSrc === undefined && /[\s<>]/.test(url)) return '';
+  if (url.startsWith('//')) url = `https:${url}`;
+  if (!/^https?:\/\//i.test(url)) return '';
+  // 关键校验：确认它真的是播放器地址。
+  // 少了这一步，粘普通歌曲链接（如 https://163cn.tv/xxx）也会被当成 embed 存起来，
+  // 播放时 iframe 就去加载一个网页而不是播放器 —— 表现为「点了没声音」。
+  return EMBED_PATH_RE.test(url) ? url : '';
+}
+
+/** 从外链播放器地址里抠出平台侧的歌曲 id（`?id=123` / `#/song?id=123`） */
+function embedSongId(embed: string): string {
+  return /[?&#]id=(\d{1,20})/.exec(embed)?.[1] ?? '';
+}
+
+/**
+ * 存进条目前先规整播放器地址：协议补全 https、**auto 强制归零**。
+ *
+ * 为什么必须归零：官方「生成外链播放器」默认给的是 `auto=1`（一加载就放）。
+ * 而我们要的是**只借它的音频源** —— 界面是本站自己的 jukebox，尺寸也是我们的
+ * （1×1 隐藏 iframe，`width=330 height=86` 那种官方尺寸一点都不用）。
+ * 声音什么时候响由访客点「▶」决定：播放时才给 iframe 挂 src（见 PlayerContext），
+ * 挂的时候 autoPlayUrl() 会再把 auto 改回 1。存成 0 才能保证"不点就不响"。
+ */
+function normalizeEmbed(url: string): string {
+  if (!url) return '';
+  try {
+    const u = new URL(url);
+    u.protocol = 'https:';
+    // 只规整确实是播放器的那种地址（普通链接不该被塞上 ?auto=0）
+    if (EMBED_PATH_RE.test(url)) u.searchParams.set('auto', '0');
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
+/**
  * 识别结果 → 表单字段（歌名 / 歌手 / 封面 / 外链播放器地址 / 平台）。
  * 音乐卡和链接卡的「🔍 重新识别」共用这一份映射，免得两处各写一遍解析。
  */
@@ -967,46 +1024,56 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
   };
 
   const detect = (raw?: string) => {
-    const u = (raw ?? url).trim();
-    if (!u) {
-      setErr('先粘贴一个音乐链接');
+    const pasted = (raw ?? url).trim();
+    if (!pasted) {
+      setErr('粘贴音乐链接，或网易云「生成外链播放器」给的那段代码');
       return;
     }
+    // 官方外链播放器给的是一整段 <iframe>，先把 src 抠出来；直接粘 URL 也能过
+    const embed = parseEmbedCode(pasted);
+    const target = embed || pasted;
     setBusy(true);
     setErr('');
     setNote('');
     void (async () => {
       try {
-        const meta = await fetchLinkMeta(u);
-        const isMusic = !!meta.embed || (meta.platform ? MUSIC_PLATFORMS.has(meta.platform) : false);
+        const meta = await fetchLinkMeta(target);
         const artist =
           (meta.extra?.artist as string | undefined) ??
           (meta.desc?.startsWith('歌手：') ? meta.desc.slice(3) : '');
+        const songId = embedSongId(embed);
+        const hasEmbed = !!(meta.embed || embed);
+        const isMusic = hasEmbed || (meta.platform ? MUSIC_PLATFORMS.has(meta.platform) : false);
         setDraft({
           title: meta.title || '',
           artist: artist || '',
           cover: meta.cover || '',
-          link: meta.url || u,
-          embed: meta.embed || '',
-          platform: meta.platform || '',
+          // 粘的是播放器代码时：有 id 就还原成歌曲页给访客跳转；还原不出来就留空
+          // （播放靠 embed，不靠这个链接）
+          link:
+            meta.url ||
+            (songId ? `https://music.163.com/#/song?id=${songId}` : embed ? '' : pasted),
+          embed: normalizeEmbed(meta.embed || embed),
+          platform: meta.platform || (embed ? 'netease' : ''),
           genre: '',
         });
         setNote(
           isMusic
             ? `识别成功：${platformLabel(meta.platform) || meta.site || '音乐平台'}${
-                meta.embed ? ' · 用平台外链播放器播放' : ''
-              }`
+                hasEmbed ? ' · 用平台外链播放器播放' : ''
+              }${meta.title ? '' : '（歌名没认出来，可以直接手填）'}`
             : `没识别出音乐信息（${meta.site || '未知站点'}）。歌名 / 封面可以直接手填，也能换一个链接再试。`,
         );
       } catch {
-        setErr('识别失败，歌名和封面可以直接手填');
+        // 识别服务全挂也别丢掉粘贴进来的播放器代码 —— 有它就播得出声，只是歌名要手填
+        setErr('自动识别失败，歌名 / 歌手可以直接手填');
         setDraft({
           title: '',
           artist: '',
           cover: '',
-          link: u.startsWith('http') ? u : `https://${u}`,
-          embed: '',
-          platform: '',
+          link: embed ? '' : pasted.startsWith('http') ? pasted : `https://${pasted}`,
+          embed: normalizeEmbed(embed),
+          platform: embed ? 'netease' : '',
           genre: '',
         });
       } finally {
@@ -1018,8 +1085,11 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
   const save = () => {
     if (!draft) return;
     const link = draft.link.trim();
-    if (!link) {
-      setErr('链接不能为空');
+    const embed = draft.embed.trim();
+    // 有播放器地址就够了 —— 纯静态托管上识别不出链接很正常，
+    // link 只是给访客「去原站听」用的，不该卡住保存
+    if (!link && !embed) {
+      setErr('链接和播放器地址至少填一个');
       return;
     }
     const genres = parseTags(draft.genre, 4);
@@ -1028,12 +1098,13 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
       title: draft.title.trim() || '未命名音乐',
       artist: draft.artist.trim() || undefined,
       cover: draft.cover.trim(),
-      genre: genres.length ? genres : ['#外链'],
+      // 识别出平台了就不必再挂「#外链」这个兜底标签
+      genre: genres.length ? genres : draft.platform ? [] : ['#外链'],
       // 只存链接与外链播放器地址，不存音频文件
       source: 'link',
       platform: draft.platform || undefined,
-      embed: draft.embed.trim() || undefined,
-      link,
+      embed: embed || undefined,
+      link: link || undefined,
     });
     reset();
   };
@@ -1059,12 +1130,16 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
         className="about-insp-input"
         value={url}
         autoFocus
-        placeholder="网易云 / QQ音乐 / Spotify 歌曲链接 https://…"
+        placeholder="歌曲链接，或网易云「生成外链播放器」给的那段代码"
         onChange={(e) => setUrl(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Enter') detect();
         }}
       />
+      <p className="about-insp-form-note">
+        粘官方播放器代码时只取里面的音频源地址：卡片仍然用本站的 jukebox 播放，不会嵌入
+        平台那个播放器块（330×86 那种尺寸一律不用），也不会自动播放 —— 访客点 ▶ 才响。
+      </p>
       <div className="about-insp-form-actions">
         <button type="button" className="about-insp-btn is-primary" onClick={() => detect()} disabled={busy}>
           {busy ? '识别中…' : '识别'}
@@ -1189,7 +1264,8 @@ function MusicGrid({
                   {
                     key: 'embed',
                     label: '外链播放器地址',
-                    placeholder: '外链播放器地址（embed）—— 有它才播得出声；点「重新识别」可自动填',
+                    placeholder:
+                      '外链播放器地址 —— 可粘整段 <iframe> 代码，自动只取其中的 src',
                   },
                   { key: 'genre', label: '曲风标签，如 #Ambient #Dreamcore' },
                   { key: 'cover', label: '封面', kind: 'cover' },
@@ -1211,8 +1287,9 @@ function MusicGrid({
                   onEdit(m.id, {
                     title: val.title.trim() || m.title,
                     artist: val.artist.trim() || undefined,
-                    // 播放器地址直接覆盖（可以清空），不像封面那样「留空 = 不改」
-                    embed: val.embed.trim() || undefined,
+                    // 播放器地址直接覆盖（可以清空）；允许粘整段 iframe 代码 —— 这里只取 src，
+                    // 并把 auto 归零：声音什么时候响由本站播放键说了算，不跟平台参数自动播
+                    embed: normalizeEmbed(parseEmbedCode(val.embed)) || undefined,
                     ...(val.platform ? { platform: val.platform } : {}),
                     ...(val.songId ? { songId: val.songId } : {}),
                     genre: val.platform ? pruned : tags,

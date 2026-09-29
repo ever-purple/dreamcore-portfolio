@@ -150,6 +150,46 @@ export function HomeSection({
     return -1;
   };
 
+  /**
+   * 「已缓冲前沿」：从第 0 帧起**连续**就绪的最深一帧（-1 = 一张都没有）。
+   *
+   * ---------------------------------------------------------------------------
+   * 为什么需要它（2026-09-29 20:15 用户录屏：「中间滚动动画断了、直接跳到门开」）
+   * ---------------------------------------------------------------------------
+   * 上面那个 `nearestLoadedLE` **只向下兜底**，而帧是按优先级**乱序**到位的
+   * （首窗 1-8 + 末窗 105-120 先来，中间最后到）。于是：
+   *
+   *     目标滚到第 66 帧 → 最近就绪的还在第 47 帧 → 画面**冻住**
+   *     目标滚到第 103 帧 → 仍然冻在第 49 帧（约 0.7 秒画面完全不动）
+   *     目标第 110 帧 → 末窗到了 → **一步跳 61 帧**（= 直接跳到「门开」）
+   *
+   * 实测轨迹（`_verify-load-fix.mjs` G6，3.5 Mbps，`目标→显示`）：
+   *     `0→0  29→29  66→47  89→49  103→49  110→110`
+   *
+   * **这是「末窗优先」这个优化引入的副作用**：它保住了结局帧，代价是中间帧被推后，
+   * 而只向下兜底的取帧逻辑把「中间没到」放大成了「冻住 + 跳过去」。
+   *
+   * ---------------------------------------------------------------------------
+   * 修法：把影片位置夹到前沿上 —— 影片只能播到已经缓冲的地方
+   * ---------------------------------------------------------------------------
+   * 用户滚得再快，画面也**不会越过前沿**；前沿随下载推进，影片就跟着**连续**推进。
+   * 最坏情况从「冻住再跳」退化成「推镜走得慢」——这是诚实的、可接受的降级。
+   * 全部帧到齐后前沿 = 末帧，夹取完全不生效，行为与优化前逐像素一致
+   * （**热访问零影响**，而帧 URL 带 `immutable` 一年，回访就是热访问）。
+   *
+   * ⚠️ 上面三处（Portfolio 文案 / OPEN 按钮 / 到底拦截）**必须**跟着夹取后的
+   * `film` 走、而不是跟着原始滚动位置走，否则会出现「影片还在 30%，Open 已经冒出来」。
+   */
+  const bufferedProgress = (): number => {
+    let i = 0;
+    const n = images.length;
+    for (; i < n; i += 1) {
+      const im = images[i];
+      if (!im || im.naturalWidth === 0) break;
+    }
+    return i === 0 ? 0 : (i - 1) / (TOTAL_FRAMES - 1);
+  };
+
   // 帧间溶解绘制：相邻两帧按小数权重叠加，消灭逐帧硬切的阶梯感
   // 返回是否真的画上去了（false = 连一张能用的帧都没有，canvas 还是黑的）
   const drawCrossfade = (progress: number) => {
@@ -233,7 +273,11 @@ export function HomeSection({
     const tick = (now: number) => {
       const dt = lastTsRef.current ? Math.min((now - lastTsRef.current) / 1000, 0.05) : 0.016;
       lastTsRef.current = now;
-      const raw = computeProgress();
+      // 「影片位置」= min(滚动位置, 已缓冲前沿)。下面 Portfolio / OPEN / 滚轮拦截
+      // 全部读这个值 —— 影片还没播到那儿，就不该出现那儿的 UI。见 bufferedProgress()。
+      const scrollP = computeProgress();
+      const buffered = bufferedProgress();
+      const raw = Math.min(scrollP, buffered);
       targetProgressRef.current = raw;
 
       updatePortfolio(raw);
@@ -244,10 +288,22 @@ export function HomeSection({
         lastFocusRef.current = targetFrame;
         onFrameFocus(targetFrame);
       }
-      const atEnd = targetFrame >= TOTAL_FRAMES - 1;
-      if (atEnd !== atEndRef.current) {
-        atEndRef.current = atEnd;
-        setDownBlocked(atEnd);
+      // 「滚轮只推进到已缓冲处」—— 用户选的「锁住滚动」。
+      //
+      // 为什么需要：影片位置被夹到前沿之后，用户仍然可以把**滚动位置**甩到底
+      // （Lenis 自己的 1.15s 缓动就能带过去）。那样输入和画面就脱节了 ——
+      // 观感是「我早就甩到底了，画面还在自己慢慢往前推」，像坏了。
+      // 所以在「滚动位置已经追上缓冲前沿」时拦掉继续向下的滚轮，
+      // 让两者**始终 1:1**：用户跟着影片走，影片走多快由带宽决定。
+      //
+      // 复用 App 里已有的那条 `virtualScroll` 拦截（只挡 deltaY > 0，向上永远放行）。
+      // 全部帧到齐时 buffered = 1，这条退化成原来的「滚到 100% 处拦截」。
+      // `buffered > 0` 是安全阀：帧全 404 时前沿恒为 -1，若照样拦就会把用户
+      // 永久锁死在首页（此时宁可让他滚到底看内联兜底帧）。
+      const caughtUp = buffered > 0 && scrollP >= buffered - 1e-4;
+      if (caughtUp !== atEndRef.current) {
+        atEndRef.current = caughtUp;
+        setDownBlocked(caughtUp);
       }
 
       // OPEN button appears at 90% (the bell now rings on OPEN click, see handleOpen)
@@ -294,7 +350,7 @@ export function HomeSection({
     // （HomeSection 只在 atEnd 变化时才下发复位，重挂载后两边都是 false 就永远不复位）。
     atEndRef.current = false;
     setDownBlocked(false);
-    displayedRef.current = computeProgress();
+    displayedRef.current = Math.min(computeProgress(), bufferedProgress());
     if (drawCrossfade(displayedRef.current)) paintedRef.current = true;
     rafRef.current = requestAnimationFrame(tick);
 

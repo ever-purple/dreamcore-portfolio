@@ -90,11 +90,24 @@ const frameUrls = Array.from(
  */
 const HEAD_FRAMES = 8;
 /**
- * 末尾优先帧数。滚动到 90% 才出现 OPEN、到 100% 才是「门开露黄光」的结局帧，
- * 它是整个滚动动画的高潮 —— 把这 16 张提到队首，就不会出现「滚到最后没画面」。
- * 必须与 useWindowedFrames 的 priorityTail 语义一致（>= 119 - 108 + 1 覆盖阈值帧）。
+ * 末尾优先帧数。**已归零（2026-09-29 20:xx，推翻了自己 3 小时前的改动）。**
+ *
+ * 原来给 16，理由是「结局帧（门开露黄光）是整个动画的高潮，提前把它拉下来，
+ * 免得滚到最后没画面」。
+ *
+ * 现在归零，因为 HomeSection 加了「影片位置夹到已缓冲前沿」之后，这条优化**反噬**了：
+ *   · 前沿 = 从第 0 帧起**连续**就绪的最深一帧；
+ *   · 末窗优先让第 105-120 张抢先到位，而它们**对前沿毫无贡献**（中间 9-104 还缺着）；
+ *   · 于是前沿被拖慢，而前沿才是影片能播到哪里的唯一决定因素。
+ *
+ * 更关键的是：**夹取之后「滚到最后没画面」在结构上不可能发生了** ——
+ * 影片根本走不到第 120 帧，除非那一帧真的到了。所以这条优化连它原本要防的问题
+ * 都不需要再防。现在帧严格按 1→120 顺序下，前沿**单调前进**，影片跟着匀速推进。
+ *
+ * （`useWindowedFrames` 仍保留 `priorityTail` 选项与 `tailQ` 队列 —— 它是个通用能力，
+ * 只是首页这条链路不再需要。滚动插队 `focus` 仍在用，它保证「下一帧永远在队列最前」。）
  */
-const TAIL_FRAMES = 16;
+const TAIL_FRAMES = 0;
 
 /**
  * 后台预热：进工作室才用得上的大件。不计进度、不卡加载页，且**加载页消失之后**
@@ -128,9 +141,10 @@ function App() {
     }
     return window.location.hash === '#about' ? 'studio' : 'home';
   });
-  // 序列帧加载：**首窗放行 + 末窗优先 + 滚动插队**（详见 useWindowedFrames 顶部说明）。
+  // 序列帧加载：**首窗放行 + 顺序填充 + 滚动插队**（详见 useWindowedFrames 顶部说明）。
   // 仍是「全量解码常驻」（窗口式会冻帧/跳帧/黑屏），但**放行不再等全量** ——
-  // 门在首窗到齐时就开，剩下 112 张按 末窗 → 其余 的优先级在后台补。
+  // 门在首窗到齐时就开，剩下 112 张按 1→120 顺序在后台补（`priorityTail: 0`，
+  // 曾经是「末窗优先」，被「夹到缓冲前沿」的改动推翻了，见 TAIL_FRAMES 的注释）。
   // framesRevision 透传给绘制端：迟到的帧靠它触发补画（否则门永远不开）。
   const {
     images,
@@ -148,11 +162,26 @@ function App() {
    * 白占并发位、白占带宽。现在帧的加载进度与放行判据**只有一个来源** ——
    * useWindowedFrames。
    *
-   * `prefetchGate: entered` = 加载页消失之后才预热。否则预热组会在第 1 秒就起跑，
-   * 跟剩下的 112 张帧抢带宽 —— 实测首屏下载的 4.02MB 里 **1.48MB 是这些 GLB**，
-   * 而它们首页一个都用不到（只在工作室里出现）。
+   * ⚠️ `prefetchGate` 的门槛被改过三次。**第二次的归因是错的，记在这里免得再犯：**
+   *   ① 原来 = 「wait 组（120 张帧）跑完才开始」→ 保守但对，帧全程独占带宽。
+   *   ② 我一度改成 `entered`（加载页一消失就预热），并把用户报的「中间动画断了、
+   *      直接跳到门开」归因成「6 个 GLB 抢带宽」。
+   *      **这个归因被 A/B 证伪了**：`_verify-load-fix.mjs G6_BLOCK="*.glb"` 前后
+   *      对照，显示帧的最大落后是 54 → 52 帧、中间帧到位 36 → 37 张，**没有差别**。
+   *      真正的根因是「120 张 × 89KB = 10.7MB，而用户甩完 300vh 只要 1.6 秒」，
+   *      即带宽总量问题，减掉 1.5MB 的 GLB 无济于事。
+   *   ③ 现在 = `entered && 帧下到 70%`。**保留它不是因为上面那个错归因**，而是因为
+   *      帧集瘦身之后（见 MEMORY 里的档位表）GLB 这 1.5MB 的**相对占比**变大，
+   *      而影片的推进速度已经完全由前沿决定 —— 让 GLB 排在帧后面是纯赚。
+   *      代价是工作室的大模型（rack.glb 9.1MB）晚几秒起跑，而进工作室本来就要先
+   *      走完整个开门动画再点 OPEN，这点延迟吃得到。
    */
-  useAssetPreload({ wait: [], prefetch: PREFETCH_MODELS, prefetchGate: entered });
+  const framesMostlyLoaded = loadedCount >= Math.floor(TOTAL_FRAMES * 0.7);
+  useAssetPreload({
+    wait: [],
+    prefetch: PREFETCH_MODELS,
+    prefetchGate: entered && framesMostlyLoaded,
+  });
 
   /** 加载页的 0→100%：首窗的完成度（useWindowedFrames 在首窗期间逐张上报） */
   const progress = Math.min(1, loadedCount / HEAD_FRAMES);

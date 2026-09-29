@@ -94,6 +94,11 @@ const DEFAULT_TIMEOUT = 12000;
 const DEFAULT_HEAD = 8;
 /** 末窗：90% 滚动阈值（第 108 张）之后到 119 全部覆盖，留足余量 */
 const DEFAULT_TAIL = 16;
+/**
+ * 首窗之后上报进度的间隔（张）。App 靠 `loadedCount` 判断「帧下到几成了、
+ * 什么时候轮到 GLB 预热」。每 16 张报一次 → 120 张总共最多 7 次额外渲染。
+ */
+const PROGRESS_STEP = 16;
 
 /** 帧状态：0 未开始 / 1 在飞 / 2 定案（成功或失败） */
 const IDLE = 0;
@@ -185,17 +190,25 @@ export function useWindowedFrames(
           release();
         } else {
           // 首窗还没齐 —— 报一次进度，让加载页的百分比走得平滑。
-          // 首窗期间最多 head 次（8 次）setState，开销可忽略；首窗之后不再报，
-          // 否则剩下 112 张每次都重渲染 App，就是上一版注释里说的「把加载页拖成幻灯片」。
+          // 首窗期间最多 head 次（8 次）setState，开销可忽略。
           setState((s) => (s.complete ? s : { ready: false, complete: false, loadedCount: done }));
         }
-      }
-
-      if (done >= n) {
+      } else if (done >= n) {
         // 全部到齐：即使首窗早就放行了，也把 loadedCount 补成满值
         window.clearTimeout(timer);
         setState({ ready: true, complete: true, loadedCount: n });
         return;
+      } else if (done % PROGRESS_STEP === 0) {
+        // 首窗之后**节流**上报进度。
+        //
+        // 为什么要报：App 用它决定「什么时候轮到 GLB 预热」——
+        // 2026-09-29 用户报「中间滚动动画断了、直接跳到门开」，根因就是预热组在
+        // 加载页一消失（`entered`）就起跑，6 个 GLB（含 9.5MB 的 rack.glb）正好在
+        // 用户开始滚动那一刻占掉近一半带宽，中间那 96 张帧一张都下不来。
+        // 现在改成「帧下到七成」才放行预热。
+        //
+        // 为什么节流：每张都 setState 会重渲染 App 112 次；完全不报外面又看不到进度。
+        setState((s) => (s.complete ? { ready: true, complete: true, loadedCount: done } : s));
       }
       pump();
     };

@@ -18,25 +18,35 @@ interface LoadingScreenProps {
  */
 const MIN_VISIBLE = 3000;
 
+/**
+ * 时间爬升基线（ms）。与 `useWindowedFrames` 的兜底超时（7000ms）对齐：
+ * 超时那一刻数字刚好爬到 ~99%，接着跳 100% 放行。
+ *
+ * 为什么需要它：进度本应随「真实下载量」走，但慢网/丢包时首窗 8 张帧可能
+ * 一张都下不下来 —— 若只看真实进度，数字会**永远冻在 0%**，用户以为网站挂了
+ * （原话「一直在转圈」）。用「时间爬升」兜底，数字始终在动，观感是「正在加载」
+ * 而不是「卡死」。取真实进度与时间爬升的**较大值**。
+ */
+const CREEP_MS = 7000;
+
 export function LoadingScreen({ ready, progress, onEnter }: LoadingScreenProps) {
   const [shown, setShown] = useState(0); // 屏幕上显示的百分比
   const [leaving, setLeaving] = useState(false);
   const [visible, setVisible] = useState(true);
   const [tick, setTick] = useState(0);
   const [startDt] = useState(() => Date.now());
-  const targetRef = useRef(0);
   const rootRef = useRef<HTMLDivElement>(null);
   const counterRef = useRef<HTMLSpanElement>(null);
 
   /**
-   * 进度不再靠计时器：target 就是 App 里按真实下载量算出来的百分比。
-   * 每帧朝 target 靠近一小步 —— 数字随资源起落，但不会一格一格地跳。
+   * 进度每帧重算（不靠 effect 缓存）：真实下载量 与 时间爬升 取较大值。
+   * 这样即使首窗帧因慢网一张没下来，数字也会从 0 平滑爬到 ~99%，不会冻屏。
    */
   useEffect(() => {
-    targetRef.current = ready ? 1 : Math.min(0.995, progress);
     let raf = 0;
     const step = () => {
-      const target = targetRef.current * 100;
+      const creep = Math.min(0.99, (Date.now() - startDt) / CREEP_MS);
+      const target = (ready ? 1 : Math.max(creep, Math.min(0.995, progress))) * 100;
       setShown((s) => {
         const next = s + (target - s) * 0.16;
         return Math.abs(target - next) < 0.4 ? target : next;
@@ -45,7 +55,7 @@ export function LoadingScreen({ ready, progress, onEnter }: LoadingScreenProps) 
     };
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
-  }, [progress, ready]);
+  }, [progress, ready, startDt]);
 
   // 进度到 100% 且素材到齐、也过了最短可见时间，才开始淡出
   useEffect(() => {

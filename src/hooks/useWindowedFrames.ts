@@ -66,6 +66,13 @@ export interface WindowedFrames {
    * 用 ref 则零渲染开销，消费方（HomeSection 的 rAF tick）在每帧顺手读一下即可。
    */
   revisionRef: { current: number };
+  /**
+   * 加载**失败**的张数（404 / 解码失败）。调用方用它决定要不要换一档编码重来。
+   *
+   * 为什么必须有：序列帧解码失败**不报错**，`onerror` 同样算「定案」，
+   * 所以格式选错时的表现不是崩溃，而是**那一格永远没有画面**。
+   */
+  erroredRef: { current: number };
 }
 
 export interface WindowedFramesOptions {
@@ -78,18 +85,40 @@ export interface WindowedFramesOptions {
    * 而 `framesComplete` 只从本 hook 来。
    * 没下完的帧由绘制端的 `nearestLoadedLE()` / 内联兜底帧顶替。
    *
-   * 从 18000 降到 12000：现在等的只是 8 张（约 0.7 MB）而不是 120 张（10.7 MB），
-   * 12 秒还下不完就是真的不可用了，早放行早让用户看到东西。
+   * 从 18000 降到 12000 再降到 7000：现在等的只是 8 张（约 0.7 MB）而不是 120 张
+   * （10.7 MB），7 秒还下不完就是真的不可用了，早放行早让用户看到东西。
    */
   timeoutMs?: number;
   /** 首窗大小：前几张到位就放行，默认 8 */
   headCount?: number;
   /** 末尾优先帧数：把最后这几张提到队首，保证「开门」结局帧一定在，默认 16 */
   priorityTail?: number;
+  /**
+   * 是否开始加载。**默认 true**；传 `false` 时这个 hook 完全不动 ——
+   * 既不请求、也**不放行**（`complete` 保持 false）。
+   *
+   * 为什么需要它：App 要先异步探测「这个浏览器能不能解 AVIF」，探测期间帧的 URL
+   * 还不知道。若那时把 `urls = []` 传进来，本 hook 的「空列表直接放行」分支
+   * 会立刻把加载页放掉 —— 首页会在帧一张都没下的时候就露出来。
+   *
+   * ⚠️ 别用「传个占位 URL」之类的绕法，那会先把 WebP 首窗拉起来、探测完成后再换
+   * AVIF，白烧掉 8 个请求（约 640KB）的带宽。宁可晚一个微任务再开始。
+   */
+  enabled?: boolean;
 }
 
-/** 慢网兜底放行时间（现在只需覆盖首窗那 8 张，不再是 120 张） */
-const DEFAULT_TIMEOUT = 12000;
+/**
+ * 慢网兜底放行时间。**从 18000 → 12000 → 7000 三连降。**
+ *
+ * 最初等 120 张（10.7MB）给 18s；改为「只等首窗 8 张」后降到 12s；
+ * 现在再降到 **7000ms** —— 因为首窗只有 8 张（大屏 ~0.7MB / 小屏 ~0.22MB），
+ * 即便在 100KB/s 的弱网下也只需 ~7s 就能下完，更慢的链路基本等于不可用，
+ * 早放行比让用户盯着 0% 的转圈更有意义。
+ *
+ * ⚠️ 与 `LoadingScreen` 的「时间爬升」进度是配套的：超时那一刻数字刚好爬到 ~99%，
+ * 不会有「数字冻在 0% 十几秒」的观感（用户原话「一直在转圈」就是这么来的）。
+ */
+const DEFAULT_TIMEOUT = 7000;
 /** 首窗：约 0.7 MB（大屏）/ 0.22 MB（小屏），足够铺满进入时的第一屏 */
 const DEFAULT_HEAD = 8;
 /** 末窗：90% 滚动阈值（第 108 张）之后到 119 全部覆盖，留足余量 */
@@ -114,6 +143,7 @@ export function useWindowedFrames(
     timeoutMs = DEFAULT_TIMEOUT,
     headCount = DEFAULT_HEAD,
     priorityTail = DEFAULT_TAIL,
+    enabled = true,
   } = options;
 
   const imagesRef = useRef<HTMLImageElement[]>([]);
@@ -128,6 +158,8 @@ export function useWindowedFrames(
   const pumpRef = useRef<() => void>(() => {});
   /** 定案计数。绘制端读它来判断「迟到的帧要不要补画」 */
   const revisionRef = useRef(0);
+  /** 失败张数。调用方读它来判断「是不是编码格式选错了」 */
+  const erroredRef = useRef(0);
 
   const [state, setState] = useState<{ ready: boolean; complete: boolean; loadedCount: number }>({
     ready: false,
@@ -138,6 +170,9 @@ export function useWindowedFrames(
   useEffect(() => {
     const n = urls.length;
 
+    // 还没决定用哪一档编码：什么都不做，也**不放行**（详见 enabled 的注释）
+    if (!enabled) return;
+
     // 空列表：直接放行，别让调用方永远等一个不会来的 ready
     if (n === 0) {
       setState({ ready: true, complete: true, loadedCount: 0 });
@@ -147,6 +182,9 @@ export function useWindowedFrames(
     let cancelled = false;
     let done = 0;
     let active = 0;
+    // 每换一次 URL（也就等于换一档编码）就把失败计数清零 —— 上一档的失败不该
+    // 拖累这一档的判定。
+    erroredRef.current = 0;
 
     /** 首窗大小（夹到 [0, n]）—— 它决定「什么时候放行」 */
     const head = Math.max(0, Math.min(headCount, n));
@@ -232,9 +270,11 @@ export function useWindowedFrames(
         active -= 1;
         complete(i);
       };
-      // 坏图也要放行，别让它把 complete 永远卡住
+      // 坏图也要放行，别让它把 complete 永远卡住；同时记一笔失败，
+      // 让调用方能判断「是不是整档编码都解不了」，进而换一档重来。
       img.onerror = () => {
         active -= 1;
+        erroredRef.current += 1;
         complete(i);
       };
       img.src = url;
@@ -287,7 +327,7 @@ export function useWindowedFrames(
         img.onerror = null;
       });
     };
-  }, [urls, concurrency, timeoutMs, headCount, priorityTail, images]);
+  }, [urls, concurrency, timeoutMs, headCount, priorityTail, images, enabled]);
 
   /**
    * 滚动到第 `frame` 帧 → 把邻近未加载的帧插到队首。
@@ -317,5 +357,6 @@ export function useWindowedFrames(
     loadedCount: state.loadedCount,
     focus,
     revisionRef,
+    erroredRef,
   };
 }

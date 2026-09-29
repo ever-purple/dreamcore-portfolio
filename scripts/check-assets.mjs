@@ -34,49 +34,59 @@ const appSrc = read('src/App.tsx');
 const total = Number((appSrc.match(/const\s+TOTAL_FRAMES\s*=\s*(\d+)/) || [])[1]);
 if (!total) problems.push('src/App.tsx 里读不到 TOTAL_FRAMES');
 
-// FRAME_DIR 的三元表达式两侧就是目录名
+// 尺寸档：FRAME_SIZE_DIR 的三元表达式两侧就是目录名
 const dirs = [...appSrc.matchAll(/return\s+shortSide[\s\S]{0,120}?\?\s*'([^']+)'\s*:\s*'([^']+)'/g)].flatMap(
   (m) => [m[1], m[2]],
 );
-const frameDirs = dirs.length ? [...new Set(dirs)] : [];
-if (!frameDirs.length) problems.push('src/App.tsx 里读不到 FRAME_DIR 的两个候选目录名');
+const sizeDirs = dirs.length ? [...new Set(dirs)] : [];
+if (!sizeDirs.length) problems.push('src/App.tsx 里读不到 FRAME_SIZE_DIR 的两个候选目录名');
 
-// 扩展名后面可能跟 query —— 帧 URL 带 `?v=${FRAME_VERSION}` 做长缓存失效
-// （vercel.json 给 /frames 配了 immutable），所以不能要求反引号紧跟在扩展名后面。
-const ext = (appSrc.match(/`\/\$\{FRAME_DIR\}\/.*?\.(\w+)(?:\?[^`]*)?`/) || [])[1];
-if (!ext) problems.push('src/App.tsx 里读不到帧文件扩展名');
+// 编码档：从 FRAME_FORMATS 这张**字面量表**里读，形如
+//   avif: { dirSuffix: '-avif', ext: 'avif' },
+// ⚠️ 那张表一旦被抽成变量/拼接，这里就读不到 —— 而这个守卫失明的后果是
+// 「代码请求的帧在 public/ 里根本不存在」，也就是曾经上线过的纯黑首页。
+const formats = [...appSrc.matchAll(/^\s*(\w+):\s*\{\s*dirSuffix:\s*'([^']*)',\s*ext:\s*'(\w+)'/gm)]
+  .map((m) => ({ name: m[1], dirSuffix: m[2], ext: m[3] }));
+if (!formats.length) {
+  problems.push('src/App.tsx 里读不到 FRAME_FORMATS 表（守卫靠它知道要校验哪些目录与扩展名）');
+}
 
-if (total && frameDirs.length && ext) {
-  for (const dir of frameDirs) {
-    const abs = join(PUBLIC, dir);
-    if (!existsSync(abs)) {
-      problems.push(`帧目录缺失：public/${dir}/（代码会请求 /${dir}/0001.${ext}）`);
-      continue;
-    }
-    const files = readdirSync(abs);
-    const want = new Set(
-      Array.from({ length: total }, (_, i) => String(i + 1).padStart(4, '0') + '.' + ext),
-    );
-    const missing = [...want].filter((f) => !files.includes(f));
-    if (missing.length) {
-      const shown = missing.slice(0, 5).join('、');
-      problems.push(
-        `public/${dir}/ 缺 ${missing.length} 个帧（共需 ${total} 个 .${ext}）：${shown}${
-          missing.length > 5 ? ' …' : ''
-        }`,
+if (total && sizeDirs.length && formats.length) {
+  const summary = [];
+  for (const sizeDir of sizeDirs) {
+    for (const { name, dirSuffix, ext } of formats) {
+      const dir = `${sizeDir}${dirSuffix}`;
+      const abs = join(PUBLIC, dir);
+      if (!existsSync(abs)) {
+        problems.push(`帧目录缺失：public/${dir}/（${name} 档，代码会请求 /${dir}/0001.${ext}）`);
+        continue;
+      }
+      const files = readdirSync(abs);
+      const want = new Set(
+        Array.from({ length: total }, (_, i) => String(i + 1).padStart(4, '0') + '.' + ext),
       );
-    }
-    // 同名不同扩展的残留（比如 .jpg 没删干净）会让仓库白白胖一倍
-    const stray = files.filter((f) => /\.(jpg|jpeg|png|webp)$/i.test(f) && !f.endsWith('.' + ext));
-    if (stray.length) {
-      problems.push(
-        `public/${dir}/ 里有 ${stray.length} 个旧格式残留（如 ${stray[0]}）—— 确认没用就删掉，别白白推上去`,
+      const missing = [...want].filter((f) => !files.includes(f));
+      if (missing.length) {
+        const shown = missing.slice(0, 5).join('、');
+        problems.push(
+          `public/${dir}/ 缺 ${missing.length} 个帧（共需 ${total} 个 .${ext}）：${shown}${
+            missing.length > 5 ? ' …' : ''
+          }`,
+        );
+      }
+      // 同一目录里混进别的格式（比如 .jpg 没删干净）会让仓库白白胖一倍
+      const stray = files.filter(
+        (f) => /\.(jpg|jpeg|png|webp|avif)$/i.test(f) && !f.endsWith('.' + ext),
       );
+      if (stray.length) {
+        problems.push(
+          `public/${dir}/ 里有 ${stray.length} 个非 ${ext} 残留（如 ${stray[0]}）—— 确认没用就删掉，别白白推上去`,
+        );
+      }
+      summary.push(`${dir}(.${ext}×${total})`);
     }
   }
-  console.log(
-    `[check-assets] 帧集：${frameDirs.map((d) => `${d}(.${ext}×${total})`).join(' + ')}`,
-  );
+  console.log(`[check-assets] 帧集：${summary.join(' + ')}`);
 }
 
 // ── B. src/ 里写死的素材路径 ────────────────────────────────────────────

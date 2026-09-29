@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Lenis from 'lenis';
 import { LoadingScreen } from '@/components/LoadingScreen';
 import { ModeSwitch } from '@/components/ModeSwitch';
@@ -7,6 +7,7 @@ import { StudioSection } from '@/sections/StudioSection';
 import { useWindowedFrames } from '@/hooks/useWindowedFrames';
 import { useAssetPreload } from '@/hooks/useAssetPreload';
 import { recordEnter, wireExitFlush } from '@/lib/visitLog';
+import { supportsAvif } from '@/lib/avifSupport';
 import type { StudioObject } from '@/data/studio';
 import 'lenis/dist/lenis.css';
 import './App.css';
@@ -15,15 +16,15 @@ import gsap from 'gsap';
 const TOTAL_FRAMES = 120;
 
 /**
- * 序列帧目录**按画布真实像素宽自适应**：
- *   · 桌面 → `public/frames`    （2560×1443，WebP q88，10.7MB）
- *   · 小屏 → `public/frames-sm` （1440×812， WebP q80， 3.2MB）
+ * 序列帧**尺寸档**，按画布真实像素宽自适应：
+ *   · 桌面 → `frames*`    （2560×1443）
+ *   · 小屏 → `frames-sm*` （1440×812）
  *
  * 判据用「画布像素宽」而不是 CSS 宽，因为 canvas 尺寸是
  * `innerWidth × min(devicePixelRatio, 2)`（见 HomeSection.resizeCanvas）。
  *
- * ⚠️ 只看宽度会漏掉**手机横屏**：844×2 = 1688 会被判成大屏，于是手机去吃 10.7MB
- * 的桌面帧集 —— 恰恰是最该省流量的场景。所以再压一道「短边」条件：
+ * ⚠️ 只看宽度会漏掉**手机横屏**：844×2 = 1688 会被判成大屏，于是手机去吃大屏帧集
+ * —— 恰恰是最该省流量的场景。所以再压一道「短边」条件：
  * 短边 ≤ 900 的一律走小图（横竖屏都被盖住）。
  *
  * ⚠️ 反过来，短边条件**不能单独用**：13 寸视网膜本 CSS 1440×900、dpr 2 时
@@ -34,10 +35,16 @@ const TOTAL_FRAMES = 120;
  * iPad 竖屏 1024×2=2048 ❌大图（屏幕本来大，小图会糊）｜
  * 视网膜本 1440×900@2 = 2880 ❌大图（保清晰）｜ 桌面 1920×1080 ❌大图。
  *
- * 2026-09-28 从 JPEG 换 WebP：`public/frames` 原来 63.1MB（120 张 2560×1443），
- * 是全站首屏最大的一笔。WebP q88 后 10.7MB（−83%），实测 PSNR 45.7dB（>40 即视觉无损）。
+ * 体积沿革：
+ *   2026-09-28 JPEG → WebP q88，大屏 63.1MB → 10.7MB（这是当时首屏最大的一笔）
+ *   2026-09-29 WebP → AVIF q64（小屏 q56），大屏 10.69MB → **6.69MB**，小屏 3.16 → 2.60MB
+ *     · 为什么是这两个数：大屏 q64 是唯一「均值与最差 1% 区域都不低于现有 WebP」的档；
+ *       小屏 q56 相对现有 WebP q80 是**又小又好**。
+ *     · 完整的档位/画质对照见 `scripts/frames-to-avif.py` 的文件头。
+ *
+ * 具体目录名 = 本变量 + `FRAME_FORMATS[format].dirSuffix`（见下）。
  */
-const FRAME_DIR = (() => {
+const FRAME_SIZE_DIR = (() => {
   const canvasPx = window.innerWidth * Math.min(window.devicePixelRatio || 1, 2);
   const shortSide = Math.min(window.innerWidth, window.innerHeight);
   return shortSide <= 900 && canvasPx <= 2000 ? 'frames-sm' : 'frames';
@@ -46,22 +53,60 @@ const FRAME_DIR = (() => {
 /**
  * 帧序列 URL 的版本号。
  *
- * ⚠️ **改了 `public/frames` 或 `public/frames-sm` 里的图片内容，必须把这个数字 +1。**
+ * ⚠️ **改了 `public/frames*` 里的图片内容，必须把这个数字 +1。**
  *
- * 为什么需要它：`vercel.json` 给这两个目录配了 `max-age=31536000, immutable`
- * —— 回访浏览器**一整年都不会再问服务器**（这正是我们要的：10.69MB 的帧集
- * 第二次打开就是零网络）。代价是不带版本号的 URL 会让老访客永远拿到旧图。
+ * 为什么需要它：`vercel.json` 给这些目录配了 `max-age=31536000, immutable`
+ * —— 回访浏览器**一整年都不会再问服务器**（这正是我们要的：帧集第二次打开就是零网络）。
+ * 代价是不带版本号的 URL 会让老访客永远拿到旧图。
  * 版本号进 query，URL 一变就是全新资源，老缓存自然作废，且不影响其他访问者。
  *
  * 2026-09-29 起：线上实测这些帧的响应头是 `public, max-age=0, must-revalidate`，
  * 也就是**每次打开都要回源校验 120 次**（跨境 RTT 叠加，雪上加霜）。
+ *
+ * =2：换 AVIF（2026-09-29）。
  */
-const FRAME_VERSION = 1;
+const FRAME_VERSION = 2;
 
-const frameUrls = Array.from(
-  { length: TOTAL_FRAMES },
-  (_, i) => `/${FRAME_DIR}/${String(i + 1).padStart(4, '0')}.webp?v=${FRAME_VERSION}`,
-);
+/**
+ * 组装帧 URL：**尺寸档 × 编码档**两个轴。
+ *
+ *   尺寸档（`FRAME_SIZE_DIR`）：大屏 `frames` / 小屏 `frames-sm`
+ *   编码档（本函数的参数）：AVIF 是**后缀** → `frames-avif` / `frames-sm-avif`；
+ *                          WebP 是不带后缀的原目录（也就是改造前的那一套）
+ *
+ * 为什么编码档要做成可切换：AVIF 在 Chromium/Firefox/新版 Safari 上都支持，
+ * 但**解码失败是静默的**（`onerror` 也算定案，只是那一格永远没画面）。
+ * 所以必须留一套 WebP 兜底，且要有能力在运行时退回去（见 App 里的 `frameFormat`）。
+ *
+ * 收益（实测，120 张）：大屏 10.69MB → 6.69MB，小屏 3.16MB → 2.60MB。
+ */
+/**
+ * 编码档 → 目录后缀 / 扩展名。
+ *
+ * ⚠️ **这张表必须是纯字面量**：`scripts/check-assets.mjs` 靠它校验「代码要请求的帧
+ * 在 public/ 里到底存不存在」。抽成变量或拼字符串都会让那个守卫失明 ——
+ * 它上一次失明的后果是**上线了一个纯黑首页**（404 被当成"加载完成"，
+ * 浏览器不报错，只是帧全空）。
+ */
+const FRAME_FORMATS = {
+  avif: { dirSuffix: '-avif', ext: 'avif' },
+  webp: { dirSuffix: '', ext: 'webp' },
+} as const;
+
+const buildFrameUrls = (format: keyof typeof FRAME_FORMATS): string[] => {
+  const { dirSuffix, ext } = FRAME_FORMATS[format];
+  const dir = `${FRAME_SIZE_DIR}${dirSuffix}`;
+  return Array.from(
+    { length: TOTAL_FRAMES },
+    (_, i) => `/${dir}/${String(i + 1).padStart(4, '0')}.${ext}?v=${FRAME_VERSION}`,
+  );
+};
+
+/**
+ * 编码档还没探测出来时用的空数组。**必须是模块级常量**：`useWindowedFrames` 的
+ * effect 依赖 `urls` 的**引用**，每次渲染现造一个 `[]` 会让 effect 反复重跑。
+ */
+const NO_FRAME_URLS: string[] = [];
 
 /**
  * 加载页**只等首窗**（前 `HEAD_FRAMES` 张），其余帧一律降到后台按优先级补。
@@ -141,6 +186,41 @@ function App() {
     }
     return window.location.hash === '#about' ? 'studio' : 'home';
   });
+  /**
+   * 帧的**编码档**：`null` = 还在探测，`'avif'` / `'webp'` = 已定档。
+   *
+   * 为什么是异步：探测 AVIF 的唯一可靠办法是**真的解一张 AVIF**。
+   * 网上流传的同步写法 `canvas.toDataURL('image/avif')` 在 Chromium 上**会误判**
+   * （它返回 `data:image/png`，因为 Chrome 不支持把 canvas 编成 AVIF），
+   * 拿它当判据会把绝大多数 Chrome/Edge/微信用户错误地关在 AVIF 门外。
+   * 详见 `src/lib/avifSupport.ts`。探测本身是解一个 315 字节的内联 AVIF，
+   * 一个微任务级别，肉眼不可察。
+   *
+   * `null` 期间 `frameUrls` 是空数组且 `enabled: false` —— 帧**一张都不会开始下**，
+   * 也**不会放行加载页**（否则会出现「帧还没开始下，首页已经露出来」）。
+   */
+  const [frameFormat, setFrameFormat] = useState<'avif' | 'webp' | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    supportsAvif().then((ok) => {
+      if (alive) setFrameFormat(ok ? 'avif' : 'webp');
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const frameUrls = useMemo(
+    () => (frameFormat ? buildFrameUrls(frameFormat) : NO_FRAME_URLS),
+    [frameFormat],
+  );
+
+  // 暴露给回归探针：`document.documentElement.dataset.frameFormat` 断言走的是哪一档
+  useEffect(() => {
+    if (frameFormat) document.documentElement.dataset.frameFormat = frameFormat;
+  }, [frameFormat]);
+
   // 序列帧加载：**首窗放行 + 顺序填充 + 滚动插队**（详见 useWindowedFrames 顶部说明）。
   // 仍是「全量解码常驻」（窗口式会冻帧/跳帧/黑屏），但**放行不再等全量** ——
   // 门在首窗到齐时就开，剩下 112 张按 1→120 顺序在后台补（`priorityTail: 0`，
@@ -152,7 +232,27 @@ function App() {
     focus: focusFrame,
     revisionRef: framesRevision,
     loadedCount,
-  } = useWindowedFrames(frameUrls, { headCount: HEAD_FRAMES, priorityTail: TAIL_FRAMES });
+    erroredRef: framesErrored,
+  } = useWindowedFrames(frameUrls, {
+    headCount: HEAD_FRAMES,
+    priorityTail: TAIL_FRAMES,
+    enabled: frameFormat !== null,
+  });
+
+  /**
+   * AVIF 兜底：选了 AVIF 却连续解不出来 → 掉回 WebP 重来一次。
+   *
+   * 为什么值得写这一道：**帧解码失败是不报错的**，那一格只会永远没有画面，
+   * 用户看到的是「首页黑了 / 帧不出现」，而且没有任何控制台错误可查。
+   * 触发场景很窄（老 Safari、被中间层改写了 content-type 的代理），
+   * 但代价不对称：真踩上就是整站首屏不可用。
+   *
+   * 挂在 `loadedCount` 上（它变化会触发重渲染），所以不需要额外定时器。
+   */
+  useEffect(() => {
+    if (frameFormat !== 'avif') return;
+    if (loadedCount > 0 && framesErrored.current >= 3) setFrameFormat('webp');
+  }, [frameFormat, loadedCount, framesErrored]);
 
   /**
    * 只负责**后台预热**（那 6 个 GLB），不再参与首屏的进度与放行。
@@ -256,13 +356,30 @@ function App() {
     else if (entered) lenis.start();
   }, [stage, entered]);
 
-  // 进工作室前预热背景资源：StudioLensBackground 的 <video> 只在 stage 切到 'studio'
-  // 时才挂载，若等到点 OPEN 才加载，进门后会卡在「静帧海报 → 视频缓冲」的空窗，
-  // 观感就是用户说的「背景出现得很慢」。这里在首页 idle 时把循环视频 + 首帧海报
-  // 先拉进缓存，进门即播、镜头水波揭示立刻就位。
-  // 不卡加载页、不计入进度，且只在真·首页 + 已进场后做，绝不抢占首页关键资源。
+  /**
+   * 进工作室前预热背景资源：StudioLensBackground 的 `<video>` 只在 stage 切到 'studio'
+   * 时才挂载，若等到点 OPEN 才加载，进门后会卡在「静帧海报 → 视频缓冲」的空窗，
+   * 观感就是用户说的「背景出现得很慢」。这里在首页给循环视频 + 首帧海报预热。
+   * 不卡加载页、不计入进度。
+   *
+   * ⚠️ 2026-09-29 修了两处，都是实测出来的（`_audit-firstload.mjs`）：
+   *
+   *  ① **原来同一个 2.4MB 文件会下两遍 —— 首访 12.4MB 里有 4.85MB 是它，占 39%。**
+   *     因为它同时用**两套机制**拉同一个 URL：一个隐藏 `<video preload="auto">`
+   *     走 Media 管线，外加一条 `<link rel="prefetch" as="video">` 走 prefetch 管线。
+   *     注释里把后者写成「兜底：部分浏览器对隐藏 video 的预载优先级偏低」，
+   *     但**两套是同时发出的**，谁都没拿到字节时对方就起跑了 —— 于是各下一份。
+   *     实测 CDP 里就是两条记录：同 URL，type 分别是 `Media` 与 `Other`。
+   *     → 只留 `<video>` 那套（它填的正是真实 `<video>` 要复用的那份缓存）。
+   *
+   *  ② **它和序列帧抢带宽**。`requestIdleCallback` 只等**主线程**空闲，跟网络无关，
+   *     所以它在帧还在下的时候就起跑了 —— 实测 16 秒窗口里，帧下了 6.88MB、
+   *     它下了 4.85MB，两者在同一根 430KB/s 的管子上抢。而在首屏这条路径上，
+   *     帧才是决定推镜顺不顺的东西，工作室视频要等「滚完 300vh + 点 OPEN」才用得上。
+   *     → 门槛改成 `framesMostlyLoaded`，和那 6 个 GLB 用同一把闸（帧到 70% 才放行）。
+   */
   useEffect(() => {
-    if (stage !== 'home' || !entered) return;
+    if (stage !== 'home' || !entered || !framesMostlyLoaded) return;
     // 省流量 / 计费网络：不预拉 2.4MB 视频，进门后照常走海报→缓冲流程
     const conn = (navigator as unknown as { connection?: { saveData?: boolean } }).connection;
     if (conn?.saveData) return;
@@ -276,26 +393,13 @@ function App() {
       const poster = new Image();
       poster.src = `${base}studio/studio-poster.jpg`;
       // 隐藏 video 预热 HTTP / 字节区间缓存：StudioLensBackground 里同源 <video> 秒播
+      // ⚠️ 别再加 `<link rel=prefetch>` —— 见上面 ①，那会让这 2.4MB 下两遍。
       const v = document.createElement('video');
       v.preload = 'auto';
       v.muted = true;
       v.playsInline = true;
       v.src = `${base}studio/studio-loop.mp4`;
       v.load();
-      // 兜底：prefetch link，部分浏览器对隐藏 video 的预载优先级偏低
-      const link = document.createElement('link');
-      link.rel = 'prefetch';
-      link.as = 'video';
-      link.type = 'video/mp4';
-      link.href = `${base}studio/studio-loop.mp4`;
-      document.head.appendChild(link);
-      window.setTimeout(() => {
-        try {
-          document.head.removeChild(link);
-        } catch {
-          /* 已移除 */
-        }
-      }, 10000);
     });
     return () => {
       if ('cancelIdleCallback' in window) {
@@ -306,7 +410,7 @@ function App() {
         }
       }
     };
-  }, [stage, entered]);
+  }, [stage, entered, framesMostlyLoaded]);
 
   const setDownBlocked = useCallback((blocked: boolean) => {
     downBlockedRef.current = blocked;

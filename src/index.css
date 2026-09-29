@@ -5569,6 +5569,17 @@ body.is-diary-dragging * {
   gap: 12px;
   margin-top: 10px;
 }
+/* 空态：种子/发布数据里某一类没有任何条目时，别留一块纯空白（会被当成页面坏了） */
+.about-insp-empty {
+  margin: 18px 0 4px;
+  padding: 16px 0 18px;
+  text-align: center;
+  font-family: 'Zpix', 'NanoOldSongA', monospace;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  color: var(--ab-mint-ink);
+  opacity: 0.5;
+}
 .about-insp-lcard {
   position: relative;
   background: #fffdf6;

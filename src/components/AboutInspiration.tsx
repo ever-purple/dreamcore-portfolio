@@ -2005,6 +2005,20 @@ export function AboutInspiration() {
   const subOf = (catId: string) => sub[catId] ?? DEFAULT_SUB[catId];
   const pickSub = (catId: string, id: string) => setSub((s) => ({ ...s, [catId]: id }));
 
+  /** 当前页签实际有几条 —— 用来决定要不要显示「这一类还没有收藏」。
+   *  ⚠️ 必须跟着上面「内容区」那段三元链一起改：页签 → 集合的映射写了两遍，
+   *  漏改一处就会出现「有卡片却说空」/「空面板却没提示」。 */
+  const activeCount =
+    active === 'cases'
+      ? cases.length
+      : active === 'knowledge'
+        ? knowledge.length
+        : active === 'ai_lab'
+          ? projects.length
+          : subOf(active) === 'vision'
+            ? vision.length
+            : music.length;
+
   const renderRich = (catId: string) => {
     const cur = subOf(catId);
     if (catId === 'aesthetics') {
@@ -2110,6 +2124,13 @@ export function AboutInspiration() {
       ) : (
         renderRich(active)
       )}
+
+      {/* 空态提示：种子数据里除 projects 外都是空数组，切到那些页签就是一块纯空白面板，
+          看起来和「页面坏了 / 内容丢了」一模一样（2026-09-30 用户就是这么误判的）。
+          作者模式下本来就有录入框，不需要这行。 */}
+      {!isAdmin && activeCount === 0 ? (
+        <p className="about-insp-empty">这一类还没有收藏</p>
+      ) : null}
 
       <InspLightbox item={zoom} onClose={() => setZoom(null)} />
     </div>

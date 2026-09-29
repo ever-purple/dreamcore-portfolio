@@ -156,7 +156,10 @@ export async function ensureProjectWriter(): Promise<boolean> {
 /** 磁盘上的那份 JSON。不存在（还没存过）返回 null。 */
 async function loadFromProjectFile(): Promise<Envelope | null> {
   try {
-    const res = await fetch(`/insp/data.json?t=${Date.now()}`, { cache: 'no-store' });
+    // dev 下作者刚写完这个文件，必须绕过缓存；线上它是随部署一起下发的静态文件，
+    // 走正常缓存即可（顶多多一次 304，比每次真下一遍 3.6KB 划算）。
+    const url = import.meta.env.DEV ? `/insp/data.json?t=${Date.now()}` : '/insp/data.json';
+    const res = await fetch(url, import.meta.env.DEV ? { cache: 'no-store' } : undefined);
     if (!res.ok) return null;
     const parsed: unknown = await res.json();
     const store = sanitizeStore((parsed as Envelope)?.store);
@@ -194,15 +197,31 @@ async function loadFromRemote(): Promise<Envelope | null> {
  * 共享同一个 Promise，第二个调用者就会一直等到真正读完。
  */
 function loadHydrated(): Promise<void> {
-  if (USE_REMOTE) {
-    return loadFromRemote().then((got) => {
-      // 远端返回空（store:null）时保留本地那层，别把浏览器里的内容清掉
-      if (got) current = got;
-    });
-  }
-  return loadFromProjectFile().then((disk) => {
+  return (async () => {
+    // ① 云端（作者在线上改内容后写进 Redis 的那份）。有就一定以它为准。
+    if (USE_REMOTE) {
+      const remote = await loadFromRemote().catch(() => null);
+      if (remote) {
+        current = remote;
+        return;
+      }
+    }
+    // ② 云端是空的（store:null —— 作者从没同步过 / Redis 里那条丢了）时，回落到仓库里的
+    //    「发布数据」`/insp/data.json`（构建时原样拷进 dist/，两个入口都能读到）。
+    //
+    //    ⚠️ 2026-09-30 修：以前这一整段在 PROD 下被 `if (USE_REMOTE) {...}` 直接短路，
+    //    `loadFromProjectFile()` 只有 dev 才会走 —— 也就是**线上永远不读 data.json**，
+    //    访客看到的是编译进 bundle 的种子 MOCK。而种子只同步了 projects（5 条），
+    //    cases / vision / music / skills / knowledge **全是空数组**，
+    //    于是「案例收集癖」（默认页签）在线上永远是**一块空白面板**。
+    //    这也正是「两个入口内容不一样」的机制：谁那台浏览器 localStorage 里恰好躺着
+    //    一份旧快照，谁就有内容；换台机器 / 换个入口就是空的。
+    //
+    //    为什么仍然保留 `savedAt` 比较：作者在真人浏览器里刚录完、云端写失败时，
+    //    本地那份是最新的，不能被这份发布数据盖掉（宁可暂时两边不一致，也不能丢数据）。
+    const disk = await loadFromProjectFile().catch(() => null);
     if (disk && disk.savedAt >= current.savedAt) current = disk;
-  });
+  })();
 }
 
 export function hydrate(): Promise<void> {

@@ -124,17 +124,17 @@ export const WORK_PAGES: Record<string, WorkPageCopy> = {
       // P6 市场动向 / P7 消费者洞察 / P8 产品定位 / P9 SWOT
       // 2026-09-15 用户要求：双排
       background: {
-        images: [`${GX}p06-market.jpg`, `${GX}p07-consumer.jpg`, `${GX}p08-product.jpg`, `${GX}p09-swot.jpg`],
+        images: [`${GX}p06-market.webp`, `${GX}p07-consumer.webp`, `${GX}p08-product.webp`, `${GX}p09-swot.webp`],
         layout: 'grid2',
       },
       // 创意洞察（站内原「项目洞察及策略」）—— P3 创意来源·月洞门 / P11 主题推导 / P12 Road Map
       insight: {
-        images: [`${GX}p03-overview.jpg`, `${GX}p11-theme.jpg`, `${GX}p12-roadmap.jpg`],
+        images: [`${GX}p03-overview.webp`, `${GX}p11-theme.webp`, `${GX}p12-roadmap.webp`],
       },
       // Key message —— P2 前言 / P29 结尾页
       // 2026-09-15 用户要求：双排
       message: {
-        images: [`${GX}p02-preface.jpg`, `${GX}p29-ending.jpg`],
+        images: [`${GX}p02-preface.webp`, `${GX}p29-ending.webp`],
         layout: 'grid2',
       },
       // 项目亮点 —— 2026-09-14 按用户要求删掉配图（原 P3/P11 与「创意洞察」那屏重复）。
@@ -146,11 +146,11 @@ export const WORK_PAGES: Record<string, WorkPageCopy> = {
       // 但 key 已就位 —— 哪天在编辑器里加回来，配图会自动挂上，不会再错位。
       // 项目角色 —— P30 附录调查问卷（N=316 的数据底座）
       role: {
-        images: [`${GX}p30-questionnaire.jpg`],
+        images: [`${GX}p30-questionnaire.webp`],
       },
       // 观夏 × naze naze「织月闻香」—— P21 联名页 / P25 创意设计执行·长尾期
       collab: {
-        images: [`${GX}p21-nazenaze.jpg`, `${GX}p25-tail.jpg`],
+        images: [`${GX}p21-nazenaze.webp`, `${GX}p25-tail.webp`],
       },
     },
     // 三步流程 —— 直接取自 PLAN_01「项目执行」里的「寻隙—破隙—归真」，
@@ -162,9 +162,9 @@ export const WORK_PAGES: Record<string, WorkPageCopy> = {
         title: '预热 · 寻隙',
         body: '6.25–7.5　话题 #我们的奥德赛时期、三行寻隙诗征集、「心事寄存处」线下快闪。',
         images: [
-          `${import.meta.env.BASE_URL}works/guanxia/p14-rainy-season-w1600.jpg`,
-          `${import.meta.env.BASE_URL}works/guanxia/p15-poem-w1600.jpg`,
-          `${import.meta.env.BASE_URL}works/guanxia/p16-letter-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/guanxia/p14-rainy-season-w1600.webp`,
+          `${import.meta.env.BASE_URL}works/guanxia/p15-poem-w1600.webp`,
+          `${import.meta.env.BASE_URL}works/guanxia/p16-letter-w1600.webp`,
         ],
       },
       {
@@ -174,7 +174,7 @@ export const WORK_PAGES: Record<string, WorkPageCopy> = {
         images: [
           `${import.meta.env.BASE_URL}works/guanxia/p17-roundtable-w1600.jpg`,
           `${import.meta.env.BASE_URL}works/guanxia/p18-podcast-w1600.jpg`,
-          `${import.meta.env.BASE_URL}works/guanxia/p19-aranya-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/guanxia/p19-aranya-w1600.webp`,
         ],
       },
       {
@@ -182,7 +182,7 @@ export const WORK_PAGES: Record<string, WorkPageCopy> = {
         title: '长尾 · 归真',
         body: '7.21–8.25　上海观夏闲庭东方美学艺术展（四展区）、观夏 × naze naze「织月闻香」非遗联名。',
         images: [
-          `${import.meta.env.BASE_URL}works/guanxia/p20-exhibition-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/guanxia/p20-exhibition-w1600.webp`,
           `${import.meta.env.BASE_URL}works/guanxia/p21-nazenaze-w1600.jpg`,
         ],
       },
@@ -206,9 +206,9 @@ export const WORK_PAGES: Record<string, WorkPageCopy> = {
       // 项目背景：删掉旧的第一张图，换成 P7/P9/P15/P16，双排（2×2）摆放
       background: {
         images: [
-          `${import.meta.env.BASE_URL}works/shenzhou/p07-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/shenzhou/p07-w1600.webp`,
           `${import.meta.env.BASE_URL}works/shenzhou/p09-w1600.jpg`,
-          `${import.meta.env.BASE_URL}works/shenzhou/p15-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/shenzhou/p15-w1600.webp`,
           `${import.meta.env.BASE_URL}works/shenzhou/p16-w1600.jpg`,
         ],
         layout: 'grid2',
@@ -228,7 +228,7 @@ export const WORK_PAGES: Record<string, WorkPageCopy> = {
           {
             title: '服务号',
             images: [
-              `${import.meta.env.BASE_URL}works/shenzhou/p27-w1600.jpg`,
+              `${import.meta.env.BASE_URL}works/shenzhou/p27-w1600.webp`,
               `${import.meta.env.BASE_URL}works/shenzhou/p28-w1600.jpg`,
               `${import.meta.env.BASE_URL}works/shenzhou/p29-w1600.jpg`,
             ],
@@ -254,7 +254,7 @@ export const WORK_PAGES: Record<string, WorkPageCopy> = {
           {
             title: '小红书 & 短视频',
             images: [
-              `${import.meta.env.BASE_URL}works/shenzhou/p59-w1600.jpg`,
+              `${import.meta.env.BASE_URL}works/shenzhou/p59-w1600.webp`,
               `${import.meta.env.BASE_URL}works/shenzhou/p60-w1600.jpg`,
               `${import.meta.env.BASE_URL}works/shenzhou/p62-w1600.jpg`,
               `${import.meta.env.BASE_URL}works/shenzhou/p63-w1600.jpg`,
@@ -290,9 +290,9 @@ export const WORK_PAGES: Record<string, WorkPageCopy> = {
         body: '苏超爆火期间以「州」字玩梗借势，接住全民话题的流量。',
         images: [
           `${import.meta.env.BASE_URL}works/shenzhou/p81-w1600.jpg`,
-          `${import.meta.env.BASE_URL}works/shenzhou/p82-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/shenzhou/p82-w1600.webp`,
           `${import.meta.env.BASE_URL}works/shenzhou/p83-w1600.jpg`,
-          `${import.meta.env.BASE_URL}works/shenzhou/p84-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/shenzhou/p84-w1600.webp`,
         ],
       },
     ],
@@ -317,7 +317,7 @@ export const WORK_PAGES: Record<string, WorkPageCopy> = {
       // 2026-09-15 用户要求：双排摆放
       insight: {
         images: [
-          `${import.meta.env.BASE_URL}works/chiwei/p05-consumer-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/chiwei/p05-consumer-w1600.webp`,
           `${import.meta.env.BASE_URL}works/chiwei/p08-theme-w1600.jpg`,
         ],
         layout: 'grid2',
@@ -327,11 +327,11 @@ export const WORK_PAGES: Record<string, WorkPageCopy> = {
         images: [],
       },
       highlight: {
-        images: [`${import.meta.env.BASE_URL}works/chiwei/p10-roadmap-w1600.jpg`],
+        images: [`${import.meta.env.BASE_URL}works/chiwei/p10-roadmap-w1600.webp`],
       },
       role: {
         images: [
-          `${import.meta.env.BASE_URL}works/chiwei/p19-tree-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/chiwei/p19-tree-w1600.webp`,
         ],
       },
     },
@@ -343,8 +343,8 @@ export const WORK_PAGES: Record<string, WorkPageCopy> = {
         body: '立春 2.4–2.11：以相识为契机提供社交途径，认识懂生活懂你的人，一起约定过春天。',
         // 2026-09-15 用户要求：春有约换成 P11-12
         images: [
-          `${import.meta.env.BASE_URL}works/chiwei/p11-spring-w1600.jpg`,
-          `${import.meta.env.BASE_URL}works/chiwei/p12-dinglingling-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/chiwei/p11-spring-w1600.webp`,
+          `${import.meta.env.BASE_URL}works/chiwei/p12-dinglingling-w1600.webp`,
         ],
       },
       {
@@ -353,8 +353,8 @@ export const WORK_PAGES: Record<string, WorkPageCopy> = {
         body: '雨水 2.12–2.19：以相恋为情感输出点，通过情侣间默默无闻的爱，输出品牌默默陪伴与产品「润」的特点。',
         // 2026-09-15 用户要求：丝雨润换成 P13-15
         images: [
-          `${import.meta.env.BASE_URL}works/chiwei/p13-rain-w1600.jpg`,
-          `${import.meta.env.BASE_URL}works/chiwei/p14-gorun-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/chiwei/p13-rain-w1600.webp`,
+          `${import.meta.env.BASE_URL}works/chiwei/p14-gorun-w1600.webp`,
           `${import.meta.env.BASE_URL}works/chiwei/p15-kol-w1600.jpg`,
         ],
       },
@@ -365,7 +365,7 @@ export const WORK_PAGES: Record<string, WorkPageCopy> = {
         // 2026-09-15 用户要求：万物生换成 P16-17
         images: [
           `${import.meta.env.BASE_URL}works/chiwei/p16-grow-w1600.jpg`,
-          `${import.meta.env.BASE_URL}works/chiwei/p17-rainstill-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/chiwei/p17-rainstill-w1600.webp`,
         ],
       },
     ],
@@ -414,7 +414,7 @@ export const WORK_PAGES: Record<string, WorkPageCopy> = {
         images: [
           `${import.meta.env.BASE_URL}works/kuaike/p16-color-w1600.jpg`,
           `${import.meta.env.BASE_URL}works/kuaike/p19-style-w1600.jpg`,
-          `${import.meta.env.BASE_URL}works/kuaike/p28-storyboard-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/kuaike/p28-storyboard-w1600.webp`,
         ],
       },
     },
@@ -427,9 +427,9 @@ export const WORK_PAGES: Record<string, WorkPageCopy> = {
         body: '失恋就像得了一场重感冒，让人头痛欲裂、无法呼吸。SUPER：这个不行就下一个。',
         // 2026-09-15 用户要求：图换成 P6-8
         images: [
-          `${import.meta.env.BASE_URL}works/kuaike/p06-script1a-w1600.jpg`,
-          `${import.meta.env.BASE_URL}works/kuaike/p07-script1b-w1600.jpg`,
-          `${import.meta.env.BASE_URL}works/kuaike/p08-script1c-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/kuaike/p06-script1a-w1600.webp`,
+          `${import.meta.env.BASE_URL}works/kuaike/p07-script1b-w1600.webp`,
+          `${import.meta.env.BASE_URL}works/kuaike/p08-script1c-w1600.webp`,
         ],
       },
       {
@@ -438,9 +438,9 @@ export const WORK_PAGES: Record<string, WorkPageCopy> = {
         body: '不想去的酒局，偏偏撞上重感冒。SUPER：爱你所爱拒你所恶，锅我背了你放肆去 high。',
         // 2026-09-15 用户要求：图换成 P9-11
         images: [
-          `${import.meta.env.BASE_URL}works/kuaike/p09-script2a-w1600.jpg`,
-          `${import.meta.env.BASE_URL}works/kuaike/p10-script2b-w1600.jpg`,
-          `${import.meta.env.BASE_URL}works/kuaike/p11-script2c-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/kuaike/p09-script2a-w1600.webp`,
+          `${import.meta.env.BASE_URL}works/kuaike/p10-script2b-w1600.webp`,
+          `${import.meta.env.BASE_URL}works/kuaike/p11-script2c-w1600.webp`,
         ],
       },
       {
@@ -449,8 +449,8 @@ export const WORK_PAGES: Record<string, WorkPageCopy> = {
         body: '面试前一晚突然重感冒。SUPER：事到如今先睡一觉，明天才能活力满满。',
         // 2026-09-15 用户要求：图换成 P12-13
         images: [
-          `${import.meta.env.BASE_URL}works/kuaike/p12-script3a-w1600.jpg`,
-          `${import.meta.env.BASE_URL}works/kuaike/p13-script3b-w1600.jpg`,
+          `${import.meta.env.BASE_URL}works/kuaike/p12-script3a-w1600.webp`,
+          `${import.meta.env.BASE_URL}works/kuaike/p13-script3b-w1600.webp`,
         ],
       },
     ],

@@ -161,7 +161,7 @@ function useToday() {
 }
 
 /** 小票上沿的贴纸（用户 2026-09-22 给的 3.png 抠图；位置照参考图里那颗小蓝点） */
-const STICKER_SRC = `${import.meta.env.BASE_URL}media/mascot-sticker.png`;
+const STICKER_SRC = `${import.meta.env.BASE_URL}media/mascot-sticker.webp`;
 
 /**
  * 把小节正文按**句末标点**断行 —— 兜底用，只在 text 里没有显式换行时才走这条路。

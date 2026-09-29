@@ -490,7 +490,7 @@ function LinkAddBox({ onAdd }: { onAdd: (item: LinkItem) => void }) {
     onAdd({
       id: `link-${Date.now()}`,
       title: draft.title.trim() || '未命名收藏',
-      cover: draft.cover.trim() || '/about/banner-visual.jpeg',
+      cover: draft.cover.trim() || '/about/banner-visual.webp',
       link,
       tags: tags.length ? tags : undefined,
     });
@@ -682,7 +682,7 @@ function ProjectAddForm({ onAdd }: { onAdd: (item: ProjectItem) => void }) {
     onAdd({
       id: `projects-${Date.now()}`,
       name: name.trim(),
-      cover: cover || '/about/banner-visual.jpeg',
+      cover: cover || '/about/banner-visual.webp',
       tags: tagList,
       desc: desc.trim() || undefined,
       link: link.trim() || undefined,

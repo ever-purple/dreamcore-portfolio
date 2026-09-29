@@ -439,7 +439,7 @@ const COVER_POOL = [
   '/frames-sm/0026.webp',
   '/frames-sm/0051.webp',
   '/frames-sm/0076.webp',
-  '/about/banner-visual.jpeg',
+  '/about/banner-visual.webp',
   '/about/bg-pattern.webp',
 ];
 

@@ -335,22 +335,22 @@ function SectionPhotos({ entry, sectionIndex }: { entry: DiaryEntry; sectionInde
     <div className="dx-photos-sec">
       <figure className="dx-map">
         <img
-          src="/journal/photos/xinbai-spring.png"
+          src="/journal/photos/xinbai-spring.webp"
           alt="踏春主题思维导图 · 把春天吃进梦里"
           onClick={(e) => {
             e.stopPropagation();
-            openImageZoom('/journal/photos/xinbai-spring.png', '踏春主题思维导图 · 把春天吃进梦里');
+            openImageZoom('/journal/photos/xinbai-spring.webp', '踏春主题思维导图 · 把春天吃进梦里');
           }}
         />
         <figcaption className="dx-cap">踏春 · 把春天吃进梦里</figcaption>
       </figure>
       <figure className="dx-map">
         <img
-          src="/journal/photos/xinbai-women.png"
+          src="/journal/photos/xinbai-women.webp"
           alt="妇女节策划思维导图 · 非袖珍人生"
           onClick={(e) => {
             e.stopPropagation();
-            openImageZoom('/journal/photos/xinbai-women.png', '妇女节策划思维导图 · 非袖珍人生');
+            openImageZoom('/journal/photos/xinbai-women.webp', '妇女节策划思维导图 · 非袖珍人生');
           }}
         />
         <figcaption className="dx-cap">妇女节 · 非袖珍人生</figcaption>
@@ -396,14 +396,14 @@ function SectionPage({
       </El>
 
       {/* 2026-09-24 用户：「采用这个胶带素材放在标题下面」——
-          真实胶带 PNG（藕粉实心，gen-tape-solid-lotus.png）贴在标题正下方，
+          真实胶带 PNG（藕粉实心，gen-tape-solid-lotus.webp）贴在标题正下方，
           做成可登记的结构元素，编辑态能单独选中 / 拖动 / 缩放。纯装饰、不进灯箱。 */}
       <El
         slot="tapetitle"
         label="标题胶带"
         as="img"
         className="dx-tape-title"
-        src="/journal/editor/gen-tape-solid-lotus.png"
+        src="/journal/editor/gen-tape-solid-lotus.webp"
         alt="装饰胶带"
       />
 

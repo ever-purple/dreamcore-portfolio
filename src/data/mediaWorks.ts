@@ -111,7 +111,7 @@ export const MEDIA_WORKS: MediaWork[] = [
     kind: 'video',
     aspect: 1020 / 1920, // 竖版
     channel: 'portrait',
-    poster: `${M}yike-1020.jpg`,
+    poster: `${M}yike-1020.webp`,
     video: `${M}yike-1020.mp4`,
   },
   {
@@ -121,7 +121,7 @@ export const MEDIA_WORKS: MediaWork[] = [
     kind: 'video',
     aspect: 1360 / 2560, // 竖版
     channel: 'portrait',
-    poster: `${M}yike-0814.jpg`,
+    poster: `${M}yike-0814.webp`,
     video: `${M}yike-0814.mp4`,
   },
   {

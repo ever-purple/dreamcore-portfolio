@@ -604,7 +604,7 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
         : (cb: () => void) => window.setTimeout(cb, 1200);
     idle(() => {
       [
-        'about/banner-visual.jpeg',
+        'about/banner-visual.webp',
         'about/bg-pattern.webp',
         'about/banner-sticker.png',
         'about/avatar.webp',

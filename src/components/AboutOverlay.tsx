@@ -174,7 +174,7 @@ export function AboutOverlay({ open, onClose, onHoverChange, greenOs = false, bo
       <div className="about-shell">
         <header className="about-banner">
           {/* 纯视觉 banner：只用图片，不放任何文字/标签 */}
-          <img src="/about/banner-visual.jpeg" alt="" className="about-banner-visual" aria-hidden="true" />
+          <img src="/about/banner-visual.webp" alt="" className="about-banner-visual" aria-hidden="true" />
           <Sparkles count={10} seed={7} />
         </header>
 

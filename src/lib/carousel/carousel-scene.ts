@@ -292,9 +292,9 @@ export function createCarousel(
     textures.add(t);
     return t;
   }
-  const painted = texture(asset('carousel-panels.png')),
+  const painted = texture(asset('carousel-panels.webp')),
     columnPaint = texture(asset('carousel-column.png')),
-    basePaint = texture(asset('carousel-base.png'));
+    basePaint = texture(asset('carousel-base.webp'));
   function panels(
     repeat: number,
     source: THREE.Texture = painted,

@@ -90,7 +90,7 @@ export type CopyProject = {  /** 稳定 id，用于 React key */
    * 小票上沿那张贴纸（可选）。
    * 2026-09-22 用户：「三张贴纸，一个文案对应一个」——
    * 所以贴纸是**每条自己的**，不再是全站共用一张。不填则回落到
-   * `public/media/mascot-sticker.png`（营养快线用的就是那张）。
+   * `public/media/mascot-sticker.webp`（营养快线用的就是那张）。
    */
   sticker?: string;
   /** 循环视频底（可选，优先级最高；静音自动播放） */
@@ -145,8 +145,8 @@ export const COPY_PROJECTS: CopyProject[] = [
     mood: '活力 · 碰撞 · 夏日',
     tone: 'warm',
     tags: ['#品牌文案', '#短文案', '#饮品'],
-    photo: `${M}photo-nutrition-express.jpg`,
-    cover: `${M}nutrition-express-2.png`,
+    photo: `${M}photo-nutrition-express.webp`,
+    cover: `${M}nutrition-express-2.webp`,
     blurb: '营养快线 = 果汁 + 牛奶，怀旧情怀上大分！',
     /* 明细三项合计 ¥5.00 —— 对齐 500ml 装营养快线的市价。 */
     receiptItems: [
@@ -166,8 +166,8 @@ export const COPY_PROJECTS: CopyProject[] = [
     tone: 'fresh',
     tags: ['#品牌文案', '#短文案', '#植物饮'],
     photo: `${M}photo-yinlu.jpg`,
-    cover: `${M}yinlu-peanut-milk.png`,
-    sticker: `${M}sticker-yinlu.png`,
+    cover: `${M}yinlu-peanut-milk.webp`,
+    sticker: `${M}sticker-yinlu.webp`,
     blurb: '困在乳糖不耐受的井底，终于被一杯破壁豆奶接住。',
     /* 三项合计 ¥3.50 —— 对齐 250ml 装花生牛奶的市价。 */
     receiptItems: [
@@ -198,8 +198,8 @@ export const COPY_PROJECTS: CopyProject[] = [
     tags: ['#品牌文案', '#长文案', '#怀旧'],
     twoColumn: true,
     photo: `${M}photo-yumeijing.jpg`,
-    cover: `${M}yumeijing-cream.png`,
-    sticker: `${M}sticker-yumeijing.png`,
+    cover: `${M}yumeijing-cream.webp`,
+    sticker: `${M}sticker-yumeijing.webp`,
     blurb: '气味，是记忆的钥匙。',
     /* 三项合计 ¥4.00 —— 对齐 25g 袋装郁美净儿童霜的市价。 */
     receiptItems: [
@@ -230,8 +230,8 @@ export const COPY_PROJECTS: CopyProject[] = [
     tags: ['#品牌故事', '#山野', '#有机茶'],
     twoColumn: true,
     photo: `${M}photo-tea-rhyme.jpg`,
-    cover: `${M}tea-rhyme-glass.png`,
-    sticker: `${M}sticker-tea.png`,
+    cover: `${M}tea-rhyme-glass.webp`,
+    sticker: `${M}sticker-tea.webp`,
     blurb: '山野之声，自海拔之上而来。',
     /* 两项合计 ¥15.00 —— 高山有机茶一罐/一提的市价量级。 */
     receiptItems: [

@@ -95,7 +95,7 @@ export function GreenOsBoot({ onDone }: { onDone: () => void }) {
     const sleep = (ms: number) => new Promise<void>((r) => window.setTimeout(r, ms));
     const preload = () => {
       const imgPs = [
-        '/about/banner-visual.jpeg',
+        '/about/banner-visual.webp',
         '/about/bg-pattern.webp',
         '/about/banner-sticker.png',
         '/about/avatar.webp',

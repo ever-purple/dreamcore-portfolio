@@ -13596,7 +13596,7 @@ article.dx-sec1::before {
   position: absolute;
   inset: 0;
   z-index: -1;
-  background-image: url('/journal/papers/paper-dotnote.png');
+  background-image: url('/journal/papers/paper-dotnote.webp');
   background-size: 360px 274px;
   background-repeat: repeat;
   opacity: 0.28;

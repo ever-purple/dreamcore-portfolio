@@ -149,7 +149,7 @@ export const PROJECTS: ProjectItem[] = [
   // id 尾部时间戳 = GitHub 真实 starred_at，「从新到旧」排序靠它（见 byNewest）。
   {
     id: 'projects-1789558872000',
-    cover: '/insp/media/gh-pbakaus-impeccable.png',
+    cover: '/insp/media/gh-pbakaus-impeccable.webp',
     name: 'impeccable',
     tags: ['#设计语言', '#AI 设计'],
     desc: '关于哪方面：AI 辅助设计的「设计语言」。对什么有用：让 AI 产出界面前先套一层设计语言约束，去掉「AI 味」审美。',
@@ -159,7 +159,7 @@ export const PROJECTS: ProjectItem[] = [
   },
   {
     id: 'projects-1789558840000',
-    cover: '/insp/media/gh-nextlevelbuilder-ui-ux-pro-max-skill.png',
+    cover: '/insp/media/gh-nextlevelbuilder-ui-ux-pro-max-skill.webp',
     name: 'ui-ux-pro-max-skill',
     tags: ['#UI/UX', '#AI skill'],
     desc: '关于哪方面：UI/UX 设计 AI skill。对什么有用：做 Web / 移动 / 落地页 / React / Tailwind 界面时给 AI 注入设计智能，产出更专业的 UI。',
@@ -169,7 +169,7 @@ export const PROJECTS: ProjectItem[] = [
   },
   {
     id: 'projects-1788873504000',
-    cover: '/insp/media/gh-greensock-gsap-skills.png',
+    cover: '/insp/media/gh-greensock-gsap-skills.webp',
     name: 'gsap-skills',
     tags: ['#动效', '#GSAP'],
     desc: '关于哪方面：Web 动效 / GSAP 动画。对什么有用：写滚动动效、时间轴编排、插件用法时给 AI 注入 GSAP 官方最佳实践。',
@@ -179,7 +179,7 @@ export const PROJECTS: ProjectItem[] = [
   },
   {
     id: 'projects-1788873005000',
-    cover: '/insp/media/gh-img2threejs-img2threejs.png',
+    cover: '/insp/media/gh-img2threejs-img2threejs.webp',
     name: 'img2threejs',
     tags: ['#3D', '#Three.js'],
     desc: '关于哪方面：图片 → Three.js 3D 模型。对什么有用：把参考图 / 角色图转成可动画、可直接上网页的 3D 模型，省掉手工建模。',
@@ -189,7 +189,7 @@ export const PROJECTS: ProjectItem[] = [
   },
   {
     id: 'projects-1788700217000',
-    cover: '/insp/media/gh-MengTo-threeui.png',
+    cover: '/insp/media/gh-MengTo-threeui.webp',
     name: 'threeui',
     tags: ['#Three.js', '#UI 组件'],
     desc: '关于哪方面：Three.js / WebGL UI 组件目录。对什么有用：做 3D 网页界面时找现成的交互组件与源码参考。',

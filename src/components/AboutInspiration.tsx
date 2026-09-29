@@ -16,10 +16,12 @@ import {
   parseTags,
   removeItem,
   resetStore,
+  searchSongs,
   storageMode,
   updateItem,
   uploadFile,
   type CollectionKey,
+  type SongHit,
 } from '@/lib/contentApi';
 import { resolveIdbRefs } from '@/lib/blobStore';
 import { readAudioTags, type AudioTags } from '@/lib/audioTags';
@@ -1044,6 +1046,40 @@ function SongAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
 const MUSIC_PLATFORMS = new Set(['netease', 'qqmusic', 'spotify', 'apple']);
 
 /**
+ * 音乐录入表单的草稿。抽成具名类型是因为「按歌名搜歌」那条路要**绕过链接识别**
+ * 直接往草稿里写字段（来源站抓不到页面时，歌名靠作者给、元数据靠搜歌补）。
+ */
+type MusicDraft = {
+  title: string;
+  artist: string;
+  cover: string;
+  link: string;
+  embed: string;
+  platform: string;
+  genre: string;
+  /** 专辑名（网易云 / QQ 识别时带回；抓不到的来源站不暴露，通常空） */
+  album: string;
+  /** 识别时服务端顺手抓的歌词（LRC）。纯静态托管上没有后端，这里会是空的 */
+  lyrics: string;
+  /** 作者自己上传的音频地址。抓不到直链的来源，声音靠它 */
+  src: string;
+};
+
+/** 空白草稿（'搜歌' 在还没识别过链接时也能直接把字段填进来） */
+const EMPTY_SONG_DRAFT: MusicDraft = {
+  title: '',
+  artist: '',
+  cover: '',
+  link: '',
+  embed: '',
+  platform: '',
+  genre: '',
+  album: '',
+  lyrics: '',
+  src: '',
+};
+
+/**
  * 粘贴音乐链接 → 自动认歌名 / 歌手 / 封面 → 都能手改。
  *
  * 为什么是「分享链接」而不是「上传 mp3」：
@@ -1060,21 +1096,11 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
   const [note, setNote] = useState('');
   const audioRef = useRef<HTMLInputElement>(null);
   const [audioBusy, setAudioBusy] = useState(false);
-  const [draft, setDraft] = useState<{
-    title: string;
-    artist: string;
-    cover: string;
-    link: string;
-    embed: string;
-    platform: string;
-    genre: string;
-    /** 专辑名（网易云 / QQ 识别时带回；gequbao 不暴露，通常空） */
-    album: string;
-    /** 识别时服务端顺手抓的歌词（LRC）。纯静态托管上没有后端，这里会是空的 */
-    lyrics: string;
-    /** 作者自己上传的音频地址（Vercel Blob）。gequbao 这类拿不到直链的，靠它出声 */
-    src: string;
-  } | null>(null);
+  const [draft, setDraft] = useState<MusicDraft | null>(null);
+  /** 按歌名搜歌：输入词 / 结果（null = 还没搜过）/ 搜关键 */
+  const [search, setSearch] = useState('');
+  const [hits, setHits] = useState<SongHit[] | null>(null);
+  const [searchBusy, setSearchBusy] = useState(false);
 
   const reset = () => {
     setDraft(null);
@@ -1083,6 +1109,72 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
     setNote('');
     setBusy(false);
     setOpen(false);
+  };
+
+  /** 按歌名搜歌 —— 「来源站反爬、链接识别不出信息」时走这条（见 contentApi.searchSongs 的注释） */
+  const runSearch = () => {
+    const kw = search.trim();
+    if (!kw) {
+      setErr('先输入歌名（可以带上歌手），再点「搜歌」');
+      return;
+    }
+    setSearchBusy(true);
+    setErr('');
+    setNote('');
+    void (async () => {
+      try {
+        const list = await searchSongs(kw);
+        setHits(list);
+        setNote(
+          list.length
+            ? `搜到 ${list.length} 条，点一条自动填歌名 / 歌手 / 专辑 / 封面。`
+            : '没搜到。歌名可以直接手填，再把音频传上来就能播。',
+        );
+      } finally {
+        setSearchBusy(false);
+      }
+    })();
+  };
+
+  /**
+   * 用搜到的这一条填表。
+   *
+   * ⚠️ **只取元数据**：刻意不写 `link` / `embed` / `platform`。
+   * 这条路的适用场景就是「来源站抓不到」，所以站内必须保持零来源痕迹 ——
+   * 既不给跳回来源站的链接，也不嵌半残的第三方播放器。
+   * 声音一律来自作者上传的音频文件（下面那个「上传音频」）。
+   */
+  const pickHit = (h: SongHit) => {
+    setHits(null);
+    setSearchBusy(true);
+    setErr('');
+    void (async () => {
+      // 再问一次单曲详情：搜索结果接口不给歌词，这里顺带把 LRC 带回来
+      let extra: { album?: string; cover?: string; lyrics?: string; artist?: string } = {};
+      try {
+        const meta = await fetchLinkMeta(`https://music.163.com/#/song?id=${h.songId}`);
+        if (meta.platform === 'netease') {
+          extra = {
+            album: typeof meta.extra?.album === 'string' ? meta.extra.album : undefined,
+            cover: meta.cover || undefined,
+            lyrics: typeof meta.extra?.lyric === 'string' ? meta.extra.lyric : undefined,
+            artist: (meta.extra?.artist as string | undefined) || undefined,
+          };
+        }
+      } catch {
+        /* 详情拿不到就只用搜索结果那几项，不影响填表 */
+      }
+      setDraft((d) => ({
+        ...(d ?? EMPTY_SONG_DRAFT),
+        title: h.title,
+        artist: extra.artist || h.artist,
+        album: extra.album || h.album || '',
+        cover: extra.cover || h.cover,
+        lyrics: extra.lyrics || '',
+      }));
+      setNote('已补全歌名 / 歌手 / 专辑 / 封面。想在本站听到声音，点下面的「上传音频」传你自己已下载的文件。');
+      setSearchBusy(false);
+    })();
   };
 
   const detect = (raw?: string) => {
@@ -1103,11 +1195,6 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
         // 歌曲宝：站内不显示来源、也不跳回原站。能认到信息就存成「无来源普通歌」，
         // 认不到（被 Cloudflare 拦）就引导作者上传自己已下载的音频。
         if (meta.platform === 'gequbao') {
-          const recognized = !!(
-            meta.title ||
-            meta.cover ||
-            (typeof meta.extra?.lyric === 'string' && meta.extra.lyric)
-          );
           // ⚠️ `??` 与 `||` 不能混用（TS5076）—— 右侧那串必须整体括起来
           const artist =
             (meta.extra?.artist as string | undefined) ??
@@ -1125,9 +1212,9 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
             src: '',
           });
           setNote(
-            recognized
-              ? '已从歌曲宝识别到歌名 / 歌手 / 封面 / 歌词，本站不显示来源。想真播放，点下面的「上传音频」传你已下载的文件即可。'
-              : '歌曲宝 有 Cloudflare 防护，本站无法自动识别，也拿不到它的音频（需过验证码）。请直接点下面的「上传音频」把你已下载的文件传上来播放，全程不显示任何来源。',
+            meta.title || meta.cover
+              ? '已识别到歌名 / 歌手 / 封面，本站不显示来源。想真播放，点下面的「上传音频」传你已下载的文件即可。'
+              : '这个站点有按来源 IP 分级的反爬防护：你本机（npm run dev）能自动认出歌名 / 歌手 / 封面 / 歌词，线上机房 IP 一律被拦 —— 所以线上认不出歌名不是部署的问题。两种办法：① 在本地 dev 里粘这个链接，识别完再上传音频；② 就在这儿用上面的「按歌名搜歌」填一次歌名自动补全，再用下面的「上传音频」传你自己已下载的文件。声音一律来自你上传的文件，站内不显示任何来源，也不会留下跳回来源站的链接。',
           );
           return;
         }
@@ -1164,7 +1251,7 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
         );
       } catch {
         // 识别服务全挂也别丢掉粘贴进来的播放器代码 —— 有它就播得出声，只是歌名要手填
-        const isGq = /gequbao\.com/.test(target);
+        const isGq = /(^|\.)gequbao\.(com|net)/.test(target);
         setErr(isGq ? '' : '自动识别失败，歌名 / 歌手可以直接手填');
         setDraft({
           title: '',
@@ -1181,7 +1268,7 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
         });
         if (isGq) {
           setNote(
-            '识别服务暂时连不上歌曲宝。请直接点下面的「上传音频」把你已下载的文件传上来播放，本站不显示任何来源。',
+            '识别服务暂时连不上这个站点。请用上面的「按歌名搜歌」填一次歌名自动补全信息，再用下面的「上传音频」传你自己已下载的文件 —— 信息与声音都有，且全程不显示任何来源。',
           );
         }
       } finally {
@@ -1242,6 +1329,41 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
   return (
     <div className="about-insp-form about-insp-form-song">
       <p className="about-insp-form-title">🔗 分享音乐链接（不上传音频文件）</p>
+
+      {/* 按歌名搜歌 —— 放在最前面是因为它比粘链接更省事：知道歌名就行。
+          而且对「来源站有反爬、服务端读不到页面」的链接来说，这是**唯一**能自动
+          认出歌曲信息（歌名/歌手/专辑/封面/歌词）的路径。只取元数据，不取音频。 */}
+      <div className="about-insp-searchrow">
+        <input
+          className="about-insp-input"
+          value={search}
+          placeholder="🔍 按歌名搜歌（可带歌手），如「起风了 买辣椒也用券」"
+          onChange={(e) => setSearch(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') runSearch();
+          }}
+        />
+        <button type="button" className="about-insp-btn" onClick={runSearch} disabled={searchBusy}>
+          {searchBusy ? '搜索中…' : '搜歌'}
+        </button>
+      </div>
+      {hits && hits.length ? (
+        <ul className="about-insp-hits">
+          {hits.map((h) => (
+            <li key={h.songId}>
+              <button type="button" className="about-insp-hit" onClick={() => pickHit(h)}>
+                <span className="about-insp-hit-thumb">
+                  {h.cover ? <img src={h.cover} alt="" loading="lazy" decoding="async" /> : null}
+                </span>
+                <span className="about-insp-hit-text">
+                  <b>{h.title}</b>
+                  <em>{h.artist || '未知歌手'}</em>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
 
       <input
         className="about-insp-input"

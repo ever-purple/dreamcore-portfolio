@@ -594,6 +594,23 @@ export async function fetchLinkMeta(rawUrl: string): Promise<LinkMeta> {
   const url = normalizeUrl(rawUrl);
   const enc = encodeURIComponent(url);
 
+  /**
+   * gequbao（歌曲宝）单独处理，但**不是提前短路** —— 它在本机 IP 下是能解析出来的。
+   *
+   * 它整站在 Cloudflare 的机器人防护后面，防护是**按来源 IP 分级**的：
+   *   · 作者这台机器的住宅 IP：`gequbaoMeta()` 能正常拿到 `window.appData`
+   *     （2026-09-30 实测解析出歌名 + 酷我 CDN 的封面）—— 所以 **dev（`npm run dev`）
+   *     下粘贴同一个链接是可以自动识别的**，这条路必须留着；
+   *   · Vercel 的机房 IP：稳定被拦，接口三次复测全是 `no-meta`；r.jina.ai / allorigins
+   *     (522) / corsproxy(403) / microlink(400) 四个公共代理也全被拦，无头浏览器停在
+   *     「请稍候…」。所以线上认不出歌名**不是部署的问题**。
+   *
+   * 因此这里只做一件事：**别让它掉进最底下的 slug 兜底**。那条兜底会把路径尾段
+   * `2089469` 判成短码、退回域名 —— 卡片标题变成 "gequbao.com"，`link` 还存着原链接，
+   * 卡片上就多一个「去原站听」跳回来源站。这正是用户说的「出现了网站歌曲宝的信息」。
+   */
+  const isGq = /^gequbao\.(com|net)$/i.test(hostOf(url));
+
   // 1) 本地服务端通道（vite dev 才有）
   const local = await fetchLocalLinkMeta(url);
   if (local && (local.title || local.cover || local.embed)) {
@@ -629,42 +646,100 @@ export async function fetchLinkMeta(rawUrl: string): Promise<LinkMeta> {
   }
 
   // 3) microlink：免费额度内最省事，返回 title / image / logo
-  try {
-    const r = await timedFetch(`https://api.microlink.io/?url=${enc}`);
-    if (r.ok) {
-      const j: unknown = await r.json();
-      const d = (j as { data?: { title?: string; image?: { url?: string }; logo?: { url?: string } } })
-        ?.data;
-      const cover = d?.image?.url || d?.logo?.url || '';
-      const title = (d?.title || '').trim();
-      if (title || cover) {
-        return { title: title || slugTitle(url), cover: cover || coverFor(url), url };
+  //    ⚠️ gequbao 跳过：实测它对这个站直接回 400，纯浪费一次往返。
+  if (!isGq) {
+    try {
+      const r = await timedFetch(`https://api.microlink.io/?url=${enc}`);
+      if (r.ok) {
+        const j: unknown = await r.json();
+        const d = (j as { data?: { title?: string; image?: { url?: string }; logo?: { url?: string } } })
+          ?.data;
+        const cover = d?.image?.url || d?.logo?.url || '';
+        const title = (d?.title || '').trim();
+        if (title || cover) {
+          return { title: title || slugTitle(url), cover: cover || coverFor(url), url };
+        }
       }
+    } catch {
+      /* 掉到下一级 */
     }
-  } catch {
-    /* 掉到下一级 */
+
+    // 4) allorigins 代理拉 HTML，自己解析 og 标签
+    //    ⚠️ gequbao 同样跳过：实测 522。
+    try {
+      const r = await timedFetch(`https://api.allorigins.win/raw?url=${enc}`);
+      if (r.ok) {
+        const html = await r.text();
+        const m = parseHtmlMeta(html, url);
+        if (m.title || m.cover) {
+          return {
+            title: m.title || slugTitle(url),
+            cover: m.cover || coverFor(url),
+            url,
+          };
+        }
+      }
+    } catch {
+      /* 掉到兜底 */
+    }
   }
 
-  // 4) allorigins 代理拉 HTML，自己解析 og 标签
-  try {
-    const r = await timedFetch(`https://api.allorigins.win/raw?url=${enc}`);
-    if (r.ok) {
-      const html = await r.text();
-      const m = parseHtmlMeta(html, url);
-      if (m.title || m.cover) {
-        return {
-          title: m.title || slugTitle(url),
-          cover: m.cover || coverFor(url),
-          url,
-        };
-      }
-    }
-  } catch {
-    /* 掉到兜底 */
-  }
+  // 5) 兜底
+  //    gequbao：**绝不用 slugTitle**（会把域名当歌名），返回空 title/cover +
+  //    platform:'gequbao'，让表单走「填歌名（可用搜歌自动补全）+ 上传自己的音频」
+  //    那条分支 —— 站内既不出现来源站名字，也不留下任何跳回去的链接。
+  if (isGq) return { title: '', cover: '', url, platform: 'gequbao' };
 
-  // 5) 兜底：URL 推断 + 稳定占位封面
+  // 其它站点：URL 推断 + 稳定占位封面
   return { title: slugTitle(url), cover: coverFor(url), url };
+}
+
+/* ------------------------------------------------------------------ */
+/* 按歌名搜歌（「来源站抓不到页面」时的元数据替代路径）                  */
+/* ------------------------------------------------------------------ */
+
+/** 搜索结果的一条。只含元数据，不含音频本体。 */
+export type SongHit = {
+  title: string;
+  artist: string;
+  album?: string;
+  cover: string;
+  duration: number;
+  songId: string;
+};
+
+/**
+ * 按歌名（可带歌手）搜歌，拿回 歌名 / 歌手 / 专辑 / 封面 / 时长。
+ *
+ * 存在的理由：像 gequbao 这种整站反爬的来源，服务端**永远**抓不到页面（实测 5 条通道全灭），
+ * 所以「粘贴链接自动识别」不可能实现。退一步让作者填一次歌名，其余元数据自动补齐 ——
+ * 音频仍然由作者上传自己的文件，站内不重分发任何来源站的资源。
+ *
+ * ⚠️ 网易云这个接口不带 `access-control-*` 头，**浏览器不能直连**，必须走服务端通道：
+ *    线上 `/api/link-meta?q=`；dev 走 `/__studio/link-meta?q=`（见 studio-writer.ts）。
+ * 两条通道都不可用时返回空数组，界面照常可以手填。
+ */
+export async function searchSongs(query: string): Promise<SongHit[]> {
+  const kw = query.trim();
+  if (!kw) return [];
+  const qs = `q=${encodeURIComponent(kw)}`;
+  const paths = import.meta.env.DEV
+    ? [`/__studio/link-meta?${qs}`, `/api/link-meta?${qs}`]
+    : [`/api/link-meta?${qs}`];
+  for (const p of paths) {
+    try {
+      const res = await timedFetch(p, 12000);
+      if (!res.ok) continue;
+      // dev 下 `/api/*` 会被 Vite 的 SPA 兜底成 index.html —— 必须校验 content-type，
+      // 否则会在 JSON.parse 上绕一圈才知道没戏（和 fetchApiLinkMeta 同一个坑）
+      if (!(res.headers.get('content-type') ?? '').includes('json')) continue;
+      const data = (await res.json()) as { results?: SongHit[] };
+      if (Array.isArray(data?.results)) return data.results;
+    } catch {
+      /* 换下一条通道 */
+    }
+  }
+  return [];
 }
 
 /* ------------------------------------------------------------------ */

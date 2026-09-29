@@ -5391,6 +5391,90 @@ body.is-diary-dragging * {
 .about-insp-song-pick {
   width: 100%;
 }
+/* 按歌名搜歌：输入框 + 按钮一行，结果列表在下面。
+   ⚠️ 这块是「来源站反爬、服务端抓不到页面」时**唯一**能自动补齐歌曲信息的入口 ——
+   见 contentApi.searchSongs 的注释，别当成可有可无的装饰删掉。 */
+.about-insp-searchrow {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.about-insp-searchrow .about-insp-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.about-insp-searchrow .about-insp-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.about-insp-hits {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  max-height: 208px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: #fffdf6;
+  border: 2px solid var(--ab-line);
+  border-radius: 11px;
+  box-shadow: 2px 3px 0 rgba(63, 156, 127, 0.12);
+}
+.about-insp-hit {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 5px 6px;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  transition: background 0.16s ease;
+}
+.about-insp-hit:hover {
+  background: rgba(63, 156, 127, 0.1);
+}
+.about-insp-hit-thumb {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: rgba(63, 156, 127, 0.12);
+}
+.about-insp-hit-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.about-insp-hit-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.about-insp-hit-text b {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ab-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.about-insp-hit-text em {
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--ab-ink-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .about-insp-form-note {
   margin: 0;
   font-size: 11px;

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Plugin } from 'vite';
-import { resolveLinkMeta, normalizeUrl } from './link-meta';
+import { resolveLinkMeta, searchSongs, normalizeUrl } from './link-meta';
 
 /**
  * 「站内编辑 → 写回代码」的开发期写入通道。
@@ -191,6 +191,21 @@ export function studioWriter(): Plugin {
 
         // ---- 链接识别：服务端抓目标页抠 og；网易云 / QQ / GitHub 走平台 API ----
         if (url.pathname === '/__studio/link-meta' && req.method === 'GET') {
+          // 按歌名搜歌（?q=）—— 给「来源站反爬、页面抓不到」的场景用。只回元数据。
+          // 本地开发直连网易云，所以它是**唯一能真跑通这个接口的环境**（线上同理，但
+          // 本机还能顺手验证解析逻辑）。带 q 就不再抓页面，两者互斥。
+          const kw = (url.searchParams.get('q') ?? '').trim();
+          if (kw) {
+            void searchSongs(kw, 6)
+              .then((results) => sendJson(res, 200, { ok: true, results }))
+              .catch((err: unknown) =>
+                sendJson(res, 502, {
+                  ok: false,
+                  error: err instanceof Error ? err.message : '搜索失败。',
+                }),
+              );
+            return;
+          }
           const raw = (url.searchParams.get('url') ?? '').trim();
           if (!raw) {
             sendJson(res, 400, { ok: false, error: '缺少 url 参数。' });

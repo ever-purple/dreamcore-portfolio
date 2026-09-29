@@ -299,8 +299,132 @@ function platformOf(url: string): string | undefined {
   if (/github\.com/.test(h)) return 'github';
   if (/bilibili\.com|b23\.tv/.test(h)) return 'bilibili';
   if (/xiaohongshu\.com|xhslink\.com/.test(h)) return 'xhs';
-  if (/gequbao\.com/.test(h)) return 'gequbao';
+  if (/gequbao\.(com|net)/.test(h)) return 'gequbao';
   return undefined;
+}
+
+/* ------------------------------------------------------------------ */
+/* 按歌名搜歌（网易云公开搜索接口）                                     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 搜索结果的一条。**只取元数据**（歌名 / 歌手 / 专辑 / 封面 / 时长 / song id），不取音频。
+ */
+export type SongHit = {
+  title: string;
+  artist: string;
+  album?: string;
+  cover: string;
+  /** 毫秒；拿不到就是 0 */
+  duration: number;
+  songId: string;
+};
+
+/**
+ * 为什么需要「按歌名搜」这条路：
+ *
+ * 有些来源站（歌曲宝 gequbao.com）整站在 Cloudflare 的机器人防护后面 —— 服务端
+ * 一抓就是 403 或 "Just a moment..."，**实测 5 条通道全被拦**：直连 403、
+ * r.jina.ai 拿回验证页、allorigins 522、corsproxy 403、microlink 400，
+ * 连真浏览器（无头）也停在「请稍候…」。也就是说「粘贴链接自动识别歌名」这条路
+ * 对这种站点**从根上不成立**，不是部署没生效。
+ *
+ * 但作者本来就知道自己听的是哪首歌 —— 所以退一步：**让作者填一次歌名**，
+ * 我们用网易云的公开搜索接口把 歌手 / 专辑 / 封面 / 时长 全补齐（这些是元数据，
+ * 不是音频本体）。音频由作者自己上传已下载的文件，站内不重分发任何来源站的资源，
+ * 也不显示任何来源站的名字。
+ *
+ * ⚠️ 这个接口和 `song/detail`、`song/lyric` 一样**不带 `access-control-*` 头**，
+ * 只能走服务端通道（`/api/link-meta?q=` 或 dev 的 `/__studio/link-meta?q=`），
+ * 浏览器直连会被 CORS 拦掉。
+ */
+export async function searchSongs(query: string, limit = 6, ms = TIMEOUT): Promise<SongHit[]> {
+  const q = query.trim();
+  if (!q) return [];
+  const cap = Math.max(1, Math.min(limit, 12));
+  const headers = { referer: 'https://music.163.com/', accept: 'application/json' };
+
+  // ① cloudsearch/pc（新接口）：**返回自带封面 `al.picUrl`** —— 搜索结果列表里能直接显示
+  //    专辑图，作者一眼就能认出是哪一版。排序实测与旧接口完全一致。
+  try {
+    const res = await timedFetch(
+      'https://music.163.com/api/cloudsearch/pc',
+      {
+        method: 'POST',
+        headers: { ...headers, 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ s: q, type: '1', limit: String(cap), offset: '0' }).toString(),
+      },
+      ms,
+    );
+    if (res.ok) {
+      const j = (await res.json()) as {
+        result?: {
+          songs?: Array<{
+            id?: number;
+            name?: string;
+            dt?: number;
+            ar?: Array<{ name?: string }>;
+            al?: { name?: string; picUrl?: string };
+          }>;
+        };
+      };
+      const out: SongHit[] = [];
+      for (const s of j.result?.songs ?? []) {
+        const id = s.id ? String(s.id) : '';
+        const title = (s.name ?? '').trim();
+        if (!id || !title) continue;
+        out.push({
+          title,
+          artist: (s.ar ?? []).map((a) => a.name).filter(Boolean).join(' / '),
+          album: s.al?.name || undefined,
+          cover: withSize(httpsify(s.al?.picUrl ?? ''), '500y500'),
+          duration: Number(s.dt) || 0,
+          songId: id,
+        });
+      }
+      if (out.length) return out;
+    }
+  } catch {
+    /* 掉到旧接口 */
+  }
+
+  // ② search/get（旧接口，兜底）：字段名不一样（artists / album / duration），
+  //    而且 `album` 里常常**只有 picId 没有 picUrl**（封面得靠后面的单曲详情补）。
+  try {
+    const api =
+      `https://music.163.com/api/search/get?s=${encodeURIComponent(q)}` +
+      `&type=1&limit=${cap}&offset=0`;
+    const res = await timedFetch(api, { headers }, ms);
+    if (!res.ok) return [];
+    const j = (await res.json()) as {
+      result?: {
+        songs?: Array<{
+          id?: number;
+          name?: string;
+          duration?: number;
+          artists?: Array<{ name?: string }>;
+          album?: { name?: string; picUrl?: string };
+        }>;
+      };
+    };
+    const out: SongHit[] = [];
+    for (const s of j.result?.songs ?? []) {
+      const id = s.id ? String(s.id) : '';
+      const title = (s.name ?? '').trim();
+      if (!id || !title) continue;
+      out.push({
+        title,
+        artist: (s.artists ?? []).map((a) => a.name).filter(Boolean).join(' / '),
+        album: s.album?.name || undefined,
+        cover: withSize(httpsify(s.album?.picUrl ?? ''), '500y500'),
+        duration: Number(s.duration) || 0,
+        songId: id,
+      });
+    }
+    return out;
+  } catch {
+    return [];
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -520,6 +644,16 @@ function appleMeta(url: string): LinkMeta | null {
  *    我们返回**干净的空结果**（platform:'gequbao' 但 title/cover 全空），让上层把它当
  *    「识别被拦截」处理，而不是掉到通用解析去吐一屏 "Just a moment..." 乱码。
  *    代码逻辑本身是对的（本地不被拦时能正常解析），只是线上大概率过不了 Cloudflare。
+ *
+ * ⚠️ 2026-09-30 实测收口（别再来回试了）：**5 条通道全部拿不到页面**
+ *      · 我本机直连 `www.gequbao.com/music/2089469` → **403**
+ *      · `r.jina.ai` → 200，但内容是 "Performing security verification" 验证页
+ *      · `api.allorigins.win/raw` → **522**  · `corsproxy.io` → **403**
+ *      · `api.microlink.io` → **400**（它自己就拒了）
+ *      · 真浏览器（无头 Edge）打开 → 停在标题「请稍候…」，12s 后仍未过挑战、无 appData
+ *    所以「粘贴链接 → 自动识别歌名」对这个站**从根上不成立**。
+ *    替代路径 = `searchSongs()`：作者填一次歌名，元数据从网易云公开搜索补齐，
+ *    音频由作者上传自己的文件。见 searchSongs 的注释。
  *
  * 真能解析到时，只回 歌名 / 歌手 / 封面 / 歌词，album 留空（页面不暴露专辑）。
  */
@@ -859,6 +993,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const q = req.query?.url;
   const raw = Array.isArray(q) ? q[0] : q;
   const input = typeof raw === 'string' ? raw.trim() : '';
+
+  /* ---- 按歌名搜歌（?q=<关键词>）----
+   * 给「来源站反爬、服务端抓不到页面」的场景兜底：作者填一次歌名，元数据
+   * （歌手 / 专辑 / 封面 / 时长）从网易云公开搜索接口补齐。**只回元数据，不回音频。**
+   * 参数名用 `q`，和上一条的 `url` 互斥 —— 带 `q` 就不再抓页面。 */
+  const kwRaw = req.query?.q;
+  const kw = (Array.isArray(kwRaw) ? kwRaw[0] : kwRaw)?.trim() ?? '';
+  if (kw) {
+    if (kw.length > 80) {
+      res.status(400).json({ ok: false, reason: 'bad-query' });
+      return;
+    }
+    const results = await withDeadline(searchSongs(kw, 6), DEADLINE);
+    res.setHeader('Cache-Control', 'public, s-maxage=3600, stale-while-revalidate=86400');
+    res.status(200).json({ ok: true, results: results ?? [] });
+    return;
+  }
+
   if (!input || input.length > MAX_URL) {
     res.status(400).json({ ok: false, reason: 'bad-url' });
     return;
@@ -873,7 +1025,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const meta = await withDeadline(resolveLinkMeta(target), DEADLINE);
     if (!meta || (!meta.title && !meta.cover && !meta.embed)) {
       // 200 而不是 4xx：这不是错误，只是「这条链接没识别出东西」，前端要能照常静默降级
-      res.status(200).json({ ok: false, reason: 'no-meta' });
+      // `blocked-by-site`：确认了「是反爬拦的」而不是「这个站本来就没元数据」，
+      // 前端据此换文案（引导填歌名 / 上传音频），而不是笼统说「没识别出来」。
+      const blocked = meta?.platform === 'gequbao';
+      res.status(200).json({ ok: false, reason: blocked ? 'blocked-by-site' : 'no-meta' });
       return;
     }
     // 识别结果基本不变，让 CDN 缓存一整天，顺带挡掉重复抓取

@@ -706,6 +706,8 @@ export type SongHit = {
   cover: string;
   duration: number;
   songId: string;
+  /** yinyueku 换直链签名（VIP/版权歌播放时现换 320kbps 直链用） */
+  streamSign?: string;
 };
 
 /**

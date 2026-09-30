@@ -1067,6 +1067,11 @@ type MusicDraft = {
    * VIP / 版权歌的直链会被平台 302 到 /404，那时播放器会明说原因并引导上传音频。
    */
   songId: string;
+  /**
+   * yinyueku 换直链签名。VIP/版权歌的官方直链会被挡，带这个签名就能在播放时
+   * 现换一条 320kbps 能播的直链（搜歌时自动带上，作者无需手填）。
+   */
+  streamSign: string;
   /** 作者自己上传的音频地址。抓不到直链的来源，声音靠它 */
   src: string;
 };
@@ -1083,6 +1088,7 @@ const EMPTY_SONG_DRAFT: MusicDraft = {
   album: '',
   lyrics: '',
   songId: '',
+  streamSign: '',
   src: '',
 };
 
@@ -1181,10 +1187,13 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
         // 歌曲 id 一定要存：保存后靠它现拼直连音频地址，免费歌直接就能出声。
         // （不给它的话，条目会变成「既没 src 也没 embed」→ 点了播放键一声不响。）
         songId: h.songId,
+        // yinyueku 换直链签名：VIP/版权歌官方直链被挡时，播放器拿它去 /api/link-meta
+        // 现换一条 320kbps 能播的直链。搜歌时服务端顺手带的，这里原样存下。
+        streamSign: h.streamSign || '',
       }));
       setNote(
-        '已补全歌名 / 歌手 / 专辑 / 封面 / 歌词。保存后直接试播 —— 免费歌能当场出声；' +
-          '要是提示「直链取不到音频（VIP / 版权）」，就用下面的「上传音频」传你自己已下载的文件。',
+        '已补全歌名 / 歌手 / 专辑 / 封面 / 歌词。保存后直接试播 —— 免费歌直接出声；' +
+          'VIP / 版权歌也会自动换一条能播的直链。实在都取不到，再用下面的「上传音频」。',
       );
       setSearchBusy(false);
     })();
@@ -1330,6 +1339,8 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
       link: link || undefined,
       // 存下来：以后要换封面 / 换播放器还能用得上，也是「这首歌是哪首」的锚点
       songId: songId || undefined,
+      // yinyueku 换直链签名：VIP/版权歌播放时现换 320kbps 直链用的（搜歌自动带，无需手填）
+      streamSign: draft.streamSign.trim() || undefined,
       // 专辑（网易云 / QQ 识别带回；gequbao 这类不暴露专辑的会留空）
       album: draft.album.trim() || undefined,
       lyrics: draft.lyrics.trim() || undefined,

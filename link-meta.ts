@@ -294,6 +294,12 @@ export type SongHit = {
   /** 毫秒；拿不到就是 0 */
   duration: number;
   songId: string;
+  /**
+   * yinyueku 换直链用的签名（与 songId 一一对应、恒定）。
+   * 有它就能在「播放时」换一条能绕过 VIP 限制的 320kbps 直链 ——
+   * 详见 resolveNeteaseStream 的注释。拿不到就是 undefined（走官方直链/上传音频）。
+   */
+  streamSign?: string;
 };
 
 /**
@@ -314,6 +320,31 @@ export type SongHit = {
  * 只能走服务端通道（`/api/link-meta?q=` 或 dev 的 `/__studio/link-meta?q=`），
  * 浏览器直连会被 CORS 拦掉。
  */
+/**
+ * 给搜索结果补上 yinyueku 换址签名 `streamSign`（只补前几条，失败静默）。
+ *
+ * 为什么在这里补：sign 只能通过「按歌名搜 yinyueku」拿到，而搜歌结果里正好有歌名。
+ * 补上之后，作者点选某一首存卡时就能把 sign 一起存下来，以后播放就能随时换 VIP 直链。
+ * 拿不到不影响搜索 —— streamSign 是可选字段，没有就走官方直链 / 上传音频。
+ *
+ * ⚠️ 只补前 2 条：sign 是按歌名一对一搜的，一次一条，补多了会把搜索拖慢几秒。
+ *    （作者绝大多数时候点的就是第一条；第二条作备选。）
+ */
+async function withStreamSigns(hits: SongHit[], ms: number): Promise<SongHit[]> {
+  if (!hits.length) return hits;
+  const head = hits.slice(0, 2);
+  // yinyueku 这个站响应偏慢（实测单次 3.5s+），单独放宽到 6s，别用搜索本身那 3.5s 去卡它
+  const signs = await Promise.all(
+    head.map((h) =>
+      fetchNeteaseSign(h.title, Math.max(ms, 6000)).catch(() => undefined),
+    ),
+  );
+  return hits.map((h, i) => {
+    const s = i < signs.length ? signs[i] : undefined;
+    return s ? { ...h, streamSign: s } : h;
+  });
+}
+
 export async function searchSongs(query: string, limit = 6, ms = TIMEOUT): Promise<SongHit[]> {
   const q = query.trim();
   if (!q) return [];
@@ -358,7 +389,7 @@ export async function searchSongs(query: string, limit = 6, ms = TIMEOUT): Promi
           songId: id,
         });
       }
-      if (out.length) return out;
+      if (out.length) return await withStreamSigns(out, ms);
     }
   } catch {
     /* 掉到旧接口 */
@@ -397,7 +428,7 @@ export async function searchSongs(query: string, limit = 6, ms = TIMEOUT): Promi
         songId: id,
       });
     }
-    return out;
+    return await withStreamSigns(out, ms);
   } catch {
     return [];
   }
@@ -498,6 +529,98 @@ async function neteaseMeta(url: string, ms = TIMEOUT): Promise<LinkMeta | null> 
     };
   } catch {
     return null;
+  }
+}
+
+/**
+ * 拿一条**能直接播放**的网易云音频地址（320kbps 真音频）。
+ *
+ * 为什么需要它：网易云自己的公开直链 `music.163.com/song/media/outer/url?id=xxx.mp3`
+ * 对**免费歌**能 302 到 CDN，但对 **VIP / 版权歌会 302 到一页 HTML**（实测周杰伦《晴天》
+ * 186016、Monica《Believing In Me》17229930 都是这样）→ `<audio>` 拿到 HTML 直接报 error，
+ * 表现就是「点了播放没声音」。
+ *
+ * 兜底：`yinyueku.cn`（开源 MKOnlineMusicPlayer）的 `api.php` 能绕过 VIP 限制，用
+ * `types=url&id=<id>&source=netease&sign=<sign>` 换回真实的 m801.music.126.net 直链。
+ * ⚠️ 这条直链带**时效签名**（几分钟到几小时失效），所以**只能播放时现换**，绝不能
+ *    存进数据库当永久音源 —— 这就是为什么走 `/api/link-meta?neteaseId=` 而不是存卡里。
+ *
+ * ⚠️ sign 的来历：它跟 songId 一一对应、恒定不变，但**只能通过 `types=search` 按歌名
+ *    搜到**（按 id 搜返回空、api.php 源码不公开算不出）。所以搜歌存卡那一步要顺手把
+ *    sign 存进 SongHit.streamSign，播放时再带着 songId + sign 来这里现换直链。
+ *
+ * 返回 `{ url, source }`：source 记下「官方直链」还是「第三方换址」，仅用于日志/排查，
+ * 不展示给用户（界面上不出现来源站名字）。
+ */
+export async function resolveNeteaseStream(
+  songId: string,
+  sign?: string,
+  ms = TIMEOUT,
+): Promise<{ url: string; source: 'netease' | 'yinyueku' } | null> {
+  const id = songId.trim();
+  if (!/^\d+$/.test(id)) return null;
+
+  // ① 先试网易云官方直链：免费歌这条路就够了，省一次第三方往返
+  try {
+    const direct = `https://music.163.com/song/media/outer/url?id=${id}.mp3`;
+    const res = await timedFetch(direct, { redirect: 'manual' }, ms);
+    // 官方直链对可播的歌会 302 到 m*.music.126.net；对 VIP/版权歌会 302 到 /404 页面。
+    // 用「落点是不是音频 CDN」判断，比跟着 302 走到头再读 content-type 更省事。
+    const loc = res.headers.get('location') ?? '';
+    if (/\.(mp3|m4a|flac)(\?|$)/i.test(loc)) {
+      return { url: direct, source: 'netease' };
+    }
+  } catch {
+    /* 掉到第三方换址 */
+  }
+
+  // ② yinyueku 换址（必须带 sign，否则回「签名错误」）
+  if (!sign) return null;
+  try {
+    const ures = await timedFetch(
+      'http://www.yinyueku.cn/api.php',
+      {
+        method: 'POST',
+        headers: {
+          'user-agent': UA,
+          'content-type': 'application/x-www-form-urlencoded',
+          accept: '*/*',
+        },
+        body: new URLSearchParams({ types: 'url', id, source: 'netease', sign }).toString(),
+      },
+      ms,
+    );
+    if (!ures.ok) return null;
+    const uj = (await ures.json().catch(() => null)) as { url?: string } | null;
+    const u = uj?.url;
+    if (!u || u === 'err') return null;
+    // 只收音频 CDN 地址，别把任何页面/垃圾字符串当音源
+    if (!/^https?:\/\/[^/]+.*\.(mp3|m4a|flac)(\?|$)/i.test(u)) return null;
+    return { url: u, source: 'yinyueku' };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 去 yinyueku 按歌名搜一首网易云歌，把它的换址签名 `sign` 拿回来。
+ * 用于「搜歌存卡」那一步：sign 恒定、跟 songId 绑定，存进卡里以后播放时就能
+ * 随时换 VIP 直链（不用再存会过期的音频地址）。
+ * 拿不到就返回 undefined —— 调用方按「没有 VIP 兜底」处理，不影响正常搜歌。
+ */
+export async function fetchNeteaseSign(title: string, ms = TIMEOUT): Promise<string | undefined> {
+  const q = title.trim();
+  if (!q) return undefined;
+  try {
+    const api = `http://www.yinyueku.cn/api.php?types=search&source=netease&count=1&name=${encodeURIComponent(q)}`;
+    const res = await timedFetch(api, { headers: { 'user-agent': UA, accept: '*/*' } }, ms);
+    if (!res.ok) return undefined;
+    const arr = (await res.json().catch(() => [])) as Array<{ name?: string; sign?: string }>;
+    const first = arr?.[0];
+    // 只认「歌名对得上」的结果，避免同名翻唱串了 sign
+    return first && first.name === q ? first.sign : undefined;
+  } catch {
+    return undefined;
   }
 }
 

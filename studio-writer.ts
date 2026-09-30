@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Plugin } from 'vite';
-import { resolveLinkMeta, searchSongs, normalizeUrl } from './link-meta';
+import { resolveLinkMeta, searchSongs, normalizeUrl, resolveNeteaseStream } from './link-meta';
 
 /**
  * 「站内编辑 → 写回代码」的开发期写入通道。
@@ -202,6 +202,24 @@ export function studioWriter(): Plugin {
                 sendJson(res, 502, {
                   ok: false,
                   error: err instanceof Error ? err.message : '搜索失败。',
+                }),
+              );
+            return;
+          }
+          // 换网易云直链（?neteaseId=）—— VIP/版权歌播放时现换一条能播的直链（dev 通道）
+          const nid = (url.searchParams.get('neteaseId') ?? '').trim();
+          if (nid) {
+            const sign = (url.searchParams.get('sign') ?? '').trim();
+            void resolveNeteaseStream(nid, sign || undefined)
+              .then((got) =>
+                got
+                  ? sendJson(res, 200, { ok: true, url: got.url, source: got.source })
+                  : sendJson(res, 200, { ok: false, reason: 'no-stream' }),
+              )
+              .catch((err: unknown) =>
+                sendJson(res, 502, {
+                  ok: false,
+                  error: err instanceof Error ? err.message : '换直链失败。',
                 }),
               );
             return;

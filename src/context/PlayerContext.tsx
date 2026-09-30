@@ -46,6 +46,8 @@ export type PlayerTrack = {
   platform?: string;
   /** 平台侧歌曲 id（网易云用，播放时实时去 /api/lyric 拉歌词用） */
   songId?: string;
+  /** yinyueku 换直链的签名（VIP/版权歌直链被挡时，播放时现换一条能播的） */
+  streamSign?: string;
   /** 歌词（LRC 带时间轴，或纯文本） */
   lyrics?: string;
 };
@@ -175,6 +177,8 @@ export function toTrack(m: MusicItem): PlayerTrack {
     // songId：优先用条目里存的；老条目没存就去 embed / link 里抠一个。
     // 播放时实时拉歌词（/api/lyric）全指着它 —— 缺了歌词就出不来。
     songId: neteaseSongIdOf(m) || undefined,
+    // yinyueku 换直链签名：VIP/版权歌直链被挡时，onErr 会拿它去 /api/link-meta 换一条能播的
+    streamSign: m.streamSign,
     lyrics: m.lyrics,
   };
 }
@@ -226,6 +230,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
    */
   const [audioFailed, setAudioFailed] = useState(false);
   const audioFailedRef = useRef(false);
+  /**
+   * VIP 直链兜底是否已经试过：直链放不出来时（VIP/版权 302→404），若条目带
+   * `streamSign`，会去 /api/link-meta?neteaseId= 换一条能播的 320kbps 直链重试。
+   * 这个位保证同一首只试一次 —— 换了还失败（真没源）就老实进 blocked，不无限重试。
+   */
+  const vipRetriedRef = useRef(false);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   /** 外链播放器（iframe）。不能 display:none —— 有的浏览器会直接不加载/静音。 */
@@ -303,14 +313,42 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const onDur = () => setDuration(Number.isFinite(el.duration) ? el.duration : 0);
     const onEnd = () => setPlaying(false);
     // 直链放不出来（VIP / 版权 / 防盗链）：
-    //   ① 有平台播放器 → 退回它（isExternal 跟着亮起来）；
-    //   ② 没有 → 只能老实停下。
-    // 两种情况都把 blocked 置位，界面会写明原因，不会「点了没反应」。
+    //   ① 有 streamSign → 去 /api/link-meta?neteaseId= 换一条能播的 VIP 直链重试（只一次）；
+    //   ② 有平台播放器 → 退回它（isExternal 跟着亮起来）；
+    //   ③ 都没有 → 只能老实停下。
+    // 兜底都失败才把 blocked 置位，界面会写明原因，不会「点了没反应」。
     const onErr = () => {
       if (audioFailedRef.current) return; // error 会连着来几遍，置一次就够
+      const cur = trackRef.current;
+      // VIP 直链兜底：只在「确实有 songId + sign、且还没试过」时换一次
+      if (cur?.songId && cur?.streamSign && !vipRetriedRef.current) {
+        vipRetriedRef.current = true;
+        void (async () => {
+          try {
+            const qs = new URLSearchParams({ neteaseId: cur.songId!, sign: cur.streamSign! });
+            const r = await fetch(`/api/link-meta?${qs.toString()}`, { cache: 'no-store' });
+            const j = (await r.json().catch(() => null)) as { ok?: boolean; url?: string } | null;
+            if (j?.ok && j.url) {
+              // 换成能播的直链，重新点亮播放。el 还在，直接改 src + play
+              setTrack((t) => (t && t.id === cur.id ? { ...t, src: j.url } : t));
+              setAudioFailed(false);
+              audioFailedRef.current = false;
+              setPlaying(true);
+              return;
+            }
+          } catch {
+            /* 换不到就掉到下面的常规失败处理 */
+          }
+          // 换直链失败 → 按老逻辑：有 embed 退 embed，否则停下并标记 blocked
+          audioFailedRef.current = true;
+          setAudioFailed(true);
+          if (!cur?.embed) setPlaying(false);
+        })();
+        return;
+      }
       audioFailedRef.current = true;
       setAudioFailed(true);
-      if (!trackRef.current?.embed) setPlaying(false);
+      if (!cur?.embed) setPlaying(false);
     };
 
     /* ---- 缓冲状态：让「声音停住」这件事在界面上看得出来 ----
@@ -424,6 +462,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       // 换歌 = 重新给直链一次机会（上一首失败不代表这首也失败）
       audioFailedRef.current = false;
       setAudioFailed(false);
+      // 换歌 = 重新给 VIP 直链兜底一次机会
+      vipRetriedRef.current = false;
       bufferingRef.current = false;
       setBuffering(false);
       // 没音源就别点亮「播放中」—— 假播放比不放更让人迷惑（noSource 会让界面说明原因）

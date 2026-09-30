@@ -1061,6 +1061,12 @@ type MusicDraft = {
   album: string;
   /** 识别时服务端顺手抓的歌词（LRC）。纯静态托管上没有后端，这里会是空的 */
   lyrics: string;
+  /**
+   * 平台侧歌曲 id。**「按歌名搜歌」拿到的就是它** —— 有了 id 就能现拼一条可直连的
+   * 音频地址（`neteaseAudioUrl`），免费歌直接就能在本站出声，不用作者再去下载文件。
+   * VIP / 版权歌的直链会被平台 302 到 /404，那时播放器会明说原因并引导上传音频。
+   */
+  songId: string;
   /** 作者自己上传的音频地址。抓不到直链的来源，声音靠它 */
   src: string;
 };
@@ -1076,6 +1082,7 @@ const EMPTY_SONG_DRAFT: MusicDraft = {
   genre: '',
   album: '',
   lyrics: '',
+  songId: '',
   src: '',
 };
 
@@ -1171,8 +1178,14 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
         album: extra.album || h.album || '',
         cover: extra.cover || h.cover,
         lyrics: extra.lyrics || '',
+        // 歌曲 id 一定要存：保存后靠它现拼直连音频地址，免费歌直接就能出声。
+        // （不给它的话，条目会变成「既没 src 也没 embed」→ 点了播放键一声不响。）
+        songId: h.songId,
       }));
-      setNote('已补全歌名 / 歌手 / 专辑 / 封面。想在本站听到声音，点下面的「上传音频」传你自己已下载的文件。');
+      setNote(
+        '已补全歌名 / 歌手 / 专辑 / 封面 / 歌词。保存后直接试播 —— 免费歌能当场出声；' +
+          '要是提示「直链取不到音频（VIP / 版权）」，就用下面的「上传音频」传你自己已下载的文件。',
+      );
       setSearchBusy(false);
     })();
   };
@@ -1209,6 +1222,7 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
             genre: '',
             album: typeof meta.extra?.album === 'string' ? meta.extra.album : '',
             lyrics: typeof meta.extra?.lyric === 'string' ? meta.extra.lyric : '',
+            songId: '',
             src: '',
           });
           setNote(
@@ -1238,6 +1252,7 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
           genre: '',
           album: typeof meta.extra?.album === 'string' ? meta.extra.album : '',
           lyrics: typeof meta.extra?.lyric === 'string' ? meta.extra.lyric : '',
+          songId,
           src: '',
         });
         setNote(
@@ -1264,6 +1279,7 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
           genre: '',
           album: '',
           lyrics: '',
+          songId: '',
           src: '',
         });
         if (isGq) {
@@ -1290,10 +1306,16 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
       return;
     }
     const genres = parseTags(draft.genre, 4);
-    const songId = embedSongId(embed);
-    // 优先用作者自己上传的音频（歌曲宝 / 任意来源都能靠它出声，且不显示任何来源）；
-    // 其次网易云能拼直链就拼一条（本站 <audio> 直接放，暂停后续播、进度条可拖）
-    const src = audio || (draft.platform === 'netease' && songId ? neteaseAudioUrl(songId) : undefined);
+    // 歌曲 id 有两个来源：手填的外链播放器地址里抠出来的，或「按歌名搜歌」带回来的
+    const songId = draft.songId.trim() || embedSongId(embed);
+    // 音源优先级：
+    //   ① 作者自己上传的音频 —— 任何来源都能靠它出声，且站内不显示任何来源；
+    //   ② 有歌曲 id 就现拼一条平台直连地址 —— 免费歌直接能放，**不用作者先下载文件**；
+    //      VIP / 版权歌会被平台 302 到 /404，播放器那时明说原因并引导上传音频。
+    // ⚠️ 这里曾经只在 `platform === 'netease'` 时才拼，而「搜歌」存出来的条目是**刻意不带
+    //    platform** 的（不显示来源）→ 永远生成不出 src → 条目变成「既没 src 也没 embed」，
+    //    点播放键只会点亮假时间轴、一声不响（用户 2026-09-30 报的「播放没声音」）。
+    const src = audio || (songId ? neteaseAudioUrl(songId) : undefined) || undefined;
     onAdd({
       id: `music-${Date.now()}`,
       title: draft.title.trim() || '未命名音乐',
@@ -1306,6 +1328,8 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
       platform: draft.platform || undefined,
       embed: embed || undefined,
       link: link || undefined,
+      // 存下来：以后要换封面 / 换播放器还能用得上，也是「这首歌是哪首」的锚点
+      songId: songId || undefined,
       // 专辑（网易云 / QQ 识别带回；gequbao 这类不暴露专辑的会留空）
       album: draft.album.trim() || undefined,
       lyrics: draft.lyrics.trim() || undefined,
@@ -1328,7 +1352,7 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
 
   return (
     <div className="about-insp-form about-insp-form-song">
-      <p className="about-insp-form-title">🔗 分享音乐链接（不上传音频文件）</p>
+      <p className="about-insp-form-title">🔗 加一首音乐（粘链接 / 按歌名搜 / 上传音频）</p>
 
       {/* 按歌名搜歌 —— 放在最前面是因为它比粘链接更省事：知道歌名就行。
           而且对「来源站有反爬、服务端读不到页面」的链接来说，这是**唯一**能自动
@@ -1433,7 +1457,7 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
               disabled={audioBusy}
               onClick={() => audioRef.current?.click()}
             >
-              {audioBusy ? '上传中…' : draft.src ? '✓ 已上传音频（点击更换）' : '🎵 上传音频（可选，用于播放）'}
+              {audioBusy ? '上传中…' : draft.src ? '✓ 已上传音频（点击更换）' : '🎵 上传音频（想在本站真出声就传这里）'}
             </button>
             <input
               ref={audioRef}
@@ -1580,7 +1604,22 @@ function MusicGrid({
                   // 已经拿到平台播放器了，「#外链」这个兜底标签就该退场（可能一个标签都不剩）
                   const pruned = tags.filter((g) => g !== '#外链');
                   const sid = (val.songId || embedSongId(val.embed)).trim();
-                  const isNetease = val.platform === 'netease' || /outchain\/player/.test(val.embed);
+                  /*
+                   * ⚠️ `src` 这一格是整个表单最容易把人坑死的地方（2026-09-30 修）：
+                   *
+                   *   ① `updateItem` 是**浅合并**（`{...x, ...patch}`），所以 patch 里写
+                   *      `src: undefined` 会把原值**抹掉** —— 作者上传过音频的歌，只要进编辑
+                   *      表单按一次保存，音频就没了，表现正是「点了播放没声音」。
+                   *   ② 也不能把 `m.src` 原样写回：`MusicGrid` 拿到的 `m.src` 已经被
+                   *      `resolveIdbRefs` 换成过 `blob:` object URL，写回数据就违反
+                   *      blobStore 的约定（数据里只存 `idb:` 引用）。所以去 store 里取**原始值**。
+                   *
+                   * 规则：作者上传的音频一律保留；「现拼出来的平台直链」按当前 sid 重新生成。
+                   */
+                  const rawSrc = (getCollection('music').find((x) => x.id === m.id) as MusicItem | undefined)?.src ?? '';
+                  const wasGenerated = /^https?:\/\/music\.163\.com\/song\/media\/outer\/url/.test(rawSrc);
+                  const keepUploaded = !!rawSrc && !wasGenerated;
+                  const src = keepUploaded ? rawSrc : sid ? neteaseAudioUrl(sid) : undefined;
                   onEdit(m.id, {
                     title: val.title.trim() || m.title,
                     artist: val.artist.trim() || undefined,
@@ -1588,10 +1627,10 @@ function MusicGrid({
                     // 播放器地址直接覆盖（可以清空）；允许粘整段 iframe 代码 —— 这里只取 src，
                     // 并把 auto 归零：声音什么时候响由本站播放键说了算，不跟平台参数自动播
                     embed: normalizeEmbed(parseEmbedCode(val.embed)) || undefined,
-                    // 有网易云歌曲 id 就顺带存一条音频直链：本站 <audio> 直接放，
-                    // 暂停后从暂停处继续、进度条也能拖 —— 外链 iframe 做不到这两件事。
-                    // 直链万一放不出来（VIP / 版权），播放器会自动退回上面那个 embed。
-                    src: sid && isNetease ? neteaseAudioUrl(sid) : undefined,
+                    // 作者上传的音频优先；没上传过就按 sid 现拼一条平台直链（本站 <audio> 直接放，
+                    // 暂停后从暂停处继续、进度条也能拖 —— 外链 iframe 做不到这两件事）。
+                    // 直链万一放不出来（VIP / 版权），播放器会明说原因并引导上传音频。
+                    src,
                     ...(val.platform ? { platform: val.platform } : {}),
                     ...(val.songId ? { songId: val.songId } : {}),
                     genre: val.platform ? pruned : tags,

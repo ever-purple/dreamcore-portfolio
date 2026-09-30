@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 import { getCollection, hydrate } from '@/lib/contentApi';
+import { getBlobURL, isIdbRef } from '@/lib/blobStore';
 import type { MusicItem } from '@/data/inspiration';
 
 /**
@@ -19,11 +20,16 @@ import type { MusicItem } from '@/data/inspiration';
  * jukebox 的进度条可拖动 → 反向改变播放进度。
  *
  * 三种音源，按优先级自动挑：
- *   1. `embed` —— 平台外链播放器（网易云 / Spotify…）。**不下载任何音频文件**，
+ *   1. `src`   —— 本站音频（作者上传的），走 <audio>，进度/时长都真实。
+ *   2. `embed` —— 平台外链播放器（网易云 / Spotify…）。**不下载任何音频文件**，
  *      版权与体积都最安全；VIP / 付费歌曲由平台自己决定能放多少 —— 站外本就只能
  *      听到试听片段，行为与官方一致。代价是读不到进度，jukebox 显示"外链播放中"。
- *   2. `src`   —— 本站自己的音频文件（作者上传的），走 <audio>，进度/时长都真实。
- *   3. 都没有  —— 「模拟时间轴」（180s），让整套交互（播放/暂停/切歌/拖动）先跑通。
+ *   3. 都没有  —— **不放**，并且明确告诉用户为什么（`noSource`）。
+ *
+ * ⚠️ 第 3 条以前是「模拟时间轴」（180s）：唱片照转、进度条照走、EQ 照跳，**但一声不响**。
+ *    2026-09-30 用户报「音乐播放没声音」就是撞上它 —— 界面看起来在播，实际没有任何音源，
+ *    而且**没有任何提示**，看着像网站坏了。已改为「不假播放 + 说清原因」：
+ *    真的没有音频文件时，界面写着「这首还没有音频文件 → 上传音频」，不做假的进度动画。
  */
 
 export type PlayerTrack = {
@@ -80,6 +86,14 @@ type PlayerTransport = {
    * 访客只会以为网站坏了。
    */
   blocked: boolean;
+  /**
+   * 当前这首**既没有站内音频、也没有平台播放器** —— 点了播放键也不会有声音。
+   *
+   * 存在的唯一目的：让界面把「为什么没声音」写出来。没有它的时候，
+   * 播放键会点亮一条「模拟时间轴」（进度条在走、唱片在转），用户只会以为站坏了。
+   * 界面照它给「还没有音频文件 → 去卡片里上传音频」的出路。
+   */
+  noSource: boolean;
 };
 
 /** 「走时」部分：进度 / 时长 / 是否正在缓冲。每秒都在变。 */
@@ -163,6 +177,17 @@ export function toTrack(m: MusicItem): PlayerTrack {
     songId: neteaseSongIdOf(m) || undefined,
     lyrics: m.lyrics,
   };
+}
+
+/**
+ * 有音源才谈得上「播放」：站内文件（`src`）或平台播放器（`embed`），二者有其一即可。
+ *
+ * ⚠️ 一定要用它挡住 startTrack / play / toggle 里的 `setPlaying(true)`：
+ *    一旦在这首上点亮 playing，界面就会进入「假装在播」的状态 —— 唱片转、进度走、
+ *    一声不响，用户（2026-09-30 那位）只会得出「网站坏了」的结论。
+ */
+function canPlay(t: PlayerTrack): boolean {
+  return !!(t.src || t.embed);
 }
 
 /** 收藏里的第一首（用于打开页面时先把唱片摆上转盘，不播） */
@@ -356,35 +381,59 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     };
   }, [isReal]);
 
-  // 模拟时间轴：既没本站音源也没外链时，让进度条也动起来
-  useEffect(() => {
-    if (isReal || isExternal || !playing) return;
-    if (durationRef.current !== FAKE_DURATION) setDuration(FAKE_DURATION);
-    const timer = window.setInterval(() => {
-      setTime((prev) => {
-        if (prev + 0.25 >= FAKE_DURATION) {
-          setPlaying(false);
-          return FAKE_DURATION;
-        }
-        return prev + 0.25;
-      });
-    }, 250);
-    return () => window.clearInterval(timer);
-  }, [isReal, isExternal, playing]);
+  /* ---- 「模拟时间轴」已删除（2026-09-30）----
+   *
+   * 原来：既没本站音源也没外链时，用 180s 假时间轴让进度条照走，好让「播放/暂停/切歌/拖动」
+   * 这套交互先跑通。实际后果是**用户点播放键后唱片在转、进度条在走，却一声不响也没有任何提示**，
+   * 只能得出「网站坏了」的结论（用户 2026-09-30 报的「音乐播放没声音」正是它）。
+   *
+   * 现在：没有音源 = `noSource`，播放键不点亮，界面直接写「这首还没有音频文件 → 上传音频」。
+   * 如果哪天真的需要「先让交互跑通」，请改成一个**可见的**演示态，不要再做无声假播放。
+   */
 
-  const startTrack = useCallback((m: PlayerTrack) => {
-    setTrack(m);
-    setTime(0);
-    setEverPlayed(true);
-    // 外链播放读不到时长，进度条会切成"外链"状态；本站文件等 loadedmetadata 填真实值
-    setDuration(m.src ? 0 : FAKE_DURATION);
-    // 换歌 = 重新给直链一次机会（上一首失败不代表这首也失败）
-    audioFailedRef.current = false;
-    setAudioFailed(false);
-    bufferingRef.current = false;
-    setBuffering(false);
-    setPlaying(true);
+  /**
+   * 上传过的音频 / 封面在数据里只存 `idb:` 引用（IndexedDB），喂给 `<audio>` / `<img>`
+   * 之前必须换成 object URL —— 否则 `src="idb:xxx"` 是个非法地址，`<audio>` 直接报
+   * error，表现是「卡片上有这首、点了却一声不响」。
+   *
+   * 放在这里（而不是各调用点）是因为**只有这里能覆盖全部入口**：音乐卡、jukebox 首曲、
+   * 上一首 / 下一首，三条路都会经过 startTrack。以前它只在灵感收藏面板的 refresh 里
+   * 解析过，所以「卡片上能看见、点播放没声」这种分裂症状是可能的。
+   */
+  const withBlobUrls = useCallback(async (t: PlayerTrack): Promise<PlayerTrack> => {
+    let next = t;
+    if (isIdbRef(next.src)) {
+      const url = await getBlobURL(next.src);
+      if (url) next = { ...next, src: url };
+    }
+    if (isIdbRef(next.cover)) {
+      const url = await getBlobURL(next.cover);
+      if (url) next = { ...next, cover: url };
+    }
+    return next;
   }, []);
+
+  const startTrack = useCallback(
+    (m: PlayerTrack) => {
+      setTrack(m);
+      setTime(0);
+      setEverPlayed(true);
+      // 外链播放读不到时长，进度条会切成"外链"状态；本站文件等 loadedmetadata 填真实值。
+      // ⚠️ 没有音源的一律给 0 —— 不能留个假的 180s 时长让人以为在走。
+      setDuration(m.src ? 0 : m.embed ? FAKE_DURATION : 0);
+      // 换歌 = 重新给直链一次机会（上一首失败不代表这首也失败）
+      audioFailedRef.current = false;
+      setAudioFailed(false);
+      bufferingRef.current = false;
+      setBuffering(false);
+      // 没音源就别点亮「播放中」—— 假播放比不放更让人迷惑（noSource 会让界面说明原因）
+      setPlaying(canPlay(m));
+      if (isIdbRef(m.src)) {
+        void withBlobUrls(m).then((r) => setTrack((cur) => (cur?.id === m.id ? r : cur)));
+      }
+    },
+    [withBlobUrls],
+  );
 
   const play = useCallback(
     (t: PlayerTrack) => {
@@ -393,6 +442,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       // 但「预摆在转盘上、还没真播过」的那首不算 —— 那要走 startTrack：
       // 进度归零，播放键上的提示也跟着撤掉
       if (cur?.id === t.id && everPlayed) {
+        // 没有音源的一首不接受「切换播放/暂停」—— 否则按下播放键就进了假播放
+        if (!canPlay(cur)) return;
         setPlaying((p) => !p);
         return;
       }
@@ -408,8 +459,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       if (first) startTrack(first);
       return;
     }
+    // 没有音源：按下去也不会响，交给界面的 noSource 提示说明原因，别在这里假播放
+    if (!canPlay(cur)) return;
     // 直链已失败、又没有平台播放器可退：再按一次播放就当成「重试」。
-    // 不能直接 setPlaying(true) —— 那会点亮那条「模拟时间轴」，变成进度条在走却没声音，更迷惑。
+    // 不能直接 setPlaying(true) —— 那会让界面进入「在播」的样子却没声音（blocked 文案
+    // 也不会出现），比老实重试一次更迷惑。
     if (audioFailedRef.current && !cur.embed) {
       startTrack(cur);
       return;
@@ -460,6 +514,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       external: isExternal,
       // 直链失败 → 界面把原因（VIP / 版权）写出来，见 AboutPlayer 的 .about-player-blocked
       blocked: audioFailed,
+      // 有曲目、但**条目里压根没配音源**（既没 src 也没 embed）→ 点了也不会有声音。
+      // ⚠️ 只看条目本身，不看播放失败的运行时状态：直链坏掉那种归 `blocked`，
+      //    两件事的出路不一样（一个是「去上传音频」，一个是「平台不给放」）。
+      noSource: !!track && !track.src && !track.embed,
       play,
       toggle,
       next,

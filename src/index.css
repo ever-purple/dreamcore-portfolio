@@ -17074,6 +17074,33 @@ article.dx-sec1::before {
   color: #b07d2b;
   opacity: 0.9;
 }
+/* 条目里压根没配音源（既没上传音频、也没有平台播放器）—— 2026-09-30 加。
+   以前这种状态什么都不说，只让假时间轴空转，用户只能得出「站坏了」。
+   配色沿用「缓冲中」的冷色：同属「可解释的非正常状态」，但和版权受限的琥珀色区分开。 */
+.about-player-nosource {
+  margin: 2px 0 0;
+  font-size: 9.5px;
+  line-height: 1.7;
+  text-align: center;
+  color: #7d8f72;
+  opacity: 0.95;
+}
+/* 没有音源时播放键压暗，并不再呼吸（不然是在骗人按） */
+.about-player-play.is-nosource {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+/* 一首都没收藏时，转盘下方那行说明（音符是装饰，字号给正文用） */
+.about-player-blank {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  font-size: 9.5px;
+  line-height: 1.6;
+  text-align: center;
+  color: var(--ab-ink-soft);
+}
 /* 播放键提示：还没按过播放时轻轻呼吸一下，暗示这里能放音乐 */
 .about-player-btn.is-hint {
   animation: about-play-hint 1.8s ease-in-out infinite;

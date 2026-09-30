@@ -128,7 +128,7 @@ const fmt = (s: number) => {
  * 这里的进度条可以拖动，反过来改变播放进度。
  */
 export function AboutPlayer() {
-  const { track, playing, everPlayed, time, duration, external, blocked, toggle, next, prev, seek } =
+  const { track, playing, everPlayed, time, duration, external, blocked, noSource, toggle, next, prev, seek } =
     usePlayer();
   const { buffering } = usePlayerClock();
   const barRef = useRef<HTMLDivElement>(null);
@@ -219,13 +219,18 @@ export function AboutPlayer() {
               ) : null}
             </p>
           ) : (
-            <span className={`about-player-empty${playing ? ' is-on' : ''}`} aria-hidden="true">
-              <span>♪</span>
-              <span>♫</span>
-              <span>♩</span>
-              <span>♬</span>
-              <span>♪</span>
-            </span>
+            // 一首都没有：光秃秃的转盘 + 一个按不动的播放键，没人知道该去哪加。
+            // 2026-09-30 补一行说明 —— 用户报「播放没声音」时，这里其实一首都没收藏。
+            <div className="about-player-blank">
+              <span className={`about-player-empty${playing ? ' is-on' : ''}`} aria-hidden="true">
+                <span>♪</span>
+                <span>♫</span>
+                <span>♩</span>
+                <span>♬</span>
+                <span>♪</span>
+              </span>
+              <span>还没有收藏音乐 —— 去「灵感收藏 → 音乐」加一首</span>
+            </div>
           )}
         </div>
 
@@ -244,10 +249,12 @@ export function AboutPlayer() {
         <button
           type="button"
           className={`about-player-btn about-player-play${
-            track && !everPlayed && !playing ? ' is-hint' : ''
-          }`}
+            // 没有音源时不要给「按我」的呼吸暗示 —— 按了也不会有声音
+            track && !everPlayed && !playing && !noSource ? ' is-hint' : ''
+          }${noSource ? ' is-nosource' : ''}`}
           aria-label={playing ? '暂停' : '播放'}
           aria-pressed={playing}
+          aria-disabled={noSource || undefined}
           onClick={toggle}
         >
           {playing ? '❚❚' : '▶'}
@@ -328,15 +335,22 @@ export function AboutPlayer() {
       </p>
 
       {/*
-        VIP / 版权歌曲：站内直链一定放不出来（网易云对 fee=1 的歌会把公开直链 302 到 /404），
-        平台外链播放器通常也不给放。这里把原因写出来 —— 不然「点了 ▶ 一声不响」
-        看着就像站坏了。文案按「有没有平台播放器可退」分两种。
+        「一首都没有音源」和「音源坏了」是两件事，出路不同，文案必须分开：
+        · noSource —— 条目里根本没配过音频（上传音频是最直接的出路）；
+        · blocked  —— 配过站内直链，但平台把直链 302 到 /404（VIP / 版权）。
+        以前这两种都表现为「点了播放键没声音」，且**界面一句话都不说**。
       */}
+      {noSource ? (
+        <p className="about-player-nosource">
+          🔇 这首还没有音频文件 —— 在「灵感收藏 → 音乐」里这张卡上点「上传音频」传一次，就能在本站播放
+        </p>
+      ) : null}
+
       {blocked ? (
         <p className="about-player-blocked">
           {external
             ? '🔒 受版权 / VIP 限制，外链播放器多半也放不出声 —— 可点上方「去原站听完整版」'
-            : '🔒 直链取不到音频（多为 VIP / 版权限制），这首暂时放不出来'}
+            : '🔒 直链取不到音频（多为 VIP / 版权限制）—— 想在本站播放，请在这张卡上传你自己的音频文件'}
         </p>
       ) : null}
 

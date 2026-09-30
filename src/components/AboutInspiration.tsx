@@ -1233,6 +1233,7 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
             lyrics: typeof meta.extra?.lyric === 'string' ? meta.extra.lyric : '',
             songId: '',
             src: '',
+            streamSign: '',
           });
           setNote(
             meta.title || meta.cover
@@ -1263,6 +1264,7 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
           lyrics: typeof meta.extra?.lyric === 'string' ? meta.extra.lyric : '',
           songId,
           src: '',
+          streamSign: '',
         });
         setNote(
           isMusic
@@ -1290,6 +1292,7 @@ function MusicLinkAddForm({ onAdd }: { onAdd: (item: MusicItem) => void }) {
           lyrics: '',
           songId: '',
           src: '',
+          streamSign: '',
         });
         if (isGq) {
           setNote(

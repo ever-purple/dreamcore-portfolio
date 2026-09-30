@@ -48,7 +48,16 @@
     />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content="https://www.everpurple.top/og/card-share-wide.png" />
-    <meta name="theme-color" content="#7ee8c7" />
+    <meta name="theme-color" content="#3b2b21" />
+    <!-- 首屏防闪：CSS 包（含 body 的 bg-wine=#3b2b21）还没下载解析时，浏览器默认
+         画白底 / 上面的 theme-color 薄荷绿，慢网（海外机房）下这层会先暴露好几秒，
+         React 挂载后再跳成巧克力色 = 用户看到的「屏闪」。这里内联同款深色底，
+         让 html/body 从 HTML 落地那一刻起就是站点色，前后零跳变。 -->
+    <style>
+      html, body {
+        background-color: #3b2b21;
+      }
+    </style>
 
     <!-- ── 序列帧「首窗」预载 ────────────────────────────────────────────────
          进首页要等整片序列帧下完（见 App.tsx 的 READY_FRAMES），所以下载吞吐

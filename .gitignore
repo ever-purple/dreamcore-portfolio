@@ -76,3 +76,6 @@ dist-ogtest
 # 试构建出来的临时产物目录（dist-ogtest / dist-seedfix …）：只是本地验证用，
 # 真上线走 Vercel，不需要也不会入库。用通配符免得每试一次就多一条。
 dist-*/
+
+# 网站管理面板：本地密钥配置（真实 Token/口令，绝不进仓库）
+dashboard/config.json

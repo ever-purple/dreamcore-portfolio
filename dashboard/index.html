@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>网站管理面板 · everpurple</title>
+<style>
+  :root {
+    --bg: #f4f1ea;
+    --card: #ffffff;
+    --ink: #1f1b16;
+    --muted: #8a8377;
+    --line: #e6e0d5;
+    --accent: #3b2b21;
+    --red: #c0392b;
+    --green: #1d9e75;
+    --amber: #ba7517;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+    padding: 28px 32px 60px;
+  }
+  header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+  h1 { font-size: 22px; font-weight: 600; }
+  h1 small { font-size: 13px; color: var(--muted); font-weight: 400; margin-left: 10px; }
+  .status-pill { font-size: 12px; padding: 4px 10px; border-radius: 999px; background: var(--line); color: var(--muted); }
+  .status-pill.ok { background: #e1f5ee; color: var(--green); }
+  .status-pill.warn { background: #faeeda; color: var(--amber); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .metric { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 20px; }
+  .metric .label { font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  .metric .value { font-size: 28px; font-weight: 600; }
+  .metric .sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px 22px; margin-bottom: 20px; }
+  section h2 { font-size: 15px; font-weight: 600; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  section h2 .tag { font-size: 11px; font-weight: 400; color: var(--muted); background: var(--line); padding: 2px 8px; border-radius: 999px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  td.ellip { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .badge { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 999px; }
+  .badge.device { background: #e6f1fb; color: #185fa5; }
+  .badge.event { background: #fbeaf0; color: #993556; }
+  .badge.state-ready { background: #e1f5ee; color: var(--green); }
+  .badge.state-building { background: #faeeda; color: var(--amber); }
+  .badge.state-error { background: #fcebeb; color: var(--red); }
+  .kbd { display: inline-block; font-family: monospace; background: #f1efe8; border: 1px solid var(--line); border-radius: 5px; padding: 1px 7px; font-size: 12px; }
+  .author-flow { background: #faf7f0; border: 1px dashed var(--line); border-radius: 10px; padding: 14px 16px; font-size: 13px; }
+  .author-flow .step { margin: 6px 0; }
+  .author-flow .num { display: inline-block; width: 20px; height: 20px; line-height: 20px; text-align: center; background: var(--accent); color: #fff; border-radius: 50%; font-size: 12px; margin-right: 8px; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  button { font-size: 13px; padding: 7px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  input[type=text], input[type=number] { font-size: 13px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+  .muted { color: var(--muted); }
+  .empty { color: var(--muted); font-size: 13px; padding: 12px 0; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>网站管理面板 <small>everpurple.top</small></h1>
+  <span class="status-pill" id="cfgPill">读取配置中…</span>
+</header>
+
+<div class="grid" id="metrics"></div>
+
+<div class="two-col">
+  <section>
+    <h2>访问日志 <span class="tag">visitlog</span></h2>
+    <div id="visitlog"></div>
+  </section>
+  <section>
+    <h2>留言板 <span class="tag">guestbook</span></h2>
+    <div id="guestbook"></div>
+  </section>
+</div>
+
+<div class="two-col">
+  <section>
+    <h2>作者模式进入方式 <span class="tag">author</span></h2>
+    <div class="author-flow" id="authorFlow"></div>
+  </section>
+  <section>
+    <h2>Vercel 部署状态 <span class="tag">deploy</span></h2>
+    <div id="deploy"></div>
+  </section>
+</div>
+
+<section>
+  <h2>流量 / 存储用量 <span class="tag">手动记录 · Hobby 套餐无法自动拉取</span></h2>
+  <p class="muted" style="font-size:12px;margin-bottom:10px;">Vercel 的用量 API 需要 Pro 套餐，你当前是 Hobby，数字只能手动抄。每月 1 号登录 vercel.com 看一眼填进来。</p>
+  <div class="row" style="margin-bottom:8px;">
+    流量已用 <input type="number" id="bandwidth" placeholder="GB" style="width:90px;">
+    存储已用 <input type="number" id="storage" placeholder="GB" style="width:90px;">
+    <button class="primary" onclick="saveManual()">保存</button>
+  </div>
+  <div id="manualShow" class="muted" style="font-size:13px;"></div>
+</section>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function fmtTime(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts);
+  return d.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+function fmtGB(mb) { return (mb / 1024).toFixed(2); }
+
+async function getJSON(p) {
+  const r = await fetch(p);
+  return r.json();
+}
+
+async function init() {
+  // 配置状态
+  const cs = await getJSON('/api/config-status');
+  const pill = $('cfgPill');
+  if (cs.hasToken && cs.hasAdminKey) { pill.textContent = '密钥已配置 ✓'; pill.className = 'status-pill ok'; }
+  else if (!cs.hasToken || !cs.hasAdminKey) { pill.textContent = '密钥未配置 ⚠ 请编辑 dashboard/config.json'; pill.className = 'status-pill warn'; }
+
+  // 访问日志
+  try {
+    const v = await getJSON('/api/visitlog');
+    if (v && v.logs) {
+      const logs = v.logs.slice(0, 30);
+      let html = logs.length ? '<table><tr><th>时间</th><th>来源</th><th>地区</th><th>设备</th><th>停留</th><th>动作</th></tr>' : '';
+      logs.forEach((l) => {
+        const events = (l.events || []).map((e) => `<span class="badge event">${esc(e)}</span>`).join(' ');
+        html += `<tr><td>${fmtTime(l.ts)}</td><td class="ellip">${esc(l.from || l.ref || l.path || '/')}</td><td>${esc(l.geo || '—')}</td><td><span class="badge device">${esc(l.device || '—')}</span></td><td>${l.dwell ? l.dwell + 's' : '—'}</td><td>${events || '—'}</td></tr>`;
+      });
+      html += logs.length ? '</table>' : '<div class="empty">暂无访问记录</div>';
+      $('visitlog').innerHTML = html;
+    } else {
+      $('visitlog').innerHTML = '<div class="empty">' + esc((v && v.reason) || '无法读取（检查 ADMIN_KEY）') + '</div>';
+    }
+  } catch (e) { $('visitlog').innerHTML = '<div class="empty">读取失败：' + esc(e.message) + '</div>'; }
+
+  // 留言
+  try {
+    const g = await getJSON('/api/guestbook');
+    if (g && g.list) {
+      let html = '<table><tr><th>时间</th><th>昵称</th><th>内容</th></tr>';
+      g.list.forEach((e) => {
+        html += `<tr><td>${fmtTime(e.ts)}</td><td>${esc(e.name)}</td><td class="ellip">${esc(e.html.replace(/<[^>]*>/g, ''))}</td></tr>`;
+      });
+      html += '</table>';
+      if (g.all) html += `<div class="muted" style="font-size:12px;margin-top:6px;">全部 ${g.total} 条</div>`;
+      $('guestbook').innerHTML = html;
+    } else {
+      $('guestbook').innerHTML = '<div class="empty">' + esc((g && g.reason) || '无法读取') + '</div>';
+    }
+  } catch (e) { $('guestbook').innerHTML = '<div class="empty">读取失败：' + esc(e.message) + '</div>'; }
+
+  // 作者模式说明（静态）
+  $('authorFlow').innerHTML = `
+    <div class="step"><span class="num">1</span>在网站任意页面，<b>3 秒内连按 <span class="kbd">m</span> 键 4 次</b></div>
+    <div class="step"><span class="num">2</span>弹出输入框，输入后台口令（Vercel 环境变量 <span class="kbd">ADMIN_KEY</span>）</div>
+    <div class="step"><span class="num">3</span>校验通过后写入 cookie <span class="kbd">dc_author</span>，<b>14 天有效</b></div>
+    <div class="step muted" style="margin-top:8px;">注：口令只在服务端校验，前端代码里没有；开发环境（?admin=1）不设门。</div>`;
+
+  // Vercel 部署
+  try {
+    const d = await getJSON('/api/vercel/deployments');
+    if (d && d.ok) {
+      const deploys = d.deployments.slice(0, 8);
+      let html = `<div class="muted" style="font-size:12px;margin-bottom:8px;">项目 ${esc(d.project.name)} · ${esc(d.project.plan)} · ${d.project.live ? '在线' : '离线'}</div>`;
+      if (d.deploymentExpiration) {
+        html += `<div class="muted" style="font-size:12px;margin-bottom:8px;">保留策略：${d.deploymentExpiration.expirationDays} 天过期 · 保留 ${d.deploymentExpiration.deploymentsToKeep} 个</div>`;
+      }
+      html += '<table><tr><th>状态</th><th>时间</th><th>提交</th></tr>';
+      deploys.forEach((x) => {
+        const stateCls = x.state === 'READY' ? 'state-ready' : x.state === 'BUILDING' ? 'state-building' : 'state-error';
+        html += `<tr><td><span class="badge ${stateCls}">${esc(x.state)}</span></td><td>${fmtTime(x.readyAt || x.createdAt)}</td><td class="ellip">${esc(x.commitMessage)}</td></tr>`;
+      });
+      html += '</table>';
+      $('deploy').innerHTML = html;
+    } else {
+      $('deploy').innerHTML = '<div class="empty">' + esc((d && d.error && d.error.message) || '无法读取（检查 Vercel Token）') + '</div>';
+    }
+  } catch (e) { $('deploy').innerHTML = '<div class="empty">读取失败：' + esc(e.message) + '</div>'; }
+
+  // 手动记录
+  loadManual();
+}
+
+function loadManual() {
+  try {
+    const m = JSON.parse(localStorage.getItem('dc-dash-manual') || '{}');
+    if (m.bandwidth) $('bandwidth').value = m.bandwidth;
+    if (m.storage) $('storage').value = m.storage;
+    if (m.ts) {
+      const used = m.bandwidth ? `${m.bandwidth}GB` : '—';
+      const pct = m.bandwidth ? ((m.bandwidth / 100) * 100).toFixed(1) + '%' : '';
+      $('manualShow').textContent = `上次记录（${fmtTime(m.ts)}）：流量 ${used}${pct ? '（占 100GB 的 ' + pct + '）' : ''}${m.storage ? ' · 存储 ' + m.storage + 'GB（限额 10GB）' : ''}`;
+    }
+  } catch {}
+}
+function saveManual() {
+  const m = { bandwidth: Number($('bandwidth').value) || 0, storage: Number($('storage').value) || 0, ts: Date.now() };
+  localStorage.setItem('dc-dash-manual', JSON.stringify(m));
+  loadManual();
+}
+
+init();
+</script>
+</body>
+</html>

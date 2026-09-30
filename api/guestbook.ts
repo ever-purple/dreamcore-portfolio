@@ -160,14 +160,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return;
     }
 
-    /* ---------- 读公开最近 N 条 ---------- */
+    /* ---------- 读公开最近 N 条 / 带 key 读全部 ---------- */
     if (req.method === 'GET') {
       const raw = await readRaw();
       const entries = raw
         .map(parseEntry)
-        .filter((e): e is GuestEntry => e !== null)
-        .slice(0, PUBLIC_RECENT);
-      res.status(200).json({ ok: true, list: entries, total: raw.length });
+        .filter((e): e is GuestEntry => e !== null);
+      // 带有效后台口令时返回全部（管理面板用）；否则只回最近 3 条
+      if (hasAdminKey(req)) {
+        res.setHeader('Cache-Control', 'no-store');
+        res.status(200).json({ ok: true, list: entries, total: raw.length, all: true });
+        return;
+      }
+      res.status(200).json({ ok: true, list: entries.slice(0, PUBLIC_RECENT), total: raw.length });
       return;
     }
 

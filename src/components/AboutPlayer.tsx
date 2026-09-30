@@ -58,6 +58,34 @@ function pairTranslations(orig: LyricLine[], transRaw: string): Map<number, stri
   return map;
 }
 
+/**
+ * 长句断行：一段歌词太长会撑满一整行、显得臃肿，切成多段每段一行居中。
+ * 断点优先级：① 逗号（中文「，」/ 英文「,」）—— 语义最自然；
+ * ② 没有逗号但超长，英文按空格断、中文按字数均分，避免一行顶到卡片边缘。
+ * 太短（低于阈值）不动。
+ */
+function splitLongLine(text: string, threshold = 30): string[] {
+  const t = text.trim();
+  if (!t || t.length <= threshold) return [t];
+  // ① 优先按逗号断（保留为「该断行的信号」，但不留在行尾）
+  const commaParts = t.split(/(?:，|,)\s*/).map((s) => s.trim()).filter(Boolean);
+  if (commaParts.length > 1) return commaParts;
+  // ② 没逗号：英文按空格断成两段，中文按中点均分
+  const hasSpace = /\s/.test(t);
+  if (hasSpace) {
+    const words = t.split(/\s+/).filter(Boolean);
+    if (words.length >= 4) {
+      const mid = Math.ceil(words.length / 2);
+      return [words.slice(0, mid).join(' '), words.slice(mid).join(' ')];
+    }
+  }
+  if (/[\u4e00-\u9fff]/.test(t)) {
+    const mid = Math.ceil(t.length / 2);
+    return [t.slice(0, mid), t.slice(mid)];
+  }
+  return [t];
+}
+
 /** 播放器下方的歌词：跟着进度高亮当前句并把它滚到中间；没有时间轴的就整块显示 */
 function LyricsPanel({
   lyrics,
@@ -129,14 +157,26 @@ function LyricsPanel({
     >
       {lines.map((l, i) => {
         const tr = transMap.get(i);
+        const origSegs = splitLongLine(l.text);
+        const trSegs = tr ? splitLongLine(tr) : [];
         return (
           <p
             key={i}
             data-line={i}
             className={`about-player-lyric${i === current ? ' is-current' : ''}`}
           >
-            {l.text}
-            {tr ? <span className="about-player-lyric-trans">{tr}</span> : null}
+            {origSegs.map((seg, si) => (
+              <span key={`o${si}`} className="about-player-lyric-seg">
+                {seg}
+              </span>
+            ))}
+            {trSegs.length
+              ? trSegs.map((seg, si) => (
+                  <span key={`t${si}`} className="about-player-lyric-trans">
+                    {seg}
+                  </span>
+                ))
+              : null}
           </p>
         );
       })}

@@ -17009,9 +17009,8 @@ article.dx-sec1::before {
 }
 
 /* ---- 歌词：播放器下方，跟着进度高亮当前句 ---- */
-/* 2026-09-30 用户定版：歌词区拉长（62px 只露两行半，看不过瘾）、
-   文字与卡片内容左缘对齐（原来的 padding-inline:10px 缩进让它比上方控件缩进一截）。
-   英文歌逐句带中文翻译（.about-player-lyric-trans），一行原文一行译文。 */
+/* 2026-09-30 用户定版（二改）：歌词居中；中英各占一行；
+   过长句子在逗号处断行（splitLongLine 切成多段，每段一行居中）。 */
 .about-player-lyrics {
   position: relative;
   margin-top: 6px;
@@ -17019,7 +17018,7 @@ article.dx-sec1::before {
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: none;
-  text-align: left;
+  text-align: center;
   -webkit-mask-image: linear-gradient(to bottom, transparent, #000 10%, #000 90%, transparent);
   mask-image: linear-gradient(to bottom, transparent, #000 10%, #000 90%, transparent);
 }
@@ -17027,12 +17026,12 @@ article.dx-sec1::before {
   display: none;
 }
 /* 没有时间轴的纯文本歌词：整块让访客自己翻（所以不遮上下边），
-   高度与对齐方式跟时间轴歌词保持一致（同样拉长、同样左对齐）。 */
+   高度与对齐方式跟时间轴歌词保持一致（同样拉长、同样居中）。 */
 .about-player-lyrics:not(.is-timed) {
   max-height: 118px;
   -webkit-mask-image: none;
   mask-image: none;
-  text-align: left;
+  text-align: center;
 }
 /* 「歌词加载中…」「🎵 纯音乐，请欣赏」这种单行状态：只占一条、居中，
    别撑出一整块空高度（它们同样没有 .is-timed，会被上面那条规则带上更高的旧高度） */
@@ -17056,8 +17055,13 @@ article.dx-sec1::before {
   transition: color 0.35s ease, opacity 0.35s ease;
   opacity: 0.62;
 }
+/* 断行后的每一段（原文）各占一行，居中 */
+.about-player-lyric-seg {
+  display: block;
+}
 /* 英文歌的中文翻译：跟在原文下面一行，小一号、更淡 ——
-   对照可读但不抢原文的戏；当前句的翻译随句子一起点亮。 */
+   对照可读但不抢原文的戏；当前句的翻译随句子一起点亮。
+   断行后的每段译文也各占一行居中。 */
 .about-player-lyric-trans {
   display: block;
   font-size: 9px;

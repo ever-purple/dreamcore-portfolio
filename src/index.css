@@ -8234,9 +8234,15 @@ body.green-os .about-overlay .about-pet {
   from { transform: translateY(16px) scale(0.985); opacity: 0; }
   to { transform: none; opacity: 1; }
 }
-/* 切案时面板淡入淡出：父 key 变化时整块重播入场动画 */
-.works-panel {
-  animation-duration: 0.22s;
+/* 2026-09-30 修复「切案闪白」：panel 不再 key={slot} 整块重建，常驻侧栏/标题/页脚，
+   只有内容区（表单 / 左字右图）随 slot 重建，用 crossfade 取代整块 pop。 */
+.works-case-form,
+.works-panel-body.works-case {
+  animation: wk-content-in 0.24s var(--ease-world) both;
+}
+@keyframes wk-content-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
 }
 .works-panel-head {
   display: flex;

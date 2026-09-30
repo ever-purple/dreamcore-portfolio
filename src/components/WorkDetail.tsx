@@ -240,7 +240,7 @@ export function WorkDetail({ project, forceEdit, canEdit = false, totalSlots = 0
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="works-panel" key={project.slot}>
+      <div className="works-panel">
         {/* 左右悬浮切换：永远渲染（>=2 槽位）；模态两侧各放一个半透明复古箭头按钮 */}
         {onSwitch && totalSlots > 1 ? (
           <>
@@ -285,7 +285,7 @@ export function WorkDetail({ project, forceEdit, canEdit = false, totalSlots = 0
 
         {editing ? (
           /* ---------------- 编辑态：表单 ---------------- */
-          <div className="works-case-form">
+          <div className="works-case-form" key={project.slot}>
             <h4 className="works-sec">{project.filled ? '编辑项目' : '提交项目'}</h4>
 
             <div className="works-field">
@@ -407,7 +407,7 @@ export function WorkDetail({ project, forceEdit, canEdit = false, totalSlots = 0
           </div>
         ) : (
           /* ---------------- 阅读态：左字右图 ---------------- */
-          <div className="works-panel-body works-case">
+          <div className="works-panel-body works-case" key={project.slot}>
             <section className="works-case-text" aria-label="项目阐述">
               {(role || year || project.client) ? (
                 <p className="works-case-meta">

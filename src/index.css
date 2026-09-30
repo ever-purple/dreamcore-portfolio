@@ -17009,32 +17009,30 @@ article.dx-sec1::before {
 }
 
 /* ---- 歌词：播放器下方，跟着进度高亮当前句 ---- */
+/* 2026-09-30 用户定版：歌词区拉长（62px 只露两行半，看不过瘾）、
+   文字与卡片内容左缘对齐（原来的 padding-inline:10px 缩进让它比上方控件缩进一截）。
+   英文歌逐句带中文翻译（.about-player-lyric-trans），一行原文一行译文。 */
 .about-player-lyrics {
   position: relative;
   margin-top: 6px;
-  /* 左右缩进一点：歌词若一直顶到卡片边缘，会被读成「被拉满一整行、贴在左边」，
-     留出内边距才看得出是居中的一列文字 */
-  padding-inline: 10px;
-  max-height: 62px;
+  max-height: 118px;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: none;
-  text-align: center;
-  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 22%, #000 78%, transparent);
-  mask-image: linear-gradient(to bottom, transparent, #000 22%, #000 78%, transparent);
+  text-align: left;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 10%, #000 90%, transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 10%, #000 90%, transparent);
 }
 .about-player-lyrics::-webkit-scrollbar {
   display: none;
 }
 /* 没有时间轴的纯文本歌词：整块让访客自己翻（所以不遮上下边），
-   但**照样居中、照样只有 62px 高**。
-   以前这里是「左对齐 + 92px」——视觉上就是一段被拉长、贴在左边的段落，
-   和整张卡片居中的排版对不上，于是改成和时间轴歌词同高、同样居中。 */
+   高度与对齐方式跟时间轴歌词保持一致（同样拉长、同样左对齐）。 */
 .about-player-lyrics:not(.is-timed) {
-  max-height: 62px;
+  max-height: 118px;
   -webkit-mask-image: none;
   mask-image: none;
-  text-align: center;
+  text-align: left;
 }
 /* 「歌词加载中…」「🎵 纯音乐，请欣赏」这种单行状态：只占一条、居中，
    别撑出一整块空高度（它们同样没有 .is-timed，会被上面那条规则带上更高的旧高度） */
@@ -17058,10 +17056,24 @@ article.dx-sec1::before {
   transition: color 0.35s ease, opacity 0.35s ease;
   opacity: 0.62;
 }
+/* 英文歌的中文翻译：跟在原文下面一行，小一号、更淡 ——
+   对照可读但不抢原文的戏；当前句的翻译随句子一起点亮。 */
+.about-player-lyric-trans {
+  display: block;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--ab-ink-soft);
+  opacity: 0.8;
+  margin-top: 1px;
+}
 .about-player-lyric.is-current {
   color: var(--ab-ink);
   font-weight: 700;
   opacity: 1;
+}
+.about-player-lyric.is-current .about-player-lyric-trans {
+  color: var(--ab-ink);
+  opacity: 0.85;
 }
 /* 直链取不到音频（VIP / 版权限制）时明说一句原因 ——
    否则「点了 ▶ 却一声不响」看起来就像站坏了。

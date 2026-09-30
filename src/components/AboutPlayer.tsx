@@ -37,36 +37,48 @@ function parseLyrics(raw: string): LyricLine[] {
   return out;
 }
 
+/**
+ * 把翻译 LRC（tlyric，同样带时间标签）按时间轴配到原文行上。
+ * 双指针同步前进：原文行 i 找「时间最接近的翻译行」，差 ≤ 0.8s 才认
+ * （翻译通常逐句跟原文对齐，但个别句会漂移半秒）。
+ */
+function pairTranslations(orig: LyricLine[], transRaw: string): Map<number, string> {
+  const map = new Map<number, string>();
+  if (!transRaw || !transRaw.trim()) return map;
+  const trans = parseLyrics(transRaw).filter((l) => l.t >= 0);
+  if (!trans.length) return map;
+  let j = 0;
+  for (let i = 0; i < orig.length; i += 1) {
+    if (orig[i].t < 0) continue;
+    while (j < trans.length - 1 && Math.abs(trans[j + 1].t - orig[i].t) <= Math.abs(trans[j].t - orig[i].t)) {
+      j += 1;
+    }
+    if (Math.abs(trans[j].t - orig[i].t) <= 0.8) map.set(i, trans[j].text);
+  }
+  return map;
+}
+
 /** 播放器下方的歌词：跟着进度高亮当前句并把它滚到中间；没有时间轴的就整块显示 */
 function LyricsPanel({
   lyrics,
+  trans,
   time,
   loading,
   empty,
 }: {
   lyrics: string;
+  /** 中文翻译 LRC（英文歌逐句对照）；与正文同源时为空 */
+  trans?: string;
   time: number;
   /** 正在向 /api/lyric 拉取 */
   loading?: boolean;
   /** 拉到了，但歌曲是纯音乐 / 无词 */
   empty?: boolean;
 }) {
-  if (loading) {
-    return (
-      <div className="about-player-lyrics is-loading" aria-label="歌词">
-        <p className="about-player-lyric">歌词加载中…</p>
-      </div>
-    );
-  }
-  if (empty) {
-    return (
-      <div className="about-player-lyrics is-empty" aria-label="歌词">
-        <p className="about-player-lyric">🎵 纯音乐，请欣赏</p>
-      </div>
-    );
-  }
-
+  // ⚠️ 所有 hooks 必须在 early return 之前 —— 以前 useMemo 写在 loading/empty
+  // 分支后面，状态从 loading→ready 的瞬间 hooks 数量 0→3 是违规的（React 会崩）。
   const lines = useMemo(() => parseLyrics(lyrics), [lyrics]);
+  const transMap = useMemo(() => pairTranslations(lines, trans ?? ''), [lines, trans]);
   const boxRef = useRef<HTMLDivElement>(null);
   const timed = useMemo(() => lines.some((l) => l.t >= 0), [lines]);
 
@@ -92,6 +104,21 @@ function LyricsPanel({
     box.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
   }, [current]);
 
+  if (loading) {
+    return (
+      <div className="about-player-lyrics is-loading" aria-label="歌词">
+        <p className="about-player-lyric">歌词加载中…</p>
+      </div>
+    );
+  }
+  if (empty) {
+    return (
+      <div className="about-player-lyrics is-empty" aria-label="歌词">
+        <p className="about-player-lyric">🎵 纯音乐，请欣赏</p>
+      </div>
+    );
+  }
+
   if (!lines.length) return null;
 
   return (
@@ -100,15 +127,19 @@ function LyricsPanel({
       ref={boxRef}
       aria-label="歌词"
     >
-      {lines.map((l, i) => (
-        <p
-          key={i}
-          data-line={i}
-          className={`about-player-lyric${i === current ? ' is-current' : ''}`}
-        >
-          {l.text}
-        </p>
-      ))}
+      {lines.map((l, i) => {
+        const tr = transMap.get(i);
+        return (
+          <p
+            key={i}
+            data-line={i}
+            className={`about-player-lyric${i === current ? ' is-current' : ''}`}
+          >
+            {l.text}
+            {tr ? <span className="about-player-lyric-trans">{tr}</span> : null}
+          </p>
+        );
+      })}
     </div>
   );
 }
@@ -141,26 +172,33 @@ export function AboutPlayer() {
    * 抓回来直接喂给 LyricsPanel。非网易云歌曲（或没 id）就退回条目自带的歌词
    * （作者手填 / 历史残留）。拉取失败也安全回退，绝不让面板崩。
    */
-  const [lyric, setLyric] = useState<{ status: 'idle' | 'loading' | 'empty' | 'ready'; text: string }>(
-    { status: 'idle', text: '' },
+  const [lyric, setLyric] = useState<{ status: 'idle' | 'loading' | 'empty' | 'ready'; text: string; trans: string }>(
+    { status: 'idle', text: '', trans: '' },
   );
   useEffect(() => {
     if (track?.platform !== 'netease' || !track?.songId) {
-      setLyric({ status: 'idle', text: track?.lyrics ?? '' });
+      setLyric({ status: 'idle', text: track?.lyrics ?? '', trans: '' });
       return;
     }
     let cancelled = false;
-    setLyric({ status: 'loading', text: '' });
+    setLyric({ status: 'loading', text: '', trans: '' });
     fetch(`/api/lyric?id=${encodeURIComponent(track.songId)}`, { cache: 'force-cache' })
       .then((r) => r.json())
       .then((j: { ok?: boolean; lrc?: string; tlyric?: string }) => {
         if (cancelled) return;
-        const lrc = (j && (j.lrc || j.tlyric)) || '';
-        setLyric({ status: lrc ? 'ready' : 'empty', text: lrc });
+        const lrc = (j?.lrc ?? '').trim();
+        const tly = (j?.tlyric ?? '').trim();
+        // 正文：原文优先，纯翻译歌（lrc 空）才拿翻译当正文；
+        // 翻译只在「正文是原文」时作为对照行显示，避免同一句出现两遍
+        setLyric({
+          status: lrc || tly ? 'ready' : 'empty',
+          text: lrc || tly,
+          trans: lrc && tly ? tly : '',
+        });
       })
       .catch(() => {
         if (cancelled) return;
-        setLyric({ status: 'idle', text: track?.lyrics ?? '' });
+        setLyric({ status: 'idle', text: track?.lyrics ?? '', trans: '' });
       });
     return () => {
       cancelled = true;
@@ -314,6 +352,7 @@ export function AboutPlayer() {
 
       <LyricsPanel
         lyrics={lyric.text}
+        trans={lyric.trans}
         time={time}
         loading={lyric.status === 'loading'}
         empty={lyric.status === 'empty'}

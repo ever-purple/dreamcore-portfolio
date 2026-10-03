@@ -33,9 +33,11 @@ const warmImage = (src: string) => {
   if (existing) return existing;
   const request = new Promise<void>((resolve) => {
     const image = new Image();
-    const done = () => resolve();
-    image.onload = done;
-    image.onerror = done;
+    image.onload = () => {
+      // onload 只代表字节到齐；等 decode 完成，避免切页后各图层分帧出现。
+      void image.decode().catch(() => {}).finally(resolve);
+    };
+    image.onerror = () => resolve();
     image.decoding = 'async';
     image.src = src;
   });
@@ -46,14 +48,26 @@ const warmImage = (src: string) => {
 const warmQuickHero = () => {
   const device = window.matchMedia('(max-width: 760px)').matches ? 'mobile' : 'desktop';
   const root = `${import.meta.env.BASE_URL}quick-view-v2/surreal-${device}`;
-  return Promise.all([
+  const images = [
     'base-sky-meadow.webp',
     'house-shadow.webp',
     'floating-house.webp',
     'curtain.webp',
     'goldfish.webp',
     'cloud.webp',
-  ].map((file) => warmImage(`${root}/${file}`)));
+  ].map((file) => warmImage(`${root}/${file}`));
+  if (device === 'desktop') {
+    images.push(
+      warmImage(`${root}/desk-crt-scene.webp`),
+      warmImage(`${root}/desk-crt-screen-glow.webp`),
+    );
+  }
+  return Promise.all([
+    ...images,
+    document.fonts?.load('400 64px JheriCurls').catch(() => []),
+    document.fonts?.load('500 24px Caveat').catch(() => []),
+    document.fonts?.load('400 28px NanoOldSongA').catch(() => []),
+  ]);
 };
 
 const warmQuickExploreBridge = () =>
@@ -330,6 +344,7 @@ function App() {
   const [studioEntry, setStudioEntry] = useState<QuickViewExploreTarget>('studio');
   const [studioPlanSlot, setStudioPlanSlot] = useState<number | null>(null);
   const [returnToQuickWorks, setReturnToQuickWorks] = useState(false);
+  const [quickReady, setQuickReady] = useState(false);
   // ?studio=1 / ?about=1 / ?greenos=1 预览模式：视为已过加载页，便于直接测试
   const [entered, setEntered] = useState(() => {
     const params = new URLSearchParams(window.location.search);
@@ -380,7 +395,10 @@ function App() {
 
   useEffect(() => {
     if (stage !== 'quick') return;
-    void continueAutomaticWarmup();
+    void Promise.all([loadQuickViewShell(), warmQuickHero()]).then(() => {
+      setQuickReady(true);
+      void continueAutomaticWarmup();
+    });
   }, [stage]);
 
   // 查询参数直进工作室不会经过首页入口的 click handler，按当前 stage 直接从 Explore 开始。
@@ -539,7 +557,8 @@ function App() {
     // GSAP 驱动 Lenis：用 gsap.ticker 统一帧循环，滚动更顺滑、更"活"
     const tick = (time: number) => lenis.raf(time * 1000);
     gsap.ticker.add(tick);
-    gsap.ticker.lagSmoothing(0);
+    // 保留GSAP默认的卡顿修正，避免图片解码或长任务后时间轴一次跳过多帧。
+    gsap.ticker.lagSmoothing(500, 33);
 
     return () => {
       gsap.ticker.remove(tick);
@@ -659,8 +678,10 @@ function App() {
     });
   }, [runFlashTransition]);
 
-  const handleQuickView = useCallback(() => {
+  const handleQuickView = useCallback(async () => {
     clearEntryHash();
+    await Promise.all([loadQuickViewShell(), warmQuickHero()]);
+    setQuickReady(true);
     window.scrollTo(0, 0);
     setStage('quick');
   }, [clearEntryHash]);
@@ -724,9 +745,17 @@ function App() {
       ) : stage === 'choice' ? (
         <ExploreChoice onQuickView={handleQuickView} onExplore={handleExplore} onQuickIntent={handleQuickIntent} onExploreIntent={handleExploreIntent} />
       ) : stage === 'quick' ? (
-        <Suspense fallback={<div className="fixed inset-0 bg-[#b7d9b0]" aria-hidden="true" />}>
-          <QuickViewShell onBack={handleQuickBack} onExplore={handleQuickExplore} />
-        </Suspense>
+        quickReady ? (
+          <Suspense fallback={<div className="fixed inset-0 bg-[#0a0a0a]" aria-hidden="true" />}>
+            <QuickViewShell onBack={handleQuickBack} onExplore={handleQuickExplore} />
+          </Suspense>
+        ) : (
+          <div
+            className="fixed inset-0 bg-[#0a0a0a] bg-cover bg-center"
+            style={{ backgroundImage: `linear-gradient(rgba(7,16,20,.32),rgba(8,13,10,.42)),url('${import.meta.env.BASE_URL}quick-view-v2/surreal-${window.matchMedia('(max-width: 760px)').matches ? 'mobile' : 'desktop'}/base-sky-meadow.webp')` }}
+            aria-hidden="true"
+          />
+        )
       ) : (
         <Suspense fallback={<div className="fixed inset-0 bg-[#0a0a0a]" aria-hidden="true" />}>
           <StudioSection entryTarget={studioEntry} entryPlanSlot={studioPlanSlot} onSelectObject={handleSelectObject} onBack={handleBack} onReturnToQuickWorks={returnToQuickWorks ? handleReturnToQuickWorks : undefined} />

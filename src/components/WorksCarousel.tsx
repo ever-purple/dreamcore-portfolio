@@ -57,7 +57,7 @@ export function WorksCarousel({ open, onClose, initialActive = null, returnToQui
   const isAdmin = useAdmin();
   const [mounted, setMounted] = useState(open);
   const [closing, setClosing] = useState(false);
-  const [hydrated, setHydrated] = useState(false);
+  const [localDataReady, setLocalDataReady] = useState(false);
   /**
    * 运行时覆盖表 = 代码文件里的 `WORK_OVERRIDES` ⊕ 本会话里刚保存的改动。
    *
@@ -113,6 +113,7 @@ export function WorksCarousel({ open, onClose, initialActive = null, returnToQui
   const rawRef = useRef<Map<number, SavedProject>>(new Map());
   const projectsRef = useRef(projects);
   projectsRef.current = projects;
+  const syncedFacesRef = useRef<string[]>([]);
 
   /* 入场 / 退场 */
   useEffect(() => {
@@ -171,7 +172,7 @@ export function WorksCarousel({ open, onClose, initialActive = null, returnToQui
       })
       .catch(() => {})
       .finally(() => {
-        if (!cancelled) setHydrated(true);
+        if (!cancelled) setLocalDataReady(true);
       });
     return () => {
       cancelled = true;
@@ -182,7 +183,7 @@ export function WorksCarousel({ open, onClose, initialActive = null, returnToQui
 
   /* 建场景 / 彻底销毁 */
   useEffect(() => {
-    if (!mounted || !hydrated) return;
+    if (!mounted) return;
     const host = hostRef.current;
     if (!host) return;
     const faces: SlotFace[] = projectsRef.current.map((p) => ({
@@ -223,20 +224,36 @@ export function WorksCarousel({ open, onClose, initialActive = null, returnToQui
     if (import.meta.env.DEV) (window as unknown as { __wkpCarousel?: CarouselAPI }).__wkpCarousel = api;
     // 场景建出来时相框一律是"占位卡"（解码是异步的）。已有 cover 先补上。
     projectsRef.current.forEach((p, i) => {
-      if (p.cover) api.setFace(i, { code: p.code, title: p.title, cover: p.cover });
+      const title = p.filled ? p.title : '待提交项目';
+      syncedFacesRef.current[i] = `${p.code}|${title}|${p.cover ?? ''}`;
+      if (p.cover) api.setFace(i, { code: p.code, title, cover: p.cover });
     });
     return () => {
       api.dispose();
       apiRef.current = null;
+      syncedFacesRef.current = [];
       if (import.meta.env.DEV) delete (window as unknown as { __wkpCarousel?: CarouselAPI }).__wkpCarousel;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mounted, hydrated]);
+  }, [mounted]);
+
+  /* IndexedDB / 编辑结果只增量更新相框，不再为了数据变化销毁并重建整个 3D 场景。 */
+  useEffect(() => {
+    const api = apiRef.current;
+    if (!api) return;
+    projects.forEach((p, i) => {
+      const title = p.filled ? p.title : '待提交项目';
+      const key = `${p.code}|${title}|${p.cover ?? ''}`;
+      if (syncedFacesRef.current[i] === key) return;
+      syncedFacesRef.current[i] = key;
+      api.setFace(i, { code: p.code, title, cover: p.cover });
+    });
+  }, [projects]);
 
   /* 把「只有 PDF、没有 cover」的项目渲染出高光图（deck 首页 / 上传图），
      同时回填 3D 相框封面。seed 的 deck 是 58MB，一次性拉取后浏览器会缓存。 */
   useEffect(() => {
-    if (!hydrated) return;
+    if (!localDataReady) return;
     let cancelled = false;
     (async () => {
       const { pdfThumbUrl } = await import('@/lib/carousel/pdf-cover');
@@ -256,7 +273,7 @@ export function WorksCarousel({ open, onClose, initialActive = null, returnToQui
     return () => {
       cancelled = true;
     };
-  }, [hydrated]);
+  }, [localDataReady]);
 
   const focusedRef = useRef<number | null>(null);
   const activeRef = useRef<number | null>(null);

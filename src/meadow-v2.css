@@ -15,6 +15,7 @@ body.quick-view-active { background: #899187; }
   isolation: isolate;
   color: var(--qv-ink);
   background: transparent;
+  overflow-anchor: none;
 }
 
 /* 绿系收板：本文件原本自造了 #9fd8bd 作小号标签 / 序号 / 列表圆点用（12 处）。
@@ -227,7 +228,7 @@ body.quick-view-active { background: #899187; }
   background:
     radial-gradient(circle at 50% 42%, transparent 35%, rgba(37, 33, 27, .22) 115%),
     linear-gradient(180deg, rgba(225, 214, 193, .08), rgba(80, 72, 58, .12));
-  mix-blend-mode: multiply;
+  mix-blend-mode: normal;
   will-change: opacity;
 }
 
@@ -237,7 +238,7 @@ body.quick-view-active { background: #899187; }
   inset: 0;
   opacity: .026;
   background: repeating-linear-gradient(180deg, transparent 0 3px, rgba(28, 25, 22, .5) 3px 4px);
-  mix-blend-mode: multiply;
+  mix-blend-mode: normal;
 }
 
 /* Foreground duplicates create real occlusion without moving UI into the
@@ -259,7 +260,7 @@ body.quick-view-active { background: #899187; }
 .qv-foreground__curtain { opacity: 0; animation: qv-curtain-drift 8.5s ease-in-out infinite alternate; transform-origin: 16% 4%; }
 .qv-foreground__goldfish { opacity: 1; animation: qv-fish-swim 6.8s ease-in-out infinite alternate; transform-origin: 58% 48%; }
 
-.quick-view--meadow .qv-noise { z-index: 70; opacity: .035; mix-blend-mode: soft-light; pointer-events: none; }
+.quick-view--meadow .qv-noise { z-index: 70; opacity: .025; mix-blend-mode: normal; pointer-events: none; }
 
 .quick-view--meadow .qv-hero,
 .quick-view--meadow .qv-section,

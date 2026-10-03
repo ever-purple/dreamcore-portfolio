@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import '../quick-view.css';
 import '../meadow-v2.css';
 import gsap from 'gsap';
@@ -209,7 +209,8 @@ export function QuickViewShell({ onBack, onExplore }: QuickViewShellProps) {
     if (index === 0 && drawStep === 0) { drawCat(); return; }
     if (drawStep >= index + 1) setSelectedExperience(index);
   };
-  useEffect(() => {
+  // 滚动位置与GSAP初态必须在浏览器首帧绘制前完成，避免文字和背景先各画一帧再跳位。
+  useLayoutEffect(() => {
     document.body.classList.add('quick-view-active');
     const previousScrollRestoration = window.history.scrollRestoration;
     window.history.scrollRestoration = 'manual';
@@ -363,7 +364,16 @@ export function QuickViewShell({ onBack, onExplore }: QuickViewShellProps) {
         else if (main) gsap.fromTo(main, { y: 62, scale: .995, opacity: 0 }, { y: 0, scale: 1, opacity: 1, ease: 'none', immediateRender: false, scrollTrigger: { trigger: section, start: 'top 92%', end: 'top 68%', scrub: true } });
       });
     }, rootRef);
-    return () => { document.body.classList.remove('quick-view-active'); window.history.scrollRestoration = previousScrollRestoration; ctx.revert(); };
+    const refreshFrame = window.requestAnimationFrame(() => {
+      ScrollTrigger.refresh();
+      ScrollTrigger.update();
+    });
+    return () => {
+      window.cancelAnimationFrame(refreshFrame);
+      document.body.classList.remove('quick-view-active');
+      window.history.scrollRestoration = previousScrollRestoration;
+      ctx.revert();
+    };
   }, []);
 
   useEffect(() => () => drawTimers.current.forEach(window.clearTimeout), []);

@@ -1,9 +1,7 @@
 import { lazy, useCallback, useEffect, useMemo, useRef, useState, Suspense } from 'react';
-import { AboutOverlay } from '@/components/AboutOverlay';
-import { CrtOverlay } from '@/components/GreenOs';
 import { ObjectZone } from '@/components/ObjectZone';
-import { NotebookOverlay, DIARY_BOOK_URL } from '@/components/NotebookOverlay';
 import { downloadResume } from '@/lib/resume';
+import { warmFile } from '@/lib/assetWarmup';
 import { StudioChrome, StudioNavProvider, type StudioNav } from '@/components/StudioChrome';
 
 /**
@@ -21,6 +19,16 @@ const NewsstandScene = lazy(() => import('@/components/NewsstandScene'));
  */
 const MediaGalleryPage = lazy(() => import('@/components/MediaGalleryPage'));
 const CopyProjectPage = lazy(() => import('@/components/CopyProjectPage'));
+const loadAboutOverlay = () =>
+  import('@/components/AboutOverlay').then((module) => ({ default: module.AboutOverlay }));
+const AboutOverlay = lazy(loadAboutOverlay);
+const CrtOverlay = lazy(() =>
+  import('@/components/GreenOs').then((module) => ({ default: module.CrtOverlay })),
+);
+const loadNotebookOverlay = () =>
+  import('@/components/NotebookOverlay').then((module) => ({ default: module.NotebookOverlay }));
+const NotebookOverlay = lazy(loadNotebookOverlay);
+const DIARY_BOOK_URL = './diary-book/index.html?embed=1&v=20260926k';
 import { StudioMenu } from '@/components/StudioMenu';
 import { StudioLensBackground } from '@/components/StudioLensBackground';
 import { StudioContactPanel, type StudioContactHandle } from '@/components/StudioContactPanel';
@@ -95,18 +103,6 @@ const POINT_BY_ID = Object.fromEntries(studioObjects.map((o) => [o.id, o.point])
 >;
 
 /**
- * 「About 页首屏四张图 + 两个像素字体」的投机预取延后时长，毫秒。
- *
- * ⚠️ **这个定时器只配给这不到 0.6MB 的小件用。** 12MB 级的 `rack.glb` 与日记单文件
- * 一律**只认悬停**，别再加进来 —— 理由见下面那段 `useEffect` 的注释：
- * 冷访问 427 KB/s 下管子要 25s 以上才空，任何「延后 N 秒」都会继续和背景视频抢带宽。
- *
- * 取值依据（2026-09-30，CDP 3.5 Mbps 跨境链路复刻）：进工作室后用户此刻真正在看的是
- * 背景循环视频 2.4MB（427 KB/s 下约 5.7s）与帧集首窗，留一倍余量 → 12s。
- */
-const LATE_PREFETCH_DELAY = 12000;
-
-/**
  * Studio 主空间：循环视频铺满全屏的房间。
  * - **鼠标景深视差**（2026-09-16 第六轮）：鼠标一动，画面板 / 暗角 / 脉冲点三层
  *   各按不同倍率位移 —— 见 src/lib/useRoomParallax.ts 与 index.css 的同名段。
@@ -139,7 +135,12 @@ export function StudioSection({ entryTarget = 'studio', entryPlanSlot = null, on
      工作室的点击按钮本来就是靠悬停才露出来的，用户点之前必然先悬停。 */
   useEffect(() => {
     if (hoveredId !== 'notebook') return;
+    void loadNotebookOverlay();
     fetch(DIARY_BOOK_URL).catch(() => {});
+  }, [hoveredId]);
+
+  useEffect(() => {
+    if (hoveredId === 'computer') void loadAboutOverlay();
   }, [hoveredId]);
   /* ?diary=1 可直接预览实习日记浮层（与 ?works=1 / ?media=1 / ?newsstand=1 同一套
      调试参数约定）。加它的直接原因：日记挂在一个 3D 笔记本物件上，
@@ -596,6 +597,7 @@ export function StudioSection({ entryTarget = 'studio', entryPlanSlot = null, on
   useEffect(() => {
     if (hoveredId !== 'computer') return;
     void import('@/components/MascotViewer');
+    void warmFile(`${import.meta.env.BASE_URL}about/mascot.glb`);
   }, [hoveredId]);
 
   // 同理：悬停木马就预取 3D 木马分包（它比小人还重，Three.js 场景 + OrbitControls）
@@ -614,51 +616,8 @@ export function StudioSection({ entryTarget = 'studio', entryPlanSlot = null, on
   // 只在用户**表现出意图**的时候才值得花带宽（一进场就拉的老写法见下面那段注释）
   useEffect(() => {
     if (hoveredId !== 'newsstand') return;
-    void fetch(`${import.meta.env.BASE_URL}newsstand/rack.glb`, { mode: 'cors' }).catch(
-      () => {},
-    );
+    void warmFile(`${import.meta.env.BASE_URL}newsstand/rack.glb`, { mode: 'cors' });
   }, [hoveredId]);
-
-  /* 进入工作室后**先让画面跑顺，再做投机预取**（2026-09-30 重做）。
-     ⚠️ 老写法是「一挂载就并行发起 rack.glb 9.3MB + 日记单文件 3MB + About 四张图 +
-        两个像素字体」，理由写的是「用户直接点开时东西已经在下载了，不用在转场里干等」。
-        但 CDP 体检（3.5 Mbps 跨境链路复刻）里这批请求 **t=1.2s 同时发起、
-        到观察窗口结束一个字节都没传完**（`bytes=0`，见 _audit-routes.mjs 的「起/耗」两列）——
-        它们和用户此刻真正在看的工作室背景视频（2.4MB，实测 25.6s 才下完）+ 帧集抢同一条
-        427 KB/s 的管子，结果谁也下不完。用户原话：「所有都很慢，还不如以前顺畅」。
-     ⚠️ **别用 `requestIdleCallback` 当闸门**：它等的是 **CPU 空闲，不是网络空闲**。
-        实测挂在它里的 About 预取照样在 t=1.2s 就发起了 —— 上一版就是这么写的。
-     ⚠️ **也别用「延后 N 秒」兜底那两个重件**：改成 12s 之后复测，管子**仍然是满的** ——
-        `about/banner-sticker.png` 在 13.3s 发起，219 KB 却花了 **11.3s**（≈19 KB/s）。
-        冷访问的 427 KB/s 链路，把「视频 2.4MB + 帧集 6.7MB」下完要 25s 以上，
-        任何定时器都猜不准。所以那两个 12MB 级的大件**只认悬停**（见上面两个 `hoveredId` 分支）；
-        这里只留 About 那不到 0.6MB 的预热 —— 它本身也很小，晚一点起跑就够了。
-     动态 import 那两个分包（177KB + 19KB）太小，留着立即发。 */
-  useEffect(() => {
-    void import('@/components/WorksCarousel');
-    void import('@/components/NewsstandScene');
-    const t = window.setTimeout(() => {
-      /* 预取 About 页首屏资源：GreenOsBoot 会等这四张图 + 两个像素字体
-         全部 load 完才放行（9s 兜底）—— 实测开机黑屏比打字机多出约 1s 就是在等它们。
-         img.src 命中缓存后，真正开机时的 new Image() 立即 resolve。 */
-      [
-        'about/banner-visual.webp',
-        'about/bg-pattern.webp',
-        'about/banner-sticker.webp',
-        'about/avatar.webp',
-      ].forEach((p) => {
-        const img = new Image();
-        img.src = `${import.meta.env.BASE_URL}${p}`;
-      });
-      try {
-        void document.fonts.load('16px Zpix').catch(() => {});
-        void document.fonts.load('16px Cubic11').catch(() => {});
-      } catch {
-        /* 字体 API 不可用就跳过 —— 开机屏自己的预载还在兜底 */
-      }
-    }, LATE_PREFETCH_DELAY);
-    return () => window.clearTimeout(t);
-  }, []);
 
   // URL 同步：打开时 #about；Green OS 模式下同时写入 ?greenos=1，
   // 这样从 ?studio=1 点电脑钻进 CRT 后刷新，也能恢复 CRT 质感 + 开机流程。
@@ -779,14 +738,18 @@ export function StudioSection({ entryTarget = 'studio', entryPlanSlot = null, on
       />
 
       {/* 线圈本弹层 */}
-      <NotebookOverlay
-        open={notebookOpen}
-        onClose={() => {
-          setNotebookOpen(false);
-          closeFocused(); // 镜头从本子拉回 1:1
-          // 音乐不用管：notebookOpen 转 false 后 musicCue 自己把音乐拉回前台
-        }}
-      />
+      {notebookOpen ? (
+        <Suspense fallback={null}>
+          <NotebookOverlay
+            open={notebookOpen}
+            onClose={() => {
+              setNotebookOpen(false);
+              closeFocused(); // 镜头从本子拉回 1:1
+              // 音乐不用管：notebookOpen 转 false 后 musicCue 自己把音乐拉回前台
+            }}
+          />
+        </Suspense>
+      ) : null}
 
       {/* 全屏菜单 */}
       <StudioMenu
@@ -887,22 +850,30 @@ export function StudioSection({ entryTarget = 'studio', entryPlanSlot = null, on
       ) : null}
 
       {/* About Me / Green OS 页（点电脑物件 → 钻进屏幕 → 原地浮层） */}
-      <AboutOverlay
-        open={aboutOpen}
-        greenOs={viaCrt}
-        boot={!skipBoot}
-        onClose={() => {
-          if (viaCrt) {
-            closeCrt(); // 走反向拉远
-            return;
-          }
-          setAboutOpen(false);
-          // 音乐不用管：aboutOpen 转 false 后 musicCue 自己把音乐拉回前台
-        }}
-      />
+      {aboutOpen ? (
+        <Suspense fallback={null}>
+          <AboutOverlay
+            open={aboutOpen}
+            greenOs={viaCrt}
+            boot={!skipBoot}
+            onClose={() => {
+              if (viaCrt) {
+                closeCrt(); // 走反向拉远
+                return;
+              }
+              setAboutOpen(false);
+              // 音乐不用管：aboutOpen 转 false 后 musicCue 自己把音乐拉回前台
+            }}
+          />
+        </Suspense>
+      ) : null}
 
       {/* CRT 物理质感层（扫描线 / 暗角 / 荧光），盖在 Green OS 之上但不吃事件 */}
-      <CrtOverlay active={crtOn} />
+      {crtOn ? (
+        <Suspense fallback={null}>
+          <CrtOverlay active={crtOn} />
+        </Suspense>
+      ) : null}
 
       {/* 荧光过曝闪光（z 最高的一层，专门用来吃掉 3D→2D 的切换瞬间） */}
       {crtFlash ? <div className="crt-flash" aria-hidden="true" /> : null}

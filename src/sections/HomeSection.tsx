@@ -11,6 +11,9 @@ interface HomeSectionProps {
   entered: boolean;
   onQuickView: () => void;
   onExplore: () => void;
+  onChoiceIntent: () => void;
+  onQuickIntent: () => void;
+  onExploreIntent: () => void;
   /** 通知外层「我滚到第几帧了」，用于驱动窗口式预加载 */
   onFrameFocus: (frame: number) => void;
   setDownBlocked: (blocked: boolean) => void;
@@ -46,6 +49,9 @@ export function HomeSection({
   entered,
   onQuickView,
   onExplore,
+  onChoiceIntent,
+  onQuickIntent,
+  onExploreIntent,
   onFrameFocus,
   setDownBlocked,
   framesRevision,
@@ -426,6 +432,7 @@ export function HomeSection({
       a.play().catch(() => {});
     }
     setChooserOpen(true);
+    onChoiceIntent();
   };
 
   const handleOpen = (destination: 'quick' | 'explore') => {
@@ -525,15 +532,21 @@ export function HomeSection({
                 <div className="home-open-gate__entries">
                   <button
                     type="button"
-                  onClick={() => handleOpen('quick')}
-                  className="home-open-gate__entry"
-                >
+                    onClick={() => handleOpen('quick')}
+                    onPointerDown={onQuickIntent}
+                    onPointerEnter={onQuickIntent}
+                    onFocus={onQuickIntent}
+                    className="home-open-gate__entry"
+                  >
                     <span className="home-open home-open-gate__label">Quick view</span>
                     <span className="home-open-gate__entry-zh">快速浏览</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => handleOpen('explore')}
+                    onPointerDown={onExploreIntent}
+                    onPointerEnter={onExploreIntent}
+                    onFocus={onExploreIntent}
                     className="home-open-gate__entry"
                   >
                     <span className="home-open home-open-gate__label">Explore</span>

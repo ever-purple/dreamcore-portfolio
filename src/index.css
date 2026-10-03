@@ -115,7 +115,7 @@
      那个文件根本不存在 → 每次进页面白跑一个 404，已删。） */
 @font-face {
   font-family: 'PF频凡胡涂体';
-  src: url('/fonts/PFHuTu.ttf') format('truetype');
+  src: url('/fonts/PFHuTu.woff2') format('woff2');
   font-weight: 400;
   font-style: normal;
   font-display: swap;

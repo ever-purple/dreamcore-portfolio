@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import '../quick-view.css';
+import '../meadow-v2.css';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { CursorLabel } from './CursorLabel';
@@ -283,7 +285,7 @@ export function QuickViewShell({ onBack, onExplore }: QuickViewShellProps) {
       // on the same transforms could overwrite each other and leave the scene static.
       const sceneTimeline = gsap.timeline({
         defaults: { ease: 'none' },
-        scrollTrigger: { trigger: '.quick-view', start: 'top top', end: 'bottom bottom', scrub: true },
+        scrollTrigger: { trigger: rootRef.current, start: 'top top', end: 'bottom bottom', scrub: true },
       });
       const addStage = (state: keyof typeof sceneState, position: number, duration: number) => {
         Object.entries(targets).forEach(([key, selector]) => {

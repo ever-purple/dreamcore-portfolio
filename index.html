@@ -77,7 +77,14 @@
     <script>
       (function () {
         var params = new URLSearchParams(window.location.search);
-        if (params.has('quick') || params.has('choice')) return;
+        if (
+          params.has('quick') ||
+          params.has('choice') ||
+          params.has('studio') ||
+          params.has('about') ||
+          params.has('greenos') ||
+          params.has('crt')
+        ) return;
         var vw = window.innerWidth;
         var canvasPx = vw * Math.min(window.devicePixelRatio || 1, 2);
         var shortSide = Math.min(window.innerWidth, window.innerHeight);

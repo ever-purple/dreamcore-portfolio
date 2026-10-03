@@ -19,7 +19,7 @@ interface LoadingScreenProps {
  *   超过 3 秒     → 按真实速度走，下完就走，不额外拖时间
  * 所以实际停留时间 = max(3 秒, 真实加载耗时)，最短 3 秒。
  */
-const MIN_VISIBLE = 3000;
+const MIN_VISIBLE = 1400;
 
 /**
  * 时间爬升基线（ms）。与 App 的 `ENTER_MAX_WAIT`（15000ms 硬上限）**同一条时间轴**：
@@ -80,7 +80,7 @@ export function LoadingScreen({ ready, progress, onEnter }: LoadingScreenProps) 
     const timer = setTimeout(() => {
       setVisible(false);
       onEnter();
-    }, 900);
+    }, 560);
     return () => clearTimeout(timer);
   }, [leaving, onEnter]);
 
@@ -107,7 +107,7 @@ export function LoadingScreen({ ready, progress, onEnter }: LoadingScreenProps) 
       scale: 1.08,
       filter: 'blur(12px)',
       opacity: 0,
-      duration: 0.9,
+      duration: 0.56,
       ease: EASE.io,
     });
   }, [leaving]);

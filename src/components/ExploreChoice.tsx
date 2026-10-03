@@ -1,9 +1,11 @@
 type ExploreChoiceProps = {
   onQuickView: () => void;
   onExplore: () => void;
+  onQuickIntent?: () => void;
+  onExploreIntent?: () => void;
 };
 
-export function ExploreChoice({ onQuickView, onExplore }: ExploreChoiceProps) {
+export function ExploreChoice({ onQuickView, onExplore, onQuickIntent, onExploreIntent }: ExploreChoiceProps) {
   return (
     <main className="explore-choice" aria-labelledby="explore-choice-title">
       <div className="explore-choice__glow" aria-hidden="true" />
@@ -20,7 +22,7 @@ export function ExploreChoice({ onQuickView, onExplore }: ExploreChoiceProps) {
         <p className="explore-choice__zh">你想如何浏览？</p>
 
         <div className="explore-choice__options">
-          <button className="explore-choice__option" type="button" onClick={onQuickView}>
+          <button className="explore-choice__option" type="button" onClick={onQuickView} onPointerDown={onQuickIntent} onPointerEnter={onQuickIntent} onFocus={onQuickIntent}>
             <span className="explore-choice__number">01</span>
             <span className="explore-choice__copy">
               <strong>QUICK VIEW</strong>
@@ -33,7 +35,7 @@ export function ExploreChoice({ onQuickView, onExplore }: ExploreChoiceProps) {
             <span className="explore-choice__enter" aria-hidden="true">ENTER</span>
           </button>
 
-          <button className="explore-choice__option" type="button" onClick={onExplore}>
+          <button className="explore-choice__option" type="button" onClick={onExplore} onPointerDown={onExploreIntent} onPointerEnter={onExploreIntent} onFocus={onExploreIntent}>
             <span className="explore-choice__number">02</span>
             <span className="explore-choice__copy">
               <strong>EXPLORE</strong>

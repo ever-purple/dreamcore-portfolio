@@ -1,21 +1,145 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Lenis from 'lenis';
 import { LoadingScreen } from '@/components/LoadingScreen';
 import { ModeSwitch } from '@/components/ModeSwitch';
 import { ExploreChoice } from '@/components/ExploreChoice';
-import { QuickViewShell, type QuickViewExploreTarget } from '@/components/QuickViewShell';
-import { HomeSection } from '@/sections/HomeSection';
-import { StudioSection } from '@/sections/StudioSection';
+import type { QuickViewExploreTarget } from '@/components/QuickViewShell';
 import { useWindowedFrames } from '@/hooks/useWindowedFrames';
-import { useAssetPreload } from '@/hooks/useAssetPreload';
 import { recordEnter, wireExitFlush } from '@/lib/visitLog';
 import { supportsAvif } from '@/lib/avifSupport';
 import type { StudioObject } from '@/data/studio';
 import 'lenis/dist/lenis.css';
 import './App.css';
-import './quick-view.css';
-import './meadow-v2.css';
 import gsap from 'gsap';
+
+const HomeSection = lazy(() =>
+  import('@/sections/HomeSection').then((module) => ({ default: module.HomeSection })),
+);
+const loadQuickViewShell = () =>
+  import('@/components/QuickViewShell').then((module) => ({ default: module.QuickViewShell }));
+const QuickViewShell = lazy(loadQuickViewShell);
+const loadStudioSection = () =>
+  import('@/sections/StudioSection').then((module) => ({ default: module.StudioSection }));
+const StudioSection = lazy(loadStudioSection);
+
+let studioWarmupVideo: HTMLVideoElement | null = null;
+const imageWarmups = new Map<string, Promise<void>>();
+let exploreHeroWarmup: Promise<void> | null = null;
+let exploreBackgroundWarmup: Promise<void> | null = null;
+let exploreContentsWarmup: Promise<void> | null = null;
+
+const warmImage = (src: string) => {
+  const existing = imageWarmups.get(src);
+  if (existing) return existing;
+  const request = new Promise<void>((resolve) => {
+    const image = new Image();
+    const done = () => resolve();
+    image.onload = done;
+    image.onerror = done;
+    image.decoding = 'async';
+    image.src = src;
+  });
+  imageWarmups.set(src, request);
+  return request;
+};
+
+const warmQuickHero = () => {
+  const device = window.matchMedia('(max-width: 760px)').matches ? 'mobile' : 'desktop';
+  const root = `${import.meta.env.BASE_URL}quick-view-v2/surreal-${device}`;
+  return Promise.all([
+    'base-sky-meadow.webp',
+    'house-shadow.webp',
+    'floating-house.webp',
+    'curtain.webp',
+    'goldfish.webp',
+    'cloud.webp',
+  ].map((file) => warmImage(`${root}/${file}`)));
+};
+
+const warmQuickExploreBridge = () =>
+  Promise.all([
+    loadStudioSection(),
+    import('@/components/WorksCarousel'),
+    import('@/components/MediaGalleryPage'),
+  ]);
+
+const warmStudioVideo = () => {
+  if (exploreBackgroundWarmup) return exploreBackgroundWarmup;
+  exploreBackgroundWarmup = new Promise<void>((resolve) => {
+    if (!studioWarmupVideo) {
+      studioWarmupVideo = document.createElement('video');
+      studioWarmupVideo.preload = 'auto';
+      studioWarmupVideo.muted = true;
+      studioWarmupVideo.playsInline = true;
+      studioWarmupVideo.src = `${import.meta.env.BASE_URL}studio/studio-loop.mp4`;
+    }
+    const video = studioWarmupVideo;
+    if (video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) {
+      resolve();
+      return;
+    }
+    const done = () => {
+      video.removeEventListener('canplay', done);
+      video.removeEventListener('error', done);
+      resolve();
+    };
+    video.addEventListener('canplay', done, { once: true });
+    video.addEventListener('error', done, { once: true });
+    video.load();
+  });
+  return exploreBackgroundWarmup;
+};
+
+/** Explore 首屏先达到“有背景、有标题、可播放”，再把带宽交给内部页面。 */
+const warmExploreHero = () => {
+  if (exploreHeroWarmup) return exploreHeroWarmup;
+  exploreHeroWarmup = Promise.all([
+    loadStudioSection(),
+    warmImage(`${import.meta.env.BASE_URL}studio/studio-poster.jpg`),
+    shouldAvoidBackgroundDownloads() ? Promise.resolve() : warmStudioVideo(),
+    document.fonts?.load('400 64px JheriCurls').catch(() => []),
+    document.fonts?.load('500 24px Caveat').catch(() => []),
+    document.fonts?.load('400 28px NanoOldSongA').catch(() => []),
+  ]).then(() => undefined);
+  return exploreHeroWarmup;
+};
+
+const shouldAvoidBackgroundDownloads = () => {
+  const connection = (navigator as Navigator & {
+    connection?: { saveData?: boolean; effectiveType?: string };
+  }).connection;
+  return connection?.saveData === true || connection?.effectiveType === 'slow-2g' || connection?.effectiveType === '2g';
+};
+
+/** 自动链只准备 About 的轻量首屏；所有模型继续由工作室内的悬停意图触发。 */
+const warmExploreContents = () => {
+  if (exploreContentsWarmup) return exploreContentsWarmup;
+  exploreContentsWarmup = (async () => {
+    await Promise.all([
+      import('@/components/AboutOverlay'),
+      warmImage(`${import.meta.env.BASE_URL}about/banner-visual.webp`),
+      warmImage(`${import.meta.env.BASE_URL}about/bg-pattern.webp`),
+      warmImage(`${import.meta.env.BASE_URL}about/banner-sticker.webp`),
+      warmImage(`${import.meta.env.BASE_URL}about/avatar.webp`),
+      document.fonts?.load('16px Zpix').catch(() => []),
+      document.fonts?.load('16px Cubic11').catch(() => []),
+    ]);
+
+  })();
+  return exploreContentsWarmup;
+};
+
+let automaticWarmup: Promise<void> | null = null;
+const continueAutomaticWarmup = () => {
+  if (automaticWarmup) return automaticWarmup;
+  automaticWarmup = (async () => {
+    await Promise.all([loadQuickViewShell(), warmQuickHero()]);
+    await warmQuickExploreBridge();
+    await warmExploreHero();
+    await warmExploreContents();
+  })();
+  return automaticWarmup;
+};
 
 const TOTAL_FRAMES = 120;
 
@@ -200,16 +324,6 @@ const READY_FRAMES = HEAD_FRAMES;
  * 才开始拉（App 传 `prefetchGate: entered`）—— 否则它们会在第 1 秒就跟序列帧抢带宽。
  * 2026-09-29 实测：首屏下载的 4.02MB 里有 **1.48MB** 就是这几件。
  */
-const PREFETCH_MODELS: string[] = [
-  `${import.meta.env.BASE_URL}about/mascot.glb`,
-  `${import.meta.env.BASE_URL}newsstand/dvd.glb`,
-  `${import.meta.env.BASE_URL}newsstand/dv.glb`,
-  `${import.meta.env.BASE_URL}newsstand/mp3.glb`,
-  `${import.meta.env.BASE_URL}newsstand/tape.glb`,
-  // rack.glb 一个人 9MB（贴图转 WebP 无损后从 17.9MB 降到 9.1MB），是全套最重的一件
-  `${import.meta.env.BASE_URL}newsstand/rack.glb`,
-];
-
 type AppStage = 'home' | 'choice' | 'quick' | 'studio';
 
 function App() {
@@ -264,6 +378,17 @@ function App() {
     [frameFormat, stage],
   );
 
+  useEffect(() => {
+    if (stage !== 'quick') return;
+    void continueAutomaticWarmup();
+  }, [stage]);
+
+  // 查询参数直进工作室不会经过首页入口的 click handler，按当前 stage 直接从 Explore 开始。
+  useEffect(() => {
+    if (stage !== 'studio') return;
+    void warmExploreHero().then(() => warmExploreContents());
+  }, [stage]);
+
   // 暴露给回归探针：`document.documentElement.dataset.frameFormat` 断言走的是哪一档
   useEffect(() => {
     if (frameFormat) document.documentElement.dataset.frameFormat = frameFormat;
@@ -286,6 +411,22 @@ function App() {
     priorityTail: TAIL_FRAMES,
     enabled: frameFormat !== null && stage === 'home',
   });
+
+  // 首页整段序列帧完成后，自动接力准备 Quick → Explore → About 轻量首屏。
+  // 悬停仍能提前启动对应首屏，但不再是开始加载的唯一条件。
+  useEffect(() => {
+    if (!entered || stage !== 'home' || loadedCount < TOTAL_FRAMES) return;
+    void continueAutomaticWarmup();
+  }, [entered, loadedCount, stage]);
+
+  // 极少数请求可能永久 pending：25 秒后只放行后台接力，不改变首页显示与滚动状态。
+  useEffect(() => {
+    if (!entered || stage !== 'home') return;
+    const timer = window.setTimeout(() => {
+      void continueAutomaticWarmup();
+    }, 25_000);
+    return () => window.clearTimeout(timer);
+  }, [entered, stage]);
 
   /**
    * AVIF 兜底：选了 AVIF 却连续解不出来 → 掉回 WebP 重来一次。
@@ -324,13 +465,6 @@ function App() {
    *      代价是工作室的大模型（rack.glb 9.1MB）晚几秒起跑，而进工作室本来就要先
    *      走完整个开门动画再点 OPEN，这点延迟吃得到。
    */
-  const framesMostlyLoaded = loadedCount >= Math.floor(TOTAL_FRAMES * 0.7);
-  useAssetPreload({
-    wait: [],
-    prefetch: PREFETCH_MODELS,
-    prefetchGate: stage === 'home' && entered && framesMostlyLoaded,
-  });
-
   /**
    * 加载页的 0→100%：整片的完成度（分母是 TOTAL_FRAMES）。
    * 注意：**进门只看首窗 8 张**，所以这个数字往往还没走到两位数就已放行 ——
@@ -452,40 +586,6 @@ function App() {
    *     帧才是决定推镜顺不顺的东西，工作室视频要等「滚完 300vh + 点 OPEN」才用得上。
    *     → 门槛改成 `framesMostlyLoaded`，和那 6 个 GLB 用同一把闸（帧到 70% 才放行）。
    */
-  useEffect(() => {
-    if (stage !== 'home' || !entered || !framesMostlyLoaded) return;
-    // 省流量 / 计费网络：不预拉 2.4MB 视频，进门后照常走海报→缓冲流程
-    const conn = (navigator as unknown as { connection?: { saveData?: boolean } }).connection;
-    if (conn?.saveData) return;
-    const idle: (cb: () => void) => number =
-      'requestIdleCallback' in window
-        ? (cb) => window.requestIdleCallback(cb as IdleRequestCallback)
-        : (cb) => window.setTimeout(cb, 1500);
-    const handle = idle(() => {
-      const base = import.meta.env.BASE_URL;
-      // 海报：海报组件与 LensDistortion 的 image 同源，预热后两者都零等待
-      const poster = new Image();
-      poster.src = `${base}studio/studio-poster.jpg`;
-      // 隐藏 video 预热 HTTP / 字节区间缓存：StudioLensBackground 里同源 <video> 秒播
-      // ⚠️ 别再加 `<link rel=prefetch>` —— 见上面 ①，那会让这 2.4MB 下两遍。
-      const v = document.createElement('video');
-      v.preload = 'auto';
-      v.muted = true;
-      v.playsInline = true;
-      v.src = `${base}studio/studio-loop.mp4`;
-      v.load();
-    });
-    return () => {
-      if ('cancelIdleCallback' in window) {
-        try {
-          window.cancelIdleCallback(handle);
-        } catch {
-          /* 尚未调度 */
-        }
-      }
-    };
-  }, [stage, entered, framesMostlyLoaded]);
-
   const setDownBlocked = useCallback((blocked: boolean) => {
     downBlockedRef.current = blocked;
   }, []);
@@ -509,11 +609,35 @@ function App() {
   }, []);
 
   const handleExplore = useCallback((target: QuickViewExploreTarget = 'studio') => {
+    void warmExploreHero().then(() => warmExploreContents());
     clearEntryHash();
     setReturnToQuickWorks(false);
     setStudioEntry(target);
     runFlashTransition('studio');
   }, [clearEntryHash, runFlashTransition]);
+
+  const handleChoiceIntent = useCallback(() => {
+    void loadQuickViewShell();
+    void loadStudioSection();
+    void warmQuickHero();
+    void warmImage(`${import.meta.env.BASE_URL}studio/studio-poster.jpg`);
+    try {
+      void document.fonts.load('400 64px JheriCurls');
+      void document.fonts.load('500 24px Caveat');
+      void document.fonts.load('400 28px NanoOldSongA');
+    } catch {
+      /* Font Loading API不可用时由页面自己的font-display兜底。 */
+    }
+  }, []);
+
+  const handleQuickIntent = useCallback(() => {
+    void loadQuickViewShell();
+    void warmQuickHero();
+  }, []);
+
+  const handleExploreIntent = useCallback(() => {
+    void warmExploreHero();
+  }, []);
 
   const handleQuickExplore = useCallback((target: QuickViewExploreTarget = 'studio', projectSlot?: number) => {
     clearEntryHash();
@@ -581,23 +705,32 @@ function App() {
             // 首窗 8 帧就绪即可进入；其余序列帧在首页后台顺序加载。
             <LoadingScreen ready={readyToEnter} progress={progress} onEnter={handleEnter} />
           )}
-          <HomeSection
-            images={images}
-            ready={framesComplete}
-            entered={entered}
-            onFrameFocus={focusFrame}
-            onQuickView={handleQuickView}
-            onExplore={handleExplore}
-            setDownBlocked={setDownBlocked}
-            framesRevision={framesRevision}
-          />
+          <Suspense fallback={<div className="fixed inset-0 bg-[#0a0a0a]" aria-hidden="true" />}>
+            <HomeSection
+              images={images}
+              ready={framesComplete}
+              entered={entered}
+              onFrameFocus={focusFrame}
+              onQuickView={handleQuickView}
+              onExplore={handleExplore}
+              onChoiceIntent={handleChoiceIntent}
+              onQuickIntent={handleQuickIntent}
+              onExploreIntent={handleExploreIntent}
+              setDownBlocked={setDownBlocked}
+              framesRevision={framesRevision}
+            />
+          </Suspense>
         </>
       ) : stage === 'choice' ? (
-        <ExploreChoice onQuickView={handleQuickView} onExplore={handleExplore} />
+        <ExploreChoice onQuickView={handleQuickView} onExplore={handleExplore} onQuickIntent={handleQuickIntent} onExploreIntent={handleExploreIntent} />
       ) : stage === 'quick' ? (
-        <QuickViewShell onBack={handleQuickBack} onExplore={handleQuickExplore} />
+        <Suspense fallback={<div className="fixed inset-0 bg-[#b7d9b0]" aria-hidden="true" />}>
+          <QuickViewShell onBack={handleQuickBack} onExplore={handleQuickExplore} />
+        </Suspense>
       ) : (
-        <StudioSection entryTarget={studioEntry} entryPlanSlot={studioPlanSlot} onSelectObject={handleSelectObject} onBack={handleBack} onReturnToQuickWorks={returnToQuickWorks ? handleReturnToQuickWorks : undefined} />
+        <Suspense fallback={<div className="fixed inset-0 bg-[#0a0a0a]" aria-hidden="true" />}>
+          <StudioSection entryTarget={studioEntry} entryPlanSlot={studioPlanSlot} onSelectObject={handleSelectObject} onBack={handleBack} onReturnToQuickWorks={returnToQuickWorks ? handleReturnToQuickWorks : undefined} />
+        </Suspense>
       )}
       {/* 转场白光（z 最高，覆盖页面切换瞬间） */}
       {flash !== 'idle' && (

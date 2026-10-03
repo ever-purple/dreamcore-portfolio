@@ -1,0 +1,1452 @@
+/* Version 2 — Meadow Approach
+   The information system remains the Quick View UI. This file replaces only
+   its environmental layer and adapts contrast for the outdoor world. */
+
+body.quick-view-active { background: #899187; }
+
+.quick-view--meadow {
+  --qv-ink: #302c27;
+  --qv-ink-soft: #5e584f;
+  --qv-paper: rgba(239, 234, 220, .92);
+  --qv-paper-solid: #ece6d7;
+  --qv-line: rgba(48, 44, 39, .35);
+  --qv-accent: #315f4a;
+  position: relative;
+  isolation: isolate;
+  color: var(--qv-ink);
+  background: transparent;
+}
+
+/* 绿系收板：本文件原本自造了 #9fd8bd 作小号标签 / 序号 / 列表圆点用（12 处）。
+   拿它去站点全量 hex 里做最近邻比对，最近的绿 ΔE 6.9，对站点浅绿主力
+   --pal-mint #b5e3d6（51 次）ΔE 10.0 —— 是 V2 里唯一真正偏离站点色板的绿，已统一改为 #b5e3d6。
+   副作用：Plan 序号（10px）对比度 4.48 → 5.13，顺带把那条 P2 一起修了。
+   其余 12 个绿经全量比对都在站点同系内（ΔE 1.1–4.9），保持原样。 */
+
+/* Visual comparison pass: keep type crisp against the photographed world. */
+.quick-view--meadow,
+.quick-view--meadow * { text-shadow: none !important; }
+
+.quick-view--meadow > :not(.qv-world) { position: relative; z-index: 10; }
+.qv-quick-chrome { position: fixed; top: 0; color: #f3e9d2; }
+
+/* D variant — current chapter label with five quiet navigation dots. */
+.qv-film-nav__current { display: none; }
+.qv-film-nav.qv-film-nav--d {
+  position: fixed;
+  z-index: 82;
+  top: 24px;
+  right: clamp(22px, 3vw, 40px);
+  bottom: auto;
+  width: 230px;
+  height: auto;
+  padding: 8px 0 0;
+  border: 0;
+  border-radius: 0;
+  color: #f3eee3;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  transform: none;
+}
+.qv-film-nav.qv-film-nav--d:hover,
+.qv-film-nav.qv-film-nav--d:focus-within {
+  width: 230px;
+  background: transparent;
+}
+.qv-film-nav--d::before,
+.qv-film-nav--d::after { display: none; }
+.qv-film-nav--d .qv-film-nav__current {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  padding: 0 2px 10px;
+  text-align: right;
+  text-shadow: 0 2px 14px rgba(0,0,0,.5);
+}
+.qv-film-nav--d .qv-film-nav__current > span {
+  grid-column: 2;
+  font: 9px/1 'Courier New',monospace;
+  letter-spacing: .12em;
+  opacity: .7;
+}
+.qv-film-nav--d .qv-film-nav__current > strong {
+  grid-column: 1 / -1;
+  margin-top: 5px;
+  font-family: 'PF频凡胡涂体','Noto Serif SC',serif;
+  font-size: 25px;
+  font-weight: 500;
+  line-height: .9;
+}
+.qv-film-nav--d .qv-film-nav__current > small {
+  grid-column: 1 / -1;
+  margin-top: 6px;
+  font-family: 'Caveat','NanoOldSongA',serif;
+  font-size: 10px;
+  letter-spacing: .08em;
+  opacity: .78;
+}
+.qv-film-nav--d .qv-film-nav__track {
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
+  gap: 13px;
+  height: 26px;
+  padding-right: 2px;
+}
+.qv-film-nav--d .qv-film-nav__track::before { display: none; }
+.qv-film-nav--d .qv-film-nav__track button {
+  position: relative;
+  display: block;
+  width: 17px;
+  height: 24px;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  color: rgba(243,238,227,.7);
+  background: transparent;
+  cursor: pointer;
+}
+.qv-film-nav--d .qv-film-nav__track button::before {
+  content: '';
+  position: absolute;
+  top: 7px;
+  right: auto;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  border: 1px solid rgba(243,238,227,.84);
+  background: rgba(27,31,28,.58);
+  transform: translateX(-50%);
+}
+.qv-film-nav--d .qv-film-nav__track button.is-active::before {
+  background: #8be6c3;
+  border-color: #8be6c3;
+  box-shadow: 0 0 0 4px rgba(139,230,195,.14), 0 0 12px rgba(139,230,195,.48);
+  transform: translateX(-50%) scale(1.12);
+}
+.qv-film-nav--d .qv-film-nav__track button > span { display: none; }
+.qv-film-nav--d .qv-film-nav__track button strong,
+.qv-film-nav--d .qv-film-nav__track button small {
+  position: absolute;
+  right: -3px;
+  bottom: 28px;
+  display: block;
+  width: max-content;
+  margin: 0;
+  padding: 5px 9px;
+  border-radius: 8px;
+  color: #2f2b26;
+  background: rgba(246,243,235,.92);
+  box-shadow: 0 8px 24px rgba(12,16,13,.18);
+  text-shadow: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(5px);
+  pointer-events: none;
+  transition: opacity .2s ease, visibility .2s ease, transform .25s ease;
+}
+.qv-film-nav--d .qv-film-nav__track button strong { font-family: 'PF频凡胡涂体','Noto Serif SC',serif; font-size: 17px; }
+.qv-film-nav--d .qv-film-nav__track button small { display: none; }
+.qv-film-nav--d .qv-film-nav__track button:hover strong,
+.qv-film-nav--d .qv-film-nav__track button:focus-visible strong {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+}
+
+@media(max-width:760px){
+  .qv-film-nav.qv-film-nav--d,
+  .qv-film-nav.qv-film-nav--d:hover,
+  .qv-film-nav.qv-film-nav--d:focus-within{
+    top:12px;right:12px;bottom:auto;width:150px;height:auto;padding:5px 0 0;border:0;border-radius:0;
+    background:transparent;backdrop-filter:none;transform:none
+  }
+  .qv-film-nav--d .qv-film-nav__current{padding-bottom:7px}
+  .qv-film-nav--d .qv-film-nav__current>strong{font-size:20px}
+  .qv-film-nav--d .qv-film-nav__current>small{display:none}
+  .qv-film-nav--d .qv-film-nav__track{display:flex;width:100%;height:22px;gap:9px;justify-content:flex-end}
+  .qv-film-nav--d .qv-film-nav__track button{display:block;width:14px;height:20px}
+  .qv-film-nav--d .qv-film-nav__track button::before{top:6px}
+}
+
+/* V2 uses the landscape itself as the navigation frame. */
+.quick-view--meadow .qv-browser,
+.quick-view--meadow .qv-nav { display: none; }
+.quick-view--meadow .qv-hero__eyebrow { top: 24px; }
+.quick-view--meadow .qv-hero__decoration { inset: 0; }
+.quick-view--meadow .qv-hero__spark { display: none; }
+
+.qv-world {
+  position: fixed;
+  z-index: 0;
+  inset: 0;
+  width: 100%;
+  height: 100svh;
+  overflow: hidden;
+  pointer-events: none;
+  background: #90998e;
+  contain: layout paint;
+}
+
+.qv-world__desktop,
+.qv-world__mobile { position: absolute; inset: 0; }
+.qv-world__mobile { display: none; }
+.qv-world__layer { position: absolute; inset: 0; display: block; transform-origin: 50% 100%; will-change: transform, opacity; }
+.qv-world__layer img { display: block; width: 100%; height: 100%; object-fit: cover; user-select: none; }
+.qv-world__base { z-index: 0; transform-origin: 50% 60%; }
+.qv-world__house-shadow { z-index: 1; transform-origin: 73% 77%; }
+.qv-world__house { z-index: 2; transform-origin: 73% 67%; }
+.qv-world__desk-scene { z-index: 3; opacity: 0; transform-origin: 50% 58%; }
+.qv-world__curtain { z-index: 4; transform-origin: 20% 0; }
+.qv-world__goldfish { z-index: 5; transform-origin: 20% 30%; }
+.qv-world__cloud { z-index: 6; transform-origin: 18% 0; }
+.qv-world__house-front { z-index: 7; opacity: 0; transform-origin: 73% 67%; }
+.qv-world__desk-glow {
+  z-index: 11;
+  opacity: 0;
+  transform-origin: 50% 58%;
+  mix-blend-mode: screen;
+  filter: brightness(1.14) saturate(.82);
+}
+/* 死规则已删（2026-10-03）：.qv-world__meadow / __building / __tree / __grass / __haze
+   共 8 条声明，外加下面 @media(max-width:900px) 里对应的 4 条覆写。
+   判定依据：GrassWorldBackground() 只渲染 base / house-shadow / house / curtain /
+   goldfish / cloud / house-front / desk-scene / desk-glow 九个图层，这 5 个类在
+   src/ 下既无 DOM 也无 JS 引用；public/quick-view-v2/meadow/ 素材同样零引用。 */
+
+.qv-world__scrim {
+  position: absolute;
+  z-index: 8;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(7, 16, 20, .28), rgba(8, 13, 10, .4));
+}
+
+.qv-world__grade {
+  position: absolute;
+  z-index: 9;
+  inset: 0;
+  opacity: .58;
+  background:
+    radial-gradient(circle at 50% 42%, transparent 35%, rgba(37, 33, 27, .22) 115%),
+    linear-gradient(180deg, rgba(225, 214, 193, .08), rgba(80, 72, 58, .12));
+  mix-blend-mode: multiply;
+  will-change: opacity;
+}
+
+.qv-world__scanlines {
+  position: absolute;
+  z-index: 10;
+  inset: 0;
+  opacity: .026;
+  background: repeating-linear-gradient(180deg, transparent 0 3px, rgba(28, 25, 22, .5) 3px 4px);
+  mix-blend-mode: multiply;
+}
+
+/* Foreground duplicates create real occlusion without moving UI into the
+   photographed scene. Their visibility is handed off by the scroll timeline. */
+.quick-view--meadow > .qv-foreground {
+  position: fixed;
+  z-index: 18;
+  inset: 0;
+  width: 100%;
+  height: 100svh;
+  overflow: hidden;
+  pointer-events: none;
+  contain: layout paint;
+}
+.qv-foreground__desktop,
+.qv-foreground__mobile { position: absolute; inset: 0; }
+.qv-foreground__mobile { display: none; }
+.qv-foreground__track { position: absolute; inset: 0; display: block; transform-origin: 50% 100%; will-change: transform, opacity; }
+.qv-foreground__track img { display: block; width: 100%; height: 100%; object-fit: cover; user-select: none; will-change: transform, opacity; }
+.qv-foreground__curtain-track { transform-origin: 20% 0; }
+.qv-foreground__goldfish-track { transform-origin: 20% 30%; }
+.qv-foreground__curtain { opacity: 0; animation: qv-curtain-drift 8.5s ease-in-out infinite alternate; transform-origin: 16% 4%; }
+.qv-foreground__goldfish { opacity: 1; animation: qv-fish-swim 6.8s ease-in-out infinite alternate; transform-origin: 58% 48%; }
+
+.quick-view--meadow .qv-noise { z-index: 70; opacity: .035; mix-blend-mode: soft-light; pointer-events: none; }
+
+.quick-view--meadow .qv-hero,
+.quick-view--meadow .qv-section,
+.quick-view--meadow .qv-about,
+.quick-view--meadow .qv-experience,
+.quick-view--meadow .qv-works,
+.quick-view--meadow .qv-contact { color: var(--qv-ink); background: transparent; background-image: none; }
+
+.quick-view--meadow .qv-hero__stage { background: transparent; }
+.quick-view--meadow .qv-hero__backdrop { display: none; }
+.quick-view--meadow .qv-hero__copy {
+  width: min(820px, 78vw);
+  margin-left: clamp(20px, 2.4vw, 46px);
+  padding: clamp(34px, 6vw, 72px);
+  color: var(--qv-ink);
+  background: transparent;
+  box-shadow: none;
+  text-shadow: 0 3px 22px rgba(0, 0, 0, .48);
+}
+.quick-view--meadow .qv-hero__index {
+  position: relative;
+  z-index: 6;
+  width: max-content;
+  margin-bottom: clamp(22px, 3vh, 34px);
+  transform: translateX(clamp(18px, 2.2vw, 34px));
+  font-family: 'Caveat', 'NanoOldSongA', serif !important;
+  font-size: clamp(24px, 2.25vw, 36px);
+  font-weight: 500;
+  letter-spacing: .025em;
+  text-transform: none;
+}
+.quick-view--meadow .qv-hero h1 { position: relative; z-index: 2; }
+.quick-view--meadow .qv-hero__name,
+.quick-view--meadow .qv-hero h1,
+.quick-view--meadow .qv-hero h1 span:first-child,
+.quick-view--meadow .qv-hero h1 span:last-child,
+.quick-view--meadow .qv-hero__welcome { color: #f3eee3; text-shadow: 0 3px 22px rgba(0, 0, 0, .55); }
+.quick-view--meadow .qv-hero h1 span:first-child {
+  color: #80dfbd;
+  font-size: clamp(104px, 13vw, 196px);
+  line-height: .72;
+}
+.quick-view--meadow .qv-hero__index,
+.quick-view--meadow .qv-hero__eyebrow { color: #f3eee3; text-shadow: 0 2px 18px rgba(0,0,0,.72); }
+.quick-view--meadow .qv-hero__enter {
+  left: 50%;
+  right: auto;
+  bottom: clamp(64px, 9vh, 96px);
+  min-width: 104px;
+  color: #181818;
+  background: rgba(255,255,255,.9);
+  transform: translateX(-50%);
+}
+.quick-view--meadow .qv-hero__enter:hover,
+.quick-view--meadow .qv-hero__enter:focus-visible { color: #111; background: #fff; }
+
+/* The generic direct-child rule above must not turn the fixed cursor into a
+   full-width relative block. That stretched its SVG ring across the viewport. */
+.quick-view--meadow > .cur {
+  position: fixed;
+  z-index: 100;
+  width: max-content;
+  height: max-content;
+}
+.quick-view--meadow .qv-hero__mint-dot { background: #c4d6c1; }
+
+.quick-view--meadow .qv-section {
+  min-height: 100svh;
+  padding: clamp(54px, 6vh, 72px) max(6vw, 24px) clamp(42px, 5vh, 60px);
+}
+.quick-view--meadow .qv-about__scene { padding-inline: max(7vw, 28px); }
+.quick-view--meadow .qv-heading,
+.quick-view--meadow .qv-heading h2,
+.quick-view--meadow .qv-heading__portfolio,
+.quick-view--meadow .qv-heading > span,
+.quick-view--meadow .qv-heading > small { color: #f1ece2; text-shadow: 0 2px 18px rgba(0, 0, 0, .7); }
+.quick-view--meadow .qv-heading { max-width: 1180px; margin-inline: auto; }
+.quick-view--meadow .qv-heading__portfolio { -webkit-text-stroke-color: transparent; }
+
+.quick-view--meadow .qv-about__body,
+.quick-view--meadow .experience-cat,
+.quick-view--meadow .qv-works__switcher,
+.quick-view--meadow .qv-contact__content {
+  position: relative;
+  z-index: 3;
+  width: min(1180px, 80vw);
+  margin-inline: auto;
+}
+.quick-view--meadow .qv-contact__actions a {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  line-height: 1.15;
+}
+.quick-view--meadow .qv-contact__actions a > span { display: flex; align-items: center; gap: 7px; }
+.quick-view--meadow .qv-contact__actions a i { font-style: normal; }
+.quick-view--meadow .qv-contact__actions a small {
+  /* 同上：U+8F7D 载 不在胡涂体的字形表里（任何版本都没有），改纳米老宋。 */
+  font-family: 'NanoOldSongA','Noto Serif SC',serif;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: .08em;
+  opacity: .82;
+}
+
+.quick-view--meadow .qv-about__body { padding: clamp(24px, 3vw, 46px); background: transparent; box-shadow: none; }
+.quick-view--meadow .qv-about__profile,
+.quick-view--meadow .qv-about__lead,
+.quick-view--meadow .qv-about__intro,
+.quick-view--meadow .qv-about__facts,
+.quick-view--meadow .qv-about__facts h3,
+.quick-view--meadow .qv-about__facts p { color: #f1ece2; text-shadow: 0 2px 16px rgba(0,0,0,.72); }
+.quick-view--meadow .qv-about__facts section { border-color: rgba(241,236,226,.48); }
+
+.quick-view--meadow .experience-cat { margin-top: clamp(18px, 2.5vh, 28px); padding: 0; color: #f1ece2; background: transparent; box-shadow: none; text-shadow: 0 2px 16px rgba(0,0,0,.7); }
+.quick-view--meadow .experience-cat__canvas {
+  min-height: 0;
+  height: clamp(350px, 49vh, 470px);
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.quick-view--meadow .experience-cat svg,
+.quick-view--meadow .experience-cat__top,
+.quick-view--meadow .experience-cat__progress button { color: #f1ece2; }
+.quick-view--meadow .experience-cat__paths path,
+.quick-view--meadow .experience-cat__face path { stroke: #f1ece2; filter: drop-shadow(0 2px 5px rgba(0,0,0,.7)); }
+.quick-view--meadow .experience-cat__node circle { fill: var(--qv-paper-solid); stroke: var(--qv-ink); }
+.quick-view--meadow .experience-cat__prompt {
+  font-family: 'PF频凡胡涂体','Noto Serif SC',serif!important;
+  font-size: 15px;
+  letter-spacing: .04em;
+  cursor: pointer;
+}
+/* 同上：Georgia 不是站点字族。纳米老宋子集已含 ★。 */
+.quick-view--meadow .experience-cat__prompt span { margin-left: 6px; font-family: 'NanoOldSongA', serif; }
+/* 2026-10-03：SVG 星继承 quick-view.css:28 的 `font:50px Georgia,serif`，Georgia 非站点字族。 */
+.quick-view--meadow .experience-cat__stars { font-family: 'NanoOldSongA', 'Noto Serif SC', serif; }
+.quick-view--meadow .experience-cat__node text:last-child {
+  font-family: 'NanoOldSongA','Noto Serif SC',serif!important;
+  font-size: 12px!important;
+  font-weight: 700;
+  opacity: 1;
+}
+.quick-view--meadow .experience-cat__node.is-start circle,
+.quick-view--meadow .experience-cat__node.is-start.is-active circle,
+.quick-view--meadow .experience-cat__node.is-start.is-selected circle {
+  fill: #8be6c3;
+  stroke: #eafbf4;
+  filter: drop-shadow(0 0 10px rgba(139,230,195,.42));
+}
+.quick-view--meadow .experience-cat__node.is-start text:last-child,
+.quick-view--meadow .experience-cat__node.is-start.is-active text:last-child,
+.quick-view--meadow .experience-cat__node.is-start.is-selected text:last-child { fill: #10241d; }
+
+.quick-view--meadow .qv-works__switcher {
+  min-height: 0;
+  height: clamp(470px, 60vh, 570px);
+  margin-top: clamp(18px, 2.5vh, 28px);
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.quick-view--meadow .qv-works__stage { min-height: 0; height: 100%; }
+.quick-view--meadow .qv-works__choices button,
+.quick-view--meadow .qv-works__stage,
+.quick-view--meadow .qv-works__stage h3,
+.quick-view--meadow .qv-works__stage p { color: #f1ece2; border-color: rgba(241,236,226,.44); text-shadow: 0 2px 16px rgba(0,0,0,.75); }
+
+.quick-view--meadow .qv-contact { min-height: 100svh; justify-content: flex-start; }
+.quick-view--meadow .qv-contact__content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: clamp(30px, 5vh, 58px);
+  padding: clamp(20px, 3vw, 42px);
+  color: #f1ece2;
+  background: transparent;
+  box-shadow: none;
+  text-align: center;
+}
+/* Contact 导语（.qv-contact__intro）实测 2.64:1，是全页唯一仍不及格的文字 —— 已知、未修。
+   它压在世界照最亮的一段（实测底 #a58f6c）上，且不在那 13 条 text-shadow 的覆盖内
+   —— 作者本来就没给它描边。提亮字也救不回来：同一块底上即使纯白（L=1）也只有 3.1:1。
+   ⚠️ 本轮试过三种方案，全部被否，这里记档避免重复踩：
+     ① 在 .qv-contact__content 上罩一层径向黑蒙版 —— 实测无效（椭圆渐变中心落在内容块中部，
+        而导语在顶部边缘，正好落在衰减到 ~0 的区域，对比度纹丝不动，仍是 2.64）；
+     ② 给导语自己做一层「深色玻璃」片 —— 能到 7.85:1，但你说"不要玻璃"；
+     ③ 加 text-shadow —— 你 2026-09-22 明确禁止（"字体不要有阴影"）。
+   → 本条维持原样，什么都不加。若将来要修，唯一不动这条文字本身的方向是
+     **换掉它下方那一段世界照，或加深该处的 scrim**。 */
+.quick-view--meadow .qv-contact__intro {
+  margin-inline: auto;
+  font-size: clamp(13px, 1.1vw, 16px);
+  line-height: 1.8;
+  letter-spacing: .14em;
+  text-align: center;
+}
+.quick-view--meadow .qv-contact__email {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr;
+  width: min(690px, 100%);
+  margin-top: clamp(24px, 4vh, 42px);
+  padding: 18px 4px 20px;
+  border: 0;
+  border-top: 1px solid rgba(241,236,226,.55);
+  border-bottom: 1px solid rgba(241,236,226,.55);
+  border-radius: 0;
+  text-align: center;
+  text-decoration: none;
+}
+.quick-view--meadow .qv-contact__email small {
+  grid-column: 1 / -1;
+  margin-bottom: 9px;
+  font: 10px 'Courier New', monospace;
+  letter-spacing: .22em;
+  opacity: .7;
+}
+.quick-view--meadow .qv-contact__email strong {
+  grid-column: 1;
+  font-family: inherit;
+  font-size: clamp(17px, 1.65vw, 25px);
+  font-weight: 400;
+  letter-spacing: .04em;
+}
+.quick-view--meadow .qv-contact__email i {
+  position: absolute;
+  right: 6px;
+  bottom: 20px;
+  font-size: 18px;
+  font-style: normal;
+}
+.quick-view--meadow .qv-contact__actions { display: flex; justify-content: center; margin-top: 18px; }
+.quick-view--meadow .qv-contact__actions a { padding: 10px 18px; font-size: 11px; letter-spacing: .12em; }
+.quick-view--meadow .qv-contact__content > p,
+.quick-view--meadow .qv-contact__content > span,
+.quick-view--meadow .qv-contact__email { color: #f1ece2; }
+.quick-view--meadow .qv-contact__content a,
+.quick-view--meadow .qv-contact__content button { color: #f1ece2; border-color: rgba(241,236,226,.72); background: transparent; }
+
+/* ENTER 按钮底：原 #30352f 是「冷灰绿」，站点同位置的深底一直是「暖棕巧克力」，
+   两者 ΔE 11.5，是 V2 里唯一一处"冷/暖走向和站点相反"的实底。
+   站点自己的同类实底按钮/胶囊用的是薄荷底 + 巧克力深字：
+     index.css:9200   --wkp-band-bg: #b5e3d6  「大字宣言带的底：薄荷实底」
+     index.css:7130   .share-card__act   background: var(--pal-mint)
+     index.css:16259  .dp-btn.is-active  background: #b5e3d6
+   #b5e3d6 = --pal-mint，是站点薄荷绿里用得最多的一个（51 次）。
+   字色配 --pal-veil #4a2e23（站点"巧克力"深棕，10 次），实测 WCAG：
+     底 #b5e3d6 上 8.75:1 ／ hover #8ec6b4 上 6.38:1，均过 AA。 */
+.quick-view--meadow .qv-enter-explore {
+  display: grid;
+  width: min(520px, 100%);
+  min-height: 86px;
+  margin: clamp(32px, 6vh, 66px) auto 0;
+  padding: 18px 28px;
+  place-items: center;
+  border: 1px solid #8ec6b4;         /* --pal-mint-deep：薄荷面上的深一档勾边 */
+  color: #4a2e23 !important;         /* --pal-veil 巧克力深棕 */
+  background: #b5e3d6 !important;    /* --pal-mint */
+  transition: transform .3s ease, background .3s ease;
+}
+.quick-view--meadow .qv-enter-explore:hover { transform: translateY(-4px); background: #8ec6b4 !important; }
+.quick-view--meadow .qv-enter-explore span { font-size: clamp(20px, 2vw, 28px); letter-spacing: .08em; }
+/* opacity 由 .72 提到 .9：11px 小字在浅薄荷底上 .72 只有 4.35:1，不过 AA；
+   .9 时底 7.23:1 / hover 5.28:1。层级仍由 11px vs 20–28px 的字号差承担。 */
+.quick-view--meadow .qv-enter-explore small { font-family: var(--zh); font-size: 11px; opacity: .9; }
+
+.quick-view--meadow .qv-section__artifact,
+.quick-view--meadow .qv-brush-motifs,
+/* 2026-10-03：原来继承 quick-view.css:10 的 `font:clamp(…) Georgia,serif` 简写，
+   而 Georgia 不在站点自托管字族里 → 装饰星掉系统字体。纳米老宋子集已含 ★☆·。 */
+.quick-view--meadow .qv-contact__sky { font-family: 'NanoOldSongA', 'Noto Serif SC', serif; }
+.quick-view--meadow .qv-contact__sky { opacity: .16; mix-blend-mode: multiply; }
+
+@media (max-width: 900px) {
+  .quick-view--meadow .qv-hero__copy { width: 88vw; margin-left: 0; padding: 32px 22px; }
+  .quick-view--meadow .qv-hero__enter { left: 50%; right: auto; max-width: calc(100vw - 40px); transform: translateX(-50%); }
+  .quick-view--meadow .qv-section {
+    min-height: auto;
+    padding: 96px 5vw 124px;
+  }
+  .quick-view--meadow .qv-about__scene { padding-inline: 4vw; }
+  .quick-view--meadow .qv-about__body,
+  .quick-view--meadow .experience-cat,
+  .quick-view--meadow .qv-works__switcher,
+  .quick-view--meadow .qv-contact__content { width: 90vw; }
+  .quick-view--meadow .qv-about__body,
+  .quick-view--meadow .experience-cat,
+  .quick-view--meadow .qv-works__switcher { padding: 18px 14px; }
+  .quick-view--meadow .qv-contact { min-height: 100svh; }
+  .quick-view--meadow .qv-contact__content { padding: 30px 18px; }
+}
+
+/* The GSAP layer sets the fish group's journey; the image keeps swimming
+   inside that layer so it never freezes between scroll chapters. */
+.quick-view--meadow .qv-world__goldfish > img {
+  animation: qv-fish-swim 6.8s ease-in-out infinite alternate;
+  transform-origin: 58% 48%;
+}
+.quick-view--meadow .qv-world__cloud > img {
+  animation: qv-cloud-breathe 13s ease-in-out infinite alternate;
+  transform-origin: 38% 18%;
+}
+.quick-view--meadow .qv-world__curtain > img {
+  animation: qv-curtain-drift 8.5s ease-in-out infinite alternate;
+  transform-origin: 16% 4%;
+}
+@keyframes qv-fish-swim {
+  0% { transform: translate3d(-1.2%, 0, 0) rotate(-.2deg); }
+  48% { transform: translate3d(.45%, -1.1%, 0) rotate(.25deg); }
+  100% { transform: translate3d(1.4%, .65%, 0) rotate(-.12deg); }
+}
+@keyframes qv-cloud-breathe {
+  from { transform: translate3d(-.35%, 0, 0) scale(1); }
+  to { transform: translate3d(.45%, -.22%, 0) scale(1.006); }
+}
+@keyframes qv-curtain-drift {
+  from { transform: translate3d(-.2%, 0, 0) rotate(-.08deg); }
+  to { transform: translate3d(.35%, .25%, 0) rotate(.12deg); }
+}
+
+/* Works archive: three chapters, one continuous reading path. */
+.quick-view--meadow .qv-works__archive {
+  position: relative;
+  z-index: 3;
+  width: var(--qv-safe-width);
+  max-width: 1180px;
+  margin-inline: auto;
+  color: #f1ece2;
+  text-shadow: 0 2px 16px rgba(0, 0, 0, .72);
+}
+.quick-view--meadow .qv-work-chapter {
+  padding-block: clamp(30px, 4.5vw, 62px) clamp(88px, 12vw, 156px);
+  border-top: 0;
+}
+.quick-view--meadow .qv-work-chapter__header {
+  display: grid;
+  grid-template-columns: minmax(280px, .8fr) minmax(260px, 1fr);
+  gap: clamp(36px, 8vw, 120px);
+  align-items: end;
+  margin-bottom: clamp(34px, 5vw, 64px);
+}
+.quick-view--meadow .qv-work-chapter__header > div {
+  display: grid;
+  grid-template-columns: 34px auto 1fr;
+  gap: 12px;
+  align-items: baseline;
+}
+.quick-view--meadow .qv-work-chapter__header span,
+.quick-view--meadow .qv-work-chapter__header small {
+  color: #b5e3d6;
+  font-size: 11px;
+  letter-spacing: .12em;
+}
+.quick-view--meadow .qv-work-chapter__header h3 {
+  margin: 0;
+  color: #f1ece2;
+  font-family: 'NanoOldSongA','Noto Serif SC',serif;
+  font-size: clamp(31px, 4vw, 58px);
+  font-weight: 500;
+  letter-spacing: -.025em;
+}
+/* 章节导语 <p> 已删（2026-10-03），这条规则随之失效，一并删除。 */
+.quick-view--meadow .qv-plan-index {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: clamp(38px, 5vw, 66px);
+  border: 0;
+}
+.quick-view--meadow .qv-plan-index button {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-height: 104px;
+  padding: 18px 16px;
+  border: 0;
+  border: 0;
+  border-radius: 10px;
+  color: rgba(241, 236, 226, .58);
+  background: rgba(12, 31, 40, .2);
+  text-align: left;
+  transition: color .25s ease, background-color .25s ease;
+}
+.quick-view--meadow .qv-plan-index button:hover,
+.quick-view--meadow .qv-plan-index button:focus-visible { color: #f1ece2; background: rgba(55, 89, 72, .4); }
+.quick-view--meadow .qv-plan-index button.is-active { color: #f1ece2; background: rgba(87, 153, 124, .42); }
+.quick-view--meadow .qv-plan-index button > span { color: #b5e3d6; font-size: 10px; letter-spacing: .1em; }
+.quick-view--meadow .qv-plan-index button strong { font-size: 13px; font-weight: 500; line-height: 1.45; }
+.quick-view--meadow .qv-plan-case {
+  display: grid;
+  grid-template-columns: minmax(300px, .82fr) minmax(420px, 1.18fr);
+  gap: clamp(48px, 7vw, 104px);
+  align-items: start;
+}
+.quick-view--meadow .qv-plan-case figure { position: sticky; top: 15vh; margin: 0; }
+.quick-view--meadow .qv-plan-case figure img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: 12px;
+  box-shadow: 0 22px 56px rgba(5, 17, 12, .28);
+}
+.quick-view--meadow .qv-plan-case figcaption {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  padding-top: 12px;
+  color: rgba(241, 236, 226, .68);
+  font-size: 10px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.quick-view--meadow .qv-plan-case__copy > h4 {
+  margin: -8px 0 24px;
+  font-family: 'NanoOldSongA','Noto Serif SC',serif;
+  font-size: clamp(25px, 2.6vw, 38px);
+  font-weight: 500;
+  letter-spacing: -.02em;
+}
+.quick-view--meadow .qv-plan-notes { border-top: 1px solid rgba(241, 236, 226, .34); }
+.quick-view--meadow .qv-plan-notes details { border-bottom: 1px solid rgba(241, 236, 226, .28); }
+.quick-view--meadow .qv-plan-notes summary {
+  display: grid;
+  grid-template-columns: 28px 54px minmax(0, 1fr) 24px;
+  gap: 14px;
+  align-items: start;
+  padding: 18px 0;
+  cursor: pointer;
+  list-style: none;
+}
+.quick-view--meadow .qv-plan-notes summary::-webkit-details-marker { display: none; }
+.quick-view--meadow .qv-plan-notes summary > span { color: #b5e3d6; font-size: 10px; letter-spacing: .1em; }
+.quick-view--meadow .qv-plan-notes summary strong { font-size: 13px; font-weight: 600; }
+.quick-view--meadow .qv-plan-notes summary p { margin: 0; color: rgba(241, 236, 226, .8); font-size: 13px; line-height: 1.7; }
+.quick-view--meadow .qv-plan-notes summary i { font-style: normal; transition: transform .25s ease; }
+.quick-view--meadow .qv-plan-notes details[open] summary i { transform: rotate(45deg); }
+.quick-view--meadow .qv-plan-notes details > div { max-width: 64ch; padding: 0 38px 20px 110px; color: rgba(241, 236, 226, .68); font-size: 13px; line-height: 1.85; }
+.quick-view--meadow .qv-work-enter {
+  margin-top: 28px;
+  padding: 12px 0;
+  border: 0;
+  border-bottom: 1px solid rgba(241, 236, 226, .7);
+  border-radius: 0;
+  color: #f1ece2;
+  background: transparent;
+  font-size: 12px;
+  letter-spacing: .08em;
+}
+.quick-view--meadow .qv-work-enter span { margin-left: 10px; }
+.quick-view--meadow .qv-work-enter:disabled {
+  opacity: .5;
+  cursor: default;
+}
+.quick-view--meadow .qv-video-directory { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(30px, 5vw, 72px); }
+.quick-view--meadow .qv-video-directory section > header { display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 16px; border-bottom: 1px solid rgba(241, 236, 226, .42); }
+.quick-view--meadow .qv-video-directory h4 { margin: 0; font-size: 17px; font-weight: 500; }
+.quick-view--meadow .qv-video-directory header span { color: #b5e3d6; font-size: 10px; }
+.quick-view--meadow .qv-video-directory ol { margin: 0; padding: 0; list-style: none; }
+.quick-view--meadow .qv-video-directory li { border-bottom: 1px solid rgba(241, 236, 226, .22); }
+.quick-view--meadow .qv-video-directory button {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 16px;
+  width: 100%;
+  min-height: 54px;
+  align-items: center;
+  padding: 10px 0;
+  border: 0;
+  border-radius: 0;
+  color: #f1ece2;
+  background: transparent;
+  text-align: left;
+}
+.quick-view--meadow .qv-video-directory button:hover span { color: #b5e3d6; }
+.quick-view--meadow .qv-video-directory button span { font-size: 13px; line-height: 1.45; transition: color .2s ease; }
+.quick-view--meadow .qv-video-directory button small { color: rgba(241, 236, 226, .52); font-size: 10px; font-variant-numeric: tabular-nums; }
+.quick-view--meadow .qv-copy-directory { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: clamp(48px, 8vw, 120px); }
+.quick-view--meadow .qv-copy-directory details {
+  border-bottom: 1px solid rgba(241, 236, 226, .3);
+}
+.quick-view--meadow .qv-copy-directory summary {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto 20px;
+  gap: 16px;
+  align-items: baseline;
+  min-height: 72px;
+  padding: 18px 0;
+  color: #f1ece2;
+  cursor: pointer;
+  list-style: none;
+  text-align: left;
+}
+.quick-view--meadow .qv-copy-directory summary::-webkit-details-marker { display: none; }
+.quick-view--meadow .qv-copy-directory summary > span { color: #b5e3d6; font-size: 10px; }
+.quick-view--meadow .qv-copy-directory summary strong { font-size: 17px; font-weight: 500; }
+.quick-view--meadow .qv-copy-directory summary small { color: rgba(241, 236, 226, .56); font-size: 11px; }
+.quick-view--meadow .qv-copy-directory summary i { font-style: normal; transition: transform .2s ease; }
+.quick-view--meadow .qv-copy-directory details[open] summary i { transform: rotate(45deg); }
+.quick-view--meadow .qv-copy-directory__text {
+  max-width: 66ch;
+  padding: 0 20px 30px 48px;
+  color: rgba(241, 236, 226, .78);
+  font-size: 13px;
+  line-height: 1.9;
+  white-space: pre-line;
+}
+
+@media (max-width: 900px) {
+  .quick-view--meadow .qv-work-chapter__header,
+  .quick-view--meadow .qv-plan-case { grid-template-columns: 1fr; }
+  .quick-view--meadow .qv-plan-index { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .quick-view--meadow .qv-plan-case figure { position: static; }
+  .quick-view--meadow .qv-video-directory { grid-template-columns: 1fr; gap: 48px; }
+}
+
+@media (max-width: 600px) {
+  .quick-view--meadow .qv-work-chapter__header { gap: 18px; }
+  .quick-view--meadow .qv-work-chapter__header > div { grid-template-columns: 26px auto; }
+  .quick-view--meadow .qv-work-chapter__header small { grid-column: 2; }
+  .quick-view--meadow .qv-plan-index { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; }
+  .quick-view--meadow .qv-plan-index button { min-width: 72vw; scroll-snap-align: start; }
+  .quick-view--meadow .qv-plan-notes summary { grid-template-columns: 24px 44px minmax(0, 1fr) 18px; gap: 8px; }
+  .quick-view--meadow .qv-plan-notes details > div { padding: 0 26px 18px 76px; }
+  .quick-view--meadow .qv-copy-directory { grid-template-columns: 1fr; }
+  .quick-view--meadow .qv-copy-directory summary { grid-template-columns: 26px minmax(0, 1fr) auto 16px; gap: 10px; }
+  .quick-view--meadow .qv-copy-directory__text { padding-left: 36px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quick-view--meadow .qv-world__goldfish > img,
+  .quick-view--meadow .qv-world__cloud > img,
+  .quick-view--meadow .qv-world__curtain > img { animation: none; }
+}
+
+/* Chapter divider A: Nano Song number + rule + HuTu Chinese label.
+   The existing English script title remains the visual headline below. */
+.quick-view--meadow .qv-heading,
+.quick-view--meadow .qv-heading.qv-heading--center {
+  display: grid;
+  grid-template-columns: auto minmax(48px, 1fr) auto;
+  grid-template-rows: auto auto;
+  column-gap: 16px;
+  row-gap: clamp(16px, 2.2vh, 26px);
+  align-items: center;
+  justify-items: stretch;
+  width: var(--qv-safe-width);
+  max-width: 1180px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  text-align: left;
+}
+.quick-view--meadow .qv-heading::before {
+  content: '';
+  grid-column: 2;
+  grid-row: 1;
+  width: 100%;
+  height: 1px;
+  background: rgba(241, 236, 226, .48);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, .18);
+}
+.quick-view--meadow .qv-heading > span,
+.quick-view--meadow .qv-heading.qv-heading--center > span {
+  display: block;
+  grid-column: 1;
+  grid-row: 1 / 3;
+  align-self: center;
+  width: auto;
+  height: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: #f1ece2;
+  background: transparent;
+  font-family: 'PF频凡胡涂体','Noto Serif SC',serif;
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: .08em;
+  text-shadow: 0 2px 16px rgba(0, 0, 0, .72);
+}
+.quick-view--meadow .qv-heading > small,
+.quick-view--meadow .qv-heading.qv-heading--center > small {
+  display: block;
+  grid-column: 3;
+  grid-row: 1;
+  justify-self: end;
+  align-self: center;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: #f1ece2;
+  background: transparent;
+  box-shadow: none;
+  font-family: 'PF频凡胡涂体','Noto Serif SC',serif!important;
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: .08em;
+  text-shadow: 0 2px 16px rgba(0, 0, 0, .72);
+}
+.quick-view--meadow .qv-heading h2,
+.quick-view--meadow .qv-heading.qv-heading--center h2 {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  justify-self: start;
+  width: 100%;
+  margin: 0;
+  text-align: left;
+}
+.quick-view--meadow .qv-heading > i { display: none; }
+
+@media (max-width: 760px) {
+  .quick-view--meadow .qv-heading,
+  .quick-view--meadow .qv-heading.qv-heading--center { grid-template-columns: auto minmax(24px, 1fr) auto; column-gap: 10px; row-gap: 14px; }
+  .quick-view--meadow .qv-heading > span,
+  .quick-view--meadow .qv-heading.qv-heading--center > span { font-size: 14px; }
+  .quick-view--meadow .qv-heading > small,
+  .quick-view--meadow .qv-heading.qv-heading--center > small { display: block; font-size: 14px; }
+}
+
+/* Works carries denser text than the other chapters. A local photographic
+   grade keeps the moving fish and house visible without letting them cross
+   the type at full contrast. */
+.quick-view--meadow .qv-works { isolation: isolate; }
+.quick-view--meadow .qv-works::after {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(5, 28, 40, .14), rgba(5, 25, 34, .32) 28%, rgba(8, 27, 24, .3) 72%, rgba(6, 24, 31, .16));
+}
+.quick-view--meadow .qv-works > * { position: relative; z-index: 2; }
+
+/* About ID — a warm staff-pass silhouette with restrained colour blocks. */
+.quick-view--meadow .qv-about .qv-id {
+  grid-template-columns: 42% 58%;
+  grid-template-rows: 1fr;
+  width: 100%;
+  max-width: 520px;
+  min-height: 0;
+  aspect-ratio: 1.55 / 1;
+  padding: 62px 16px 44px;
+  border: 1px solid rgba(49, 95, 74, .78);
+  border-radius: 15px;
+  background-color: #ece6d7;
+  background-image: radial-gradient(circle, rgba(49, 95, 74, .2) 0 2px, transparent 2.4px);
+  background-size: 22px 22px;
+  box-shadow: 0 22px 56px rgba(22, 30, 22, .24);
+  transform: rotate(-.35deg);
+}
+.quick-view--meadow .qv-about .qv-id::before,
+.quick-view--meadow .qv-about .qv-id::after {
+  display: flex;
+  position: absolute;
+  z-index: 1;
+  right: 0;
+  left: 0;
+  align-items: center;
+  color: #213e32;
+  background: #a9d3be;
+  pointer-events: none;
+}
+.quick-view--meadow .qv-about .qv-id::before {
+  /* 原为繁体「出入許可證」：證 在 PF频凡胡涂体(4347 字形) 和 Noto Serif SC 里都没有，
+     必然掉系统 serif。改简体「出入许可证」后三个字全部由自托管字体承接，
+     也与卡面其余简体（名字 / 年龄 / 院校 / 方向）统一。 */
+  content: '出入许可证   ·   SUN\2019S ACCESS PASS';
+  top: 0;
+  height: 60px;
+  padding: 0 24px 8px;
+  border: 0;
+  border-radius: 14px 14px 0 0;
+  clip-path: polygon(0 0,100% 0,100% 76%,94% 88%,88% 78%,82% 91%,76% 79%,70% 91%,64% 79%,58% 90%,52% 78%,46% 91%,40% 78%,34% 90%,28% 78%,22% 89%,16% 77%,10% 88%,5% 78%,0 86%);
+  font-size: 13px;
+  /* 'PFHuTuTi' 在站点 12 个自托管字族里不存在，会一路回退到 NanoOldSongA（656 字形子集），
+     再缺字就掉系统 serif。改为本文件其余中文处统一使用的链路。 */
+  font-family: 'PF频凡胡涂体','Noto Serif SC',serif;
+  letter-spacing: .08em;
+}
+.quick-view--meadow .qv-about .qv-id::after {
+  content: 'ACCESS PERMIT   ·   2026';
+  bottom: 0;
+  height: 39px;
+  padding: 7px 22px 0;
+  border-top: 1px solid rgba(49, 95, 74, .42);
+  border-radius: 0 0 14px 14px;
+  font-size: 11px;
+  letter-spacing: .13em;
+}
+.quick-view--meadow .qv-about .qv-id > * { position: relative; z-index: 2; }
+.quick-view--meadow .qv-about .qv-id__left,
+.quick-view--meadow .qv-about .qv-id__info { min-height: 0; }
+.quick-view--meadow .qv-about .qv-id__left {
+  margin-right: 13px;
+  padding: 10px;
+  border-radius: 11px;
+  background: #315f4a;
+}
+.quick-view--meadow .qv-about .qv-id__portrait { padding: 5px; background: transparent; }
+.quick-view--meadow .qv-about .qv-id__portrait > div {
+  width: 100%;
+  border: 2px solid #244b3a;
+  border-radius: 9px;
+  background: #fff7dc;
+}
+.quick-view--meadow .qv-about .qv-id__portrait > div::before,
+.quick-view--meadow .qv-about .qv-id__portrait > div::after { display: none; }
+.quick-view--meadow .qv-about .qv-id__portrait img { border-radius: 7px; filter: grayscale(1) contrast(1.04) sepia(.08); }
+/* 2026-10-03：原来继承 quick-view.css:1133 的 `font:18px/1 Arial,sans-serif`，Arial 非站点字族。 */
+.quick-view--meadow .qv-about .qv-id__ornament span { font-family: 'NanoOldSongA', 'Noto Serif SC', serif; }
+.quick-view--meadow .qv-about .qv-id__ornament { height: 27px; color: #d9f0e4; }
+.quick-view--meadow .qv-about .qv-id__info { padding: 8px 4px 6px 10px; }
+.quick-view--meadow .qv-about .qv-id__info h3 {
+  margin: 0 0 10px;
+  color: #294638;
+  font-size: clamp(25px, 2.6vw, 34px);
+}
+.quick-view--meadow .qv-about .qv-id__info dl { gap: 4px; margin: 0; }
+.quick-view--meadow .qv-about .qv-id__info dl div {
+  grid-template-columns: 44px 1fr;
+  min-height: 25px;
+  padding: 3px 3px 4px;
+  border-bottom: 1px dashed rgba(111, 75, 55, .42);
+}
+.quick-view--meadow .qv-about .qv-id__info dt,
+.quick-view--meadow .qv-about .qv-id__info dd {
+  color: #294638;
+  /* ⚠️ 2026-10-03 改：这一行原来是 PF频凡胡涂体。但胡涂体**补不出「晨」「龄」**——
+     线上 public/fonts/PFHuTu.ttf、D:\\字体 里的 ttf、原始压缩包、历史备份四份文件
+     是同一份（md5 7285c810…，4901 字形 / 4347 个有编码），都没有 U+6668 晨 / U+9F84 龄
+     / U+8F7D 载；那 566 个"有轮廓没编码"的字形渲染出来全是希腊文、西里尔文、日文假名
+     和符号，**一个汉字都没有**。所以「孙晨茜 / 年龄」在胡涂体下必然是混排。
+     → 改用纳米老宋（子集 2026-10-03 已补到 1024 字形，覆盖本页全部中文）+ 思源宋体兜底。
+     想换回胡涂体：把下面这行改回 'PF频凡胡涂体','Noto Serif SC' 即可（代价是混排）。 */
+  font-family: 'NanoOldSongA','Noto Serif SC',serif!important;
+  font-size: clamp(12px, 1.05vw, 15px);
+  white-space: nowrap;
+}
+.quick-view--meadow .qv-about .qv-id__watermark { color: rgba(49, 95, 74, .1); }
+.quick-view--meadow .qv-about .qv-id__foot { margin-top: 5px; }
+.quick-view--meadow .qv-about .qv-id__foot small { color: rgba(41, 70, 56, .7); }
+.quick-view--meadow .qv-about .qv-id__foot > span { color: #315f4a; }
+.quick-view--meadow .qv-about .qv-id__caption { color: #f1ece2; }
+
+@media (max-width: 760px) {
+  .quick-view--meadow .qv-about .qv-id {
+    width: min(440px, 92vw);
+    min-height: 0;
+    aspect-ratio: 810 / 574;
+    padding: 53px 11px 38px;
+  }
+  .quick-view--meadow .qv-about .qv-id::before { height: 51px; padding-inline: 18px; font-size: 10px; }
+  .quick-view--meadow .qv-about .qv-id::after { height: 34px; padding-inline: 16px; font-size: 8px; }
+  .quick-view--meadow .qv-about .qv-id__left { margin-right: 7px; padding: 6px; }
+  .quick-view--meadow .qv-about .qv-id__ornament { height: 20px; }
+  .quick-view--meadow .qv-about .qv-id__info { padding: 5px 2px 3px 7px; }
+  .quick-view--meadow .qv-about .qv-id__info h3 { margin-bottom: 8px; font-size: 22px; }
+  .quick-view--meadow .qv-about .qv-id__info dl { gap: 3px; }
+  .quick-view--meadow .qv-about .qv-id__info dl div { grid-template-columns: 32px 1fr; min-height: 24px; padding: 2px 1px 3px; }
+  .quick-view--meadow .qv-about .qv-id__info dt,
+  .quick-view--meadow .qv-about .qv-id__info dd { font-size: 8px; }
+  .quick-view--meadow .qv-about .qv-id__foot { display: none; }
+}
+
+@media (max-width: 760px) {
+  .qv-world__desktop { display: none; }
+  .qv-world__mobile { display: block; }
+  .qv-foreground__desktop { display: none; }
+  .qv-foreground__mobile { display: block; }
+  .qv-world__base { transform-origin: 50% 72%; }
+  .qv-world__cloud { transform-origin: 24% 0; }
+  .qv-world__curtain { transform-origin: 38% 8%; }
+  .qv-world__goldfish { transform-origin: 44% 43%; }
+  .qv-world__house { transform-origin: 57% 57%; }
+  .qv-world__house-shadow { transform-origin: 57% 66%; }
+  .qv-foreground__curtain-track { transform-origin: 38% 8%; }
+  .qv-foreground__goldfish-track { transform-origin: 44% 43%; }
+  .quick-view--meadow .qv-hero__eyebrow {
+    top: 18px;
+    right: 16px;
+    left: 16px;
+    justify-content: flex-end;
+    text-align: right;
+  }
+  .quick-view--meadow .qv-hero__field {
+    padding-right: 16px;
+    padding-left: 16px;
+    justify-content: center;
+    text-align: center;
+  }
+  .quick-view--meadow .qv-hero__copy {
+    width: 100%;
+    max-width: 358px;
+    margin-right: auto;
+    margin-left: auto;
+    padding-right: 0;
+    padding-left: 0;
+    text-align: center;
+  }
+  .quick-view--meadow .qv-hero h1 { font-size: clamp(56px, 15.5vw, 70px); }
+  .quick-view--meadow .qv-hero h1 span:last-child { margin-right: auto; margin-left: auto; }
+  .quick-view--meadow .qv-hero__index,
+  .quick-view--meadow .qv-hero__welcome { text-align: center; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .qv-world__layer,
+  .qv-world__grade,
+  .qv-foreground__track,
+  .qv-foreground__track img { will-change: auto; }
+  .qv-foreground__curtain,
+  .qv-foreground__goldfish { animation: none; }
+}
+
+/* Interview-facing About: one professional topic per vertical passage. */
+.quick-view--meadow {
+  --qv-safe-width: min(1180px, 84vw);
+  --qv-section-top: clamp(88px, 10vh, 126px);
+  --qv-section-bottom: clamp(84px, 10vh, 128px);
+}
+.quick-view--meadow .qv-section {
+  padding: var(--qv-section-top) max(6vw, 24px) var(--qv-section-bottom);
+}
+.quick-view--meadow .qv-heading,
+.quick-view--meadow .qv-about__body,
+.quick-view--meadow .experience-cat,
+.quick-view--meadow .qv-works__switcher,
+.quick-view--meadow .qv-contact__content {
+  width: var(--qv-safe-width);
+  max-width: 1180px;
+  margin-right: auto;
+  margin-left: auto;
+}
+.quick-view--meadow .qv-heading { margin-bottom: clamp(42px, 5.5vh, 68px); }
+.quick-view--meadow .qv-experience,
+.quick-view--meadow .qv-works { min-height: 100svh; }
+.quick-view--meadow .qv-contact { min-height: 100svh; }
+.quick-view--meadow .qv-about { min-height: auto; }
+.quick-view--meadow .qv-about__body {
+  grid-template-columns: minmax(440px, 520px) minmax(400px, 1fr);
+  gap: clamp(64px, 8vw, 124px);
+  align-items: start;
+  padding-bottom: clamp(100px, 15vh, 170px);
+}
+.quick-view--meadow .qv-about__identity {
+  position: static;
+  align-self: start;
+  transform: none;
+}
+.quick-view--meadow .qv-about__profile {
+  align-self: center;
+  padding-top: 0;
+  transform: translateY(12px);
+}
+.quick-view--meadow .qv-about__lead {
+  max-width: none;
+  margin: 0 0 26px;
+  font-size: clamp(17px, 1.35vw, 21px);
+  line-height: 1.6;
+  white-space: normal;
+}
+.quick-view--meadow .qv-about__intro {
+  max-width: 54em;
+  margin: 24px 0 24px;
+  font-size: clamp(14px, 1.1vw, 17px);
+  line-height: 1.9;
+}
+.quick-view--meadow .qv-about__highlights {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  width: 100%;
+  margin: 0 0 54px;
+}
+.quick-view--meadow .qv-about__highlights span {
+  display: inline-flex;
+  min-height: 34px;
+  justify-content: center;
+  align-items: center;
+  padding: 7px 14px;
+  /* 2026-10-03 按要求：原来是 1px 描边 + 8px 直角，和页面里 11 处 999px 胶囊按钮
+     （ENTER EXPLORE / EMAIL）不是同一套圆角语言，看着像贴上去的标签。
+     去描边、改胶囊圆角；底色与内阴影未动，所以文字对比度与改前完全一致。 */
+  border: 0;
+  border-radius: 999px;
+  color: #f1ece2;
+  background: rgba(49, 95, 74, .52);
+  box-shadow: inset 0 -2px 0 rgba(14, 39, 28, .34);
+  font-size: 12px;
+  line-height: 1;
+  letter-spacing: .08em;
+}
+.quick-view--meadow .qv-about__facts {
+  display: block;
+  grid-column: 1 / -1;
+  width: 100%;
+  margin: clamp(-190px, -16vh, -120px) 0 0;
+}
+.quick-view--meadow .qv-about__facts section {
+  display: block;
+  width: min(650px, 58vw);
+  padding: clamp(42px, 6vh, 68px) 0;
+  border: 0;
+  border-top: 1px solid rgba(241, 236, 226, .44);
+  background: transparent;
+}
+.quick-view--meadow .qv-about__facts section:nth-child(odd) { margin-left: auto; }
+.quick-view--meadow .qv-about__facts section:nth-child(even) { margin-right: auto; }
+.quick-view--meadow .qv-about__facts section:last-child { border-bottom: 1px solid rgba(241, 236, 226, .44); }
+.quick-view--meadow .qv-about__facts section > span {
+  display: block;
+  margin-bottom: 18px;
+  color: #b5e3d6;
+  font-size: 10px;
+  line-height: 1.4;
+  letter-spacing: .16em;
+}
+.quick-view--meadow .qv-about__facts h3 {
+  margin: 0 0 20px;
+  color: #f1ece2;
+  font-size: clamp(26px, 2.2vw, 35px);
+  line-height: 1.25;
+}
+.quick-view--meadow .qv-about__facts p {
+  max-width: 52em;
+  margin: 0 0 22px;
+  color: rgba(241, 236, 226, .78);
+  font-size: 15px;
+  line-height: 1.9;
+}
+.quick-view--meadow .qv-about__facts ul {
+  display: grid;
+  gap: 13px;
+  max-width: 56em;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.quick-view--meadow .qv-about__facts li {
+  position: relative;
+  padding-left: 18px;
+  color: #f1ece2;
+  font-size: 14px;
+  line-height: 1.78;
+  white-space: nowrap;
+}
+.quick-view--meadow .qv-about__facts li::before {
+  content: '';
+  position: absolute;
+  top: .72em;
+  left: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #b5e3d6;
+}
+.quick-view--meadow .qv-about__facts strong { color: #fff8e9; font-weight: 600; }
+
+@media (max-width: 900px) {
+  .quick-view--meadow .qv-about__body { grid-template-columns: 1fr; gap: 64px; }
+  .quick-view--meadow .qv-about__identity { position: static; }
+  .quick-view--meadow .qv-about__profile { transform: none; }
+  .quick-view--meadow .qv-about__facts section { width: min(720px, 100%); }
+  .quick-view--meadow .qv-about__facts { margin-top: 0; }
+  .quick-view--meadow .qv-about__facts li { white-space: normal; }
+}
+
+@media (max-width: 600px) {
+  .quick-view--meadow .qv-about__highlights { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .quick-view--meadow .qv-about__lead { white-space: normal; }
+  .quick-view--meadow .qv-about__facts section { padding-block: 36px; }
+  .quick-view--meadow .qv-about__facts p { font-size: 14px; }
+  .quick-view--meadow .qv-about__facts li { font-size: 13px; }
+}
+
+/* Experience details sit below the four selectors instead of covering the cat. */
+.quick-view--meadow .experience-cat__detail {
+  display: grid;
+  grid-template-columns: minmax(290px, .8fr) minmax(420px, 1.2fr);
+  grid-template-rows: auto 1fr;
+  column-gap: clamp(56px, 7vw, 110px);
+  row-gap: 34px;
+  width: 100%;
+  min-height: clamp(520px, 62vh, 660px);
+  margin-top: clamp(42px, 6vh, 64px);
+  padding: clamp(48px, 6vw, 76px);
+  border-top: 1px solid rgba(241, 236, 226, .46);
+  border-bottom: 1px solid rgba(241, 236, 226, .46);
+  color: #f1ece2;
+  background: rgba(10, 28, 22, .22);
+}
+.quick-view--meadow .experience-cat__detail header { grid-column: 1; grid-row: 1; align-self: end; }
+.quick-view--meadow .experience-cat__detail header > span {
+  color: #b5e3d6;
+  font-size: 10px;
+  letter-spacing: .16em;
+}
+.quick-view--meadow .experience-cat__detail h3 {
+  margin: 12px 0 14px;
+  color: #f1ece2;
+  font-size: clamp(24px, 2.3vw, 36px);
+  font-weight: 400;
+}
+.quick-view--meadow .experience-cat__detail header p,
+.quick-view--meadow .experience-cat__detail li,
+.quick-view--meadow .experience-cat__detail dt,
+.quick-view--meadow .experience-cat__detail dd { color: #f1ece2; font-size: 14px; line-height: 1.85; }
+.quick-view--meadow .experience-cat__detail header p { margin: 0; color: rgba(241, 236, 226, .76); }
+.quick-view--meadow .experience-cat__detail dl { grid-column: 1; grid-row: 2; display: grid; align-content: start; gap: 14px; margin: 0; }
+.quick-view--meadow .experience-cat__detail dl div { padding-bottom: 10px; border-bottom: 1px solid rgba(241, 236, 226, .24); }
+.quick-view--meadow .experience-cat__detail dt { color: #b5e3d6; font-size: 10px; letter-spacing: .12em; }
+.quick-view--meadow .experience-cat__detail dd { margin: 3px 0 0; }
+.quick-view--meadow .experience-cat__detail ul { grid-column: 2; grid-row: 1 / span 2; display: grid; align-content: center; gap: 22px; margin: 0; padding: 0; list-style: none; }
+.quick-view--meadow .experience-cat__detail li { position: relative; padding-left: 16px; }
+.quick-view--meadow .experience-cat__detail li::before { content: ''; position: absolute; top: .72em; left: 0; width: 5px; height: 5px; border-radius: 50%; background: #b5e3d6; }
+
+/* Works: compact directory and preview, avoiding a full-page pasted poster. */
+.quick-view--meadow .qv-works__switcher {
+  display: grid;
+  grid-template-columns: minmax(260px, 34%) minmax(0, 1fr);
+  gap: clamp(38px, 6vw, 86px);
+  height: auto;
+  min-height: 0;
+  align-items: center;
+  padding: 0;
+}
+.quick-view--meadow .qv-works__choices {
+  order: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0;
+}
+.quick-view--meadow .qv-works__choices button {
+  min-height: 72px;
+  padding: 15px 2px;
+  border: 0;
+  border-top: 1px solid rgba(241, 236, 226, .34);
+  border-radius: 0;
+  color: rgba(241, 236, 226, .6);
+  background: transparent!important;
+  box-shadow: none;
+}
+.quick-view--meadow .qv-works__choices button:last-child { border-bottom: 1px solid rgba(241, 236, 226, .34); }
+.quick-view--meadow .qv-works__choices button.is-active { color: #f1ece2; transform: translateX(8px); }
+.quick-view--meadow .qv-works__choices button.is-active > span { color: #b5e3d6; }
+.quick-view--meadow .qv-works__stage {
+  order: 2;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 18px;
+  height: clamp(390px, 51vh, 500px);
+  min-height: 0;
+  overflow: visible;
+  color: #f1ece2;
+  background: transparent;
+  box-shadow: none;
+}
+.quick-view--meadow .qv-works__stage::after { display: none; }
+.quick-view--meadow .qv-works__stage > img {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  aspect-ratio: auto;
+  object-fit: cover;
+  border: 1px solid rgba(241, 236, 226, .42);
+  border-radius: 12px;
+  box-shadow: 0 20px 48px rgba(5, 17, 12, .25);
+}
+.quick-view--meadow .qv-works__stage > div {
+  position: static;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  color: #f1ece2;
+}
+.quick-view--meadow .qv-works__stage > div > span,
+.quick-view--meadow .qv-works__stage h3,
+.quick-view--meadow .qv-works__stage p { grid-column: 1; }
+.quick-view--meadow .qv-works__stage h3 { margin: 5px 0 2px; font-size: clamp(25px, 2.7vw, 40px); }
+.quick-view--meadow .qv-works__stage button { position: static; grid-column: 2; grid-row: 1 / span 3; align-self: end; }
+.quick-view--meadow .qv-works__stage p { max-width: 58ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quick-view--meadow .qv-works__stage button { min-width: 112px; border-color: rgba(241,236,226,.58); background: rgba(32,45,38,.52); }
+.quick-view--meadow .qv-works__stage button:hover { background: rgba(72,119,96,.72); transform: translateY(-2px); }
+
+@media (max-width: 900px) {
+  .quick-view--meadow { --qv-safe-width: 90vw; --qv-section-top: 92px; --qv-section-bottom: 108px; }
+  .quick-view--meadow .experience-cat__detail { grid-template-columns: 1fr; grid-template-rows: auto; gap: 26px; min-height: 0; padding: 36px 22px; }
+  .quick-view--meadow .experience-cat__detail header,
+  .quick-view--meadow .experience-cat__detail dl,
+  .quick-view--meadow .experience-cat__detail ul { grid-column: 1; grid-row: auto; }
+  .quick-view--meadow .qv-works__switcher { grid-template-columns: 1fr; gap: 24px; }
+  .quick-view--meadow .qv-works__choices { display: grid; grid-template-columns: repeat(2, 1fr); }
+  .quick-view--meadow .qv-works__stage { height: min(58svh, 480px); }
+}
+
+/* Chapter divider B: oversized Nano Song numeral and an offset HuTu label.
+   No rule, badge or container; spacing separates chapters from content. */
+.quick-view--meadow .qv-heading,
+.quick-view--meadow .qv-heading.qv-heading--center {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: clamp(14px, 2vw, 28px);
+  row-gap: clamp(2px, .8vh, 10px);
+  align-items: end;
+  justify-items: stretch;
+  width: var(--qv-safe-width);
+  max-width: 1180px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  text-align: left;
+}
+.quick-view--meadow .qv-heading::before { display: none; content: none; }
+.quick-view--meadow .qv-heading > span,
+.quick-view--meadow .qv-heading.qv-heading--center > span {
+  display: block;
+  grid-column: 1;
+  grid-row: 1;
+  width: auto;
+  height: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: rgba(139, 230, 195, .78);
+  background: transparent;
+  font-family: 'PFHuTu-Meta','PF频凡胡涂体','Noto Serif SC',serif!important;
+  font-size: clamp(62px, 7vw, 96px);
+  font-weight: 400;
+  line-height: .78;
+  letter-spacing: -.035em;
+  text-shadow: 0 3px 24px rgba(0, 0, 0, .35);
+}
+.quick-view--meadow .qv-heading > small,
+.quick-view--meadow .qv-heading.qv-heading--center > small {
+  display: block;
+  grid-column: 2;
+  grid-row: 2;
+  justify-self: start;
+  align-self: start;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: #f1ece2;
+  background: transparent;
+  box-shadow: none;
+  font-family: 'PF频凡胡涂体','Noto Serif SC',serif!important;
+  font-size: clamp(18px, 2vw, 28px);
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: .06em;
+  text-shadow: 0 2px 16px rgba(0, 0, 0, .72);
+  transform: none;
+}
+.quick-view--meadow .qv-heading h2,
+.quick-view--meadow .qv-heading.qv-heading--center h2 {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: start;
+  width: 100%;
+  margin: 0;
+  padding-bottom: clamp(20px, 2.2vw, 32px);
+  text-align: left;
+}
+
+@media (max-width: 760px) {
+  .quick-view--meadow .qv-heading,
+  .quick-view--meadow .qv-heading.qv-heading--center { grid-template-columns: auto 1fr; column-gap: 12px; row-gap: 6px; }
+  .quick-view--meadow .qv-heading > span,
+  .quick-view--meadow .qv-heading.qv-heading--center > span { font-size: clamp(48px, 16vw, 68px); }
+  .quick-view--meadow .qv-heading > small,
+  .quick-view--meadow .qv-heading.qv-heading--center > small { display: block; margin-top: 3px; font-size: clamp(16px, 5vw, 21px); }
+  .quick-view--meadow .qv-heading h2,
+  .quick-view--meadow .qv-heading.qv-heading--center h2 { padding-bottom: 18px; }
+}

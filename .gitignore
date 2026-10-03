@@ -41,6 +41,31 @@ _shots/
 _park/
 _replay/
 
+# 快速浏览版的独立完整副本（1825 文件，含自己的 package.json / node_modules）。
+# 它是**本地试验场**：src/ 才是真正入库、真正上线的那份，改动同步回主干后再推。
+# ⚠️ 必须带前导下划线 + 结尾斜杠，否则会连带忽略仓库根下别的 _ 前缀目录。
+_quickview_v2_meadow_preview/
+
+# 归档的旧版meadow 素材（新版已换新图，保留本地做对照，不入库）
+_archive_quickview-v2-meadow-assets/
+
+# 对照第三方站点时抓下来的视觉参考截图（版权不明，不入库）
+visual-reference-captures/
+
+# 上传缓存导出的 HTML 与诊断截图（一次性产物）
+/上传链接生成器.html
+/image-compare.html
+/codex-hero-check.png
+
+# 临时订阅素材 PDF（正文已改版，PDF 过期不入库）
+/订阅素材-春风kiroro编辑计划.pdf
+
+# ⚠️ 上面几条带中文名的规则对非ASCII 文件名不可靠（git status 会把中文路径输出成
+# 八进制转义，如\344\270\223…，glob 匹配不上）。所以再补一条兜底：
+# 根目录下所有 .html 都视为一次性产物（真要入库的页面都在 src/ 或 public/ 下）。
+/*.html
+/*.pdf
+
 # 临时调试 / 一次性产物（只留本地，不入库）
 outputs/
 scripts/_vid/

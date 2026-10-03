@@ -40,6 +40,8 @@ import { useEscape } from '@/lib/escape-stack';
 type Props = {
   open: boolean;
   onClose: () => void;
+  initialActive?: number | null;
+  returnToQuickOnDetailClose?: boolean;
 };
 
 /**
@@ -50,7 +52,7 @@ type Props = {
  *
  * 展示模式：左字右图 + 高光图，淘汰完整 PDF 查看器。
  */
-export function WorksCarousel({ open, onClose }: Props) {
+export function WorksCarousel({ open, onClose, initialActive = null, returnToQuickOnDetailClose = false }: Props) {
   // 作者 / 访客模式来自全局上下文 —— 与 Green OS / About 页共用同一个开关
   const isAdmin = useAdmin();
   const [mounted, setMounted] = useState(open);
@@ -70,6 +72,9 @@ export function WorksCarousel({ open, onClose }: Props) {
     seedProjects(diskOverridesRef.current),
   );
   const [active, setActive] = useState<number | null>(() => {
+    if (initialActive !== null && initialActive >= 0 && initialActive < projects.length) {
+      return initialActive;
+    }
     /**
      * ?wkp=N —— 无头/调试参数，直接预览第 N 个项目的整屏详情页。
      * 跟 ?about / ?greenos / ?diary / ?works / ?media / ?copy 一脉相承：省下起 3D 木马 +
@@ -632,6 +637,10 @@ export function WorksCarousel({ open, onClose }: Props) {
           origin={flipOrigin?.slot === active ? (flipOrigin.origin?.el ?? null) : null}
           originRect={flipOrigin?.slot === active ? (flipOrigin.origin?.rect ?? null) : null}
           onClose={() => {
+            if (returnToQuickOnDetailClose) {
+              onClose();
+              return;
+            }
             setActive(null);
             apiRef.current?.reset();
             setFocused(null);

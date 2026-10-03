@@ -53,9 +53,10 @@ export function CursorLabel() {
     let lastTx = NaN;
     let lastTy = NaN;
 
-    /* 弹簧滞后：x 比 y 慢一点（0.5 / 0.42），对角线移动时会有很轻的弧线感 */
-    const toX = gsap.quickTo(root, 'x', { duration: 0.5, ease: EASE.world });
-    const toY = gsap.quickTo(root, 'y', { duration: 0.42, ease: EASE.world });
+    /* 标签只做很短的平滑跟随。旧版 0.5s 的长滞后会让圈注与文字追不上
+       系统指针，并在快速划过按钮时短暂显示上一个动作名。 */
+    const toX = gsap.quickTo(root, 'x', { duration: 0.16, ease: EASE.world });
+    const toY = gsap.quickTo(root, 'y', { duration: 0.16, ease: EASE.world });
 
     /** 目标点没变就不重复下发（见 lastTx 的注释） */
     const push = (tx: number, ty: number) => {
@@ -136,6 +137,8 @@ export function CursorLabel() {
     const hide = () => {
       root.classList.remove('is-on');
       root.classList.remove('is-lock');
+      root.classList.remove('is-press');
+      lab.textContent = '';
       showing = null;
       locked = false;
     };
@@ -152,6 +155,7 @@ export function CursorLabel() {
     window.addEventListener('blur', hide);
     window.addEventListener('scroll', onScroll, { passive: true, capture: true });
     document.addEventListener('pointerleave', hide);
+    document.addEventListener('visibilitychange', hide);
     gsap.ticker.add(tick);
 
     return () => {
@@ -164,6 +168,9 @@ export function CursorLabel() {
       window.removeEventListener('blur', hide);
       window.removeEventListener('scroll', onScroll, true);
       document.removeEventListener('pointerleave', hide);
+      document.removeEventListener('visibilitychange', hide);
+      toX.tween.kill();
+      toY.tween.kill();
     };
   }, []);
 

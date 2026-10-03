@@ -9,7 +9,8 @@ interface HomeSectionProps {
   /** 首个窗口就绪。滚动动画用它当门禁 —— 不能用「全部下完」，那要等 64MB 才动 */
   ready: boolean;
   entered: boolean;
-  onOpen: () => void;
+  onQuickView: () => void;
+  onExplore: () => void;
   /** 通知外层「我滚到第几帧了」，用于驱动窗口式预加载 */
   onFrameFocus: (frame: number) => void;
   setDownBlocked: (blocked: boolean) => void;
@@ -43,7 +44,8 @@ export function HomeSection({
   images,
   ready,
   entered,
-  onOpen,
+  onQuickView,
+  onExplore,
   onFrameFocus,
   setDownBlocked,
   framesRevision,
@@ -72,11 +74,12 @@ export function HomeSection({
   const lastFocusRef = useRef(-1);
   const bellRef = useRef<HTMLAudioElement | null>(null);
   const portfolioRef = useRef<HTMLDivElement>(null);
-  const openBtnRef = useRef<HTMLButtonElement>(null);
+  const openGateRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
   const portfolioLineRef = useRef<HTMLSpanElement>(null);
 
   const [showOpen, setShowOpen] = useState(false);
+  const [chooserOpen, setChooserOpen] = useState(false);
   const [leaving, setLeaving] = useState(false);
 
   // Prepare the bell sound (played on OPEN click — a guaranteed user gesture)
@@ -377,7 +380,7 @@ export function HomeSection({
   // OPEN 按钮：GSAP 弹性入场 + 磁吸跟随
   useEffect(() => {
     if (!showOpen) return;
-    const btn = openBtnRef.current;
+    const btn = openGateRef.current;
     const inner = innerRef.current;
     if (!btn || !inner) return;
 
@@ -411,16 +414,24 @@ export function HomeSection({
     };
   }, [showOpen]);
 
-  const handleOpen = () => {
+  useEffect(() => {
+    if (!showOpen) setChooserOpen(false);
+  }, [showOpen]);
+
+  const handleRevealChooser = () => {
     // 点击 OPEN 是用户手势，播放铃声一定被允许
     const a = bellRef.current;
     if (a) {
       a.currentTime = 0;
       a.play().catch(() => {});
     }
+    setChooserOpen(true);
+  };
+
+  const handleOpen = (destination: 'quick' | 'explore') => {
     // 旧页面先淡出（300ms），快消失时由 App 的 flash 白光接手
     setLeaving(true);
-    window.setTimeout(onOpen, 350);
+    window.setTimeout(destination === 'quick' ? onQuickView : onExplore, 350);
   };
 
   return (
@@ -476,20 +487,62 @@ export function HomeSection({
           </span>
         </div>
 
-        {/* OPEN button at the center of the door (appears at 90%)
+        {/* OPEN gate at the center of the door (appears at 90%)
             2026-09-16 字体统一：原来是 `font-body`（Inter/Noto 无衬线）+ 0.5em 大字距的
             **全大写 ON/OFF 式按钮**，和全站"屏幕外英文 = Caveat 手写体"的规则不符 ——
             进门前后一个是无衬线全大写、一个是手写体，像两个网站。
             改成 Caveat + Title Case「Open」（规则 ②：屏幕外一律 Title Case），
             字号/字距的分寸见 index.css 的 .home-open。 */}
         {showOpen && (
-          <button
-            ref={openBtnRef}
-            onClick={handleOpen}
-            className="home-open absolute left-1/2 top-1/2 z-20 flex items-center justify-center px-10 py-3 border border-cream/70 bg-black/30 backdrop-blur-sm text-cream transition-colors duration-500 hover:bg-cream hover:text-wine"
-          >
-            Open
-          </button>
+          <div ref={openGateRef} className="home-open-gate absolute left-1/2 top-1/2 z-20">
+            {!chooserOpen ? (
+              <button
+                type="button"
+                className="home-open home-open-gate__open"
+                onClick={handleRevealChooser}
+              >
+                Open
+              </button>
+            ) : (
+              <div
+                className="home-open-gate__panel is-open"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="home-explore-question"
+              >
+                <button
+                  type="button"
+                  className="home-open-gate__close"
+                  aria-label="关闭浏览方式选择"
+                  onClick={() => setChooserOpen(false)}
+                >
+                  ×
+                </button>
+                <div className="home-open-gate__question">
+                  <strong id="home-explore-question">HOW DO YOU WANT TO EXPLORE?</strong>
+                  <span>你想如何浏览</span>
+                </div>
+                <div className="home-open-gate__entries">
+                  <button
+                    type="button"
+                  onClick={() => handleOpen('quick')}
+                  className="home-open-gate__entry"
+                >
+                    <span className="home-open home-open-gate__label">Quick view</span>
+                    <span className="home-open-gate__entry-zh">快速浏览</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleOpen('explore')}
+                    className="home-open-gate__entry"
+                  >
+                    <span className="home-open home-open-gate__label">Explore</span>
+                    <span className="home-open-gate__entry-zh">自由探索</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         )}
 
         {/* Scroll indicator (hidden once OPEN appears) —— 同 OPEN，归 Caveat */}

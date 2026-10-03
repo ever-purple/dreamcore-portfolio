@@ -76,6 +76,8 @@
     -->
     <script>
       (function () {
+        var params = new URLSearchParams(window.location.search);
+        if (params.has('quick') || params.has('choice')) return;
         var vw = window.innerWidth;
         var canvasPx = vw * Math.min(window.devicePixelRatio || 1, 2);
         var shortSide = Math.min(window.innerWidth, window.innerHeight);
@@ -99,3 +101,4 @@
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
+

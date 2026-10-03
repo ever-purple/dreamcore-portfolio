@@ -31,6 +31,7 @@ import { studioObjects, type StudioObject } from '@/data/studio';
 import { CHANNEL_BY_DEVICE, type MediaChannel } from '@/data/mediaWorks';
 import { playCrtOff, playCrtOn } from '@/lib/crtAudio';
 import { createStudioMusic, type StudioMusic } from '@/lib/studioMusic';
+import type { QuickViewExploreTarget } from '@/components/QuickViewShell';
 
 /**
  * 盖上工作室的那一层，该让音乐去哪一档（见 src/lib/studioMusic.ts 文件头）。
@@ -40,8 +41,11 @@ import { createStudioMusic, type StudioMusic } from '@/lib/studioMusic';
 type MusicCue = 'away' | 'off';
 
 type Props = {
+  entryTarget?: QuickViewExploreTarget;
+  entryPlanSlot?: number | null;
   onSelectObject?: (object: StudioObject) => void;
   onBack?: () => void;
+  onReturnToQuickWorks?: () => void;
 };
 
 /** 转场时间轴（ms）—— 与需求里的 1.2s 三段式一一对应 */
@@ -114,7 +118,7 @@ const LATE_PREFETCH_DELAY = 12000;
  * - 点击笔记本：原地打开线圈本弹层（纸张右侧滑入 + 背景模糊）
  * - 点击电脑：原地打开 About Me 页（老式个人主页风格浮层）
  */
-export function StudioSection({ onSelectObject, onBack }: Props) {
+export function StudioSection({ entryTarget = 'studio', entryPlanSlot = null, onSelectObject, onBack, onReturnToQuickWorks }: Props) {
   const [hoveredId, setHoveredId] = useState<StudioObject['id'] | null>(null);
   /* —— 预热实习日记单文件（2026-09-28，2026-09-30 改为**只认悬停**）——
      日记整本是 public/diary-book/index.html 一个 3MB 单文件（封面照片也内联在其 CSS 里）。
@@ -147,7 +151,7 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
   // ?works=1 可直接预览木马策划案浮层（与 ?newsstand=1 / ?about=1 同一套调试参数约定）
   const [worksOpen, setWorksOpen] = useState(() => {
     const params = new URLSearchParams(window.location.search);
-    return params.has('works');
+    return entryTarget === 'plans' || params.has('works');
   });
   /** 报刊亭 → 创作档案 3D 展架场景开关（?newsstand=1 可直接预览） */
   const [newsstandOpen, setNewsstandOpen] = useState(() => {
@@ -156,7 +160,7 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
   });
   /** 第一排（顶层设备）落地页：视频与音乐（?media=1 可直接预览） */
   const [mediaOpen, setMediaOpen] = useState(() => {
-    return new URLSearchParams(window.location.search).has('media');
+    return entryTarget === 'media' || new URLSearchParams(window.location.search).has('media');
   });
   /**
    * 视频页的**进门频道** —— 由点的是第一排第几台设备决定（DVD→横屏 / DV→AI / MP3→竖屏）。
@@ -170,7 +174,7 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
   });
   /** 第二排（下层档案）落地页：文案与 AI 项目（?copy=1 可直接预览） */
   const [copyOpen, setCopyOpen] = useState(() => {
-    return new URLSearchParams(window.location.search).has('copy');
+    return entryTarget === 'copy' || new URLSearchParams(window.location.search).has('copy');
   });
   // ?about=1 / ?greenos=1 / #about 可直接预览。
   // greenos / crt 也顺带把页面打开 —— 否则想看 Green OS 外观还得写两个参数。
@@ -816,7 +820,13 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
         <Suspense fallback={null}>
           <WorksCarousel
             open={worksOpen}
+            initialActive={entryPlanSlot}
+            returnToQuickOnDetailClose={entryTarget === 'plans' && entryPlanSlot !== null}
             onClose={() => {
+              if (entryTarget === 'plans' && onReturnToQuickWorks) {
+                onReturnToQuickWorks();
+                return;
+              }
               setWorksOpen(false);
               closeFocused(); // 镜头从木马拉回 1:1
             }}
@@ -850,6 +860,10 @@ export function StudioSection({ onSelectObject, onBack }: Props) {
           <MediaGalleryPage
             channel={mediaChannel}
             onClose={() => {
+              if (entryTarget === 'media' && onReturnToQuickWorks) {
+                onReturnToQuickWorks();
+                return;
+              }
               setMediaOpen(false); // → 回到书架模型界面
             }}
           />

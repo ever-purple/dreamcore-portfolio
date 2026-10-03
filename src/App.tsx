@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Lenis from 'lenis';
 import { LoadingScreen } from '@/components/LoadingScreen';
 import { ModeSwitch } from '@/components/ModeSwitch';
+import { ExploreChoice } from '@/components/ExploreChoice';
+import { QuickViewShell, type QuickViewExploreTarget } from '@/components/QuickViewShell';
 import { HomeSection } from '@/sections/HomeSection';
 import { StudioSection } from '@/sections/StudioSection';
 import { useWindowedFrames } from '@/hooks/useWindowedFrames';
@@ -11,6 +13,8 @@ import { supportsAvif } from '@/lib/avifSupport';
 import type { StudioObject } from '@/data/studio';
 import 'lenis/dist/lenis.css';
 import './App.css';
+import './quick-view.css';
+import './meadow-v2.css';
 import gsap from 'gsap';
 
 const TOTAL_FRAMES = 120;
@@ -205,18 +209,25 @@ const PREFETCH_MODELS: string[] = [
   `${import.meta.env.BASE_URL}newsstand/rack.glb`,
 ];
 
+type AppStage = 'home' | 'choice' | 'quick' | 'studio';
+
 function App() {
+  const [studioEntry, setStudioEntry] = useState<QuickViewExploreTarget>('studio');
+  const [studioPlanSlot, setStudioPlanSlot] = useState<number | null>(null);
+  const [returnToQuickWorks, setReturnToQuickWorks] = useState(false);
   // ?studio=1 / ?about=1 / ?greenos=1 预览模式：视为已过加载页，便于直接测试
   const [entered, setEntered] = useState(() => {
     const params = new URLSearchParams(window.location.search);
-    return params.has('studio') || params.has('about') || params.has('greenos') || params.has('crt');
+    return params.has('studio') || params.has('about') || params.has('greenos') || params.has('crt') || params.has('quick') || params.has('choice');
   });
   // 转场白光：idle / on（瞬间亮）/ fading（0.4s 淡出）
   const [flash, setFlash] = useState<'idle' | 'on' | 'fading'>('idle');
   // ?studio=1 可跳过首页直接预览工作室（真实流程：滚到 90% 点 OPEN 进入）
   // ?greenos=1 / ?crt=1 是"钻进 CRT 后的 Green OS"预览，同样直接落到工作室
-  const [stage, setStage] = useState<'home' | 'studio'>(() => {
+  const [stage, setStage] = useState<AppStage>(() => {
     const params = new URLSearchParams(window.location.search);
+    if (params.has('quick')) return 'quick';
+    if (params.has('choice')) return 'choice';
     if (params.has('studio') || params.has('about') || params.has('greenos') || params.has('crt')) {
       return 'studio';
     }
@@ -248,8 +259,8 @@ function App() {
   }, []);
 
   const frameUrls = useMemo(
-    () => (frameFormat ? buildFrameUrls(frameFormat) : NO_FRAME_URLS),
-    [frameFormat],
+    () => (frameFormat && stage === 'home' ? buildFrameUrls(frameFormat) : NO_FRAME_URLS),
+    [frameFormat, stage],
   );
 
   // 暴露给回归探针：`document.documentElement.dataset.frameFormat` 断言走的是哪一档
@@ -272,7 +283,7 @@ function App() {
   } = useWindowedFrames(frameUrls, {
     headCount: HEAD_FRAMES,
     priorityTail: TAIL_FRAMES,
-    enabled: frameFormat !== null,
+    enabled: frameFormat !== null && stage === 'home',
   });
 
   /**
@@ -316,7 +327,7 @@ function App() {
   useAssetPreload({
     wait: [],
     prefetch: PREFETCH_MODELS,
-    prefetchGate: entered && framesMostlyLoaded,
+    prefetchGate: stage === 'home' && entered && framesMostlyLoaded,
   });
 
   /**
@@ -380,6 +391,11 @@ function App() {
         // 不然主页 lenis 会在背后把工作室页面也滚走
         if (document.querySelector('.wkp')) return false;
         if (downBlockedRef.current && data.deltaY > 0) return false;
+        // Quick View 全程增加滚动阻力，避免触控板/滚轮一次跨过整段内容。
+        if (document.body.classList.contains('quick-view-active')) {
+          data.deltaY *= .68;
+          data.deltaX *= .68;
+        }
         return true;
       },
     });
@@ -409,7 +425,7 @@ function App() {
   useEffect(() => {
     const lenis = lenisRef.current;
     if (!lenis) return;
-    if (stage === 'studio') lenis.stop();
+    if (stage === 'studio' || stage === 'choice') lenis.stop();
     else if (entered) lenis.start();
   }, [stage, entered]);
 
@@ -484,14 +500,56 @@ function App() {
     }
   }, []);
 
-  // 开门 → 进入工作室（iris 转场：从门心绽放的圆形过曝铺满全屏，再 0.42s 淡出）
-  const handleOpen = useCallback(() => {
-    clearEntryHash(); // 回到工作室必须是"干净"的工作室，不自动弹 About
-    setStage('studio'); // 旧页面消失、新页面就位（被白光盖住）
-    setFlash('on'); // 从门心绽放的圆形过曝（iris-in）开始
-    // 先让花瓣展开到全屏（0.4s），再 0.42s 淡出露出工作室
+  const runFlashTransition = useCallback((nextStage: AppStage) => {
+    setStage(nextStage);
+    setFlash('on');
     window.setTimeout(() => setFlash('fading'), 400);
     window.setTimeout(() => setFlash('idle'), 820);
+  }, []);
+
+  const handleExplore = useCallback((target: QuickViewExploreTarget = 'studio') => {
+    clearEntryHash();
+    setReturnToQuickWorks(false);
+    setStudioEntry(target);
+    runFlashTransition('studio');
+  }, [clearEntryHash, runFlashTransition]);
+
+  const handleQuickExplore = useCallback((target: QuickViewExploreTarget = 'studio', projectSlot?: number) => {
+    clearEntryHash();
+    setReturnToQuickWorks(target === 'plans' || target === 'media');
+    setStudioEntry(target);
+    setStudioPlanSlot(target === 'plans' && projectSlot !== undefined ? projectSlot : null);
+    runFlashTransition('studio');
+  }, [clearEntryHash, runFlashTransition]);
+
+  const handleReturnToQuickWorks = useCallback(() => {
+    setReturnToQuickWorks(false);
+    setStudioEntry('studio');
+    runFlashTransition('quick');
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#works`);
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        document.getElementById('works')?.scrollIntoView({ behavior: 'auto', block: 'start' });
+      });
+    });
+  }, [runFlashTransition]);
+
+  const handleQuickView = useCallback(() => {
+    clearEntryHash();
+    window.scrollTo(0, 0);
+    setStage('quick');
+  }, [clearEntryHash]);
+
+  const handleQuickBack = useCallback(() => {
+    clearEntryHash();
+    setStage('home');
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        const bottom = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+        lenisRef.current?.scrollTo(bottom, { immediate: true });
+        window.scrollTo(0, bottom);
+      });
+    });
   }, [clearEntryHash]);
 
   // 点击 MY STUDIO → 回到首页初始（滚动归零）
@@ -527,13 +585,18 @@ function App() {
             ready={framesComplete}
             entered={entered}
             onFrameFocus={focusFrame}
-            onOpen={handleOpen}
+            onQuickView={handleQuickView}
+            onExplore={handleExplore}
             setDownBlocked={setDownBlocked}
             framesRevision={framesRevision}
           />
         </>
+      ) : stage === 'choice' ? (
+        <ExploreChoice onQuickView={handleQuickView} onExplore={handleExplore} />
+      ) : stage === 'quick' ? (
+        <QuickViewShell onBack={handleQuickBack} onExplore={handleQuickExplore} />
       ) : (
-        <StudioSection onSelectObject={handleSelectObject} onBack={handleBack} />
+        <StudioSection entryTarget={studioEntry} entryPlanSlot={studioPlanSlot} onSelectObject={handleSelectObject} onBack={handleBack} onReturnToQuickWorks={returnToQuickWorks ? handleReturnToQuickWorks : undefined} />
       )}
       {/* 转场白光（z 最高，覆盖页面切换瞬间） */}
       {flash !== 'idle' && (
@@ -545,7 +608,7 @@ function App() {
         所以访客在页面上根本看不到它；另外隐藏入口（连按 5 次 M）也要在加载页
         期间就能用，所以这里不能挂在 entered 后面。
       */}
-      <ModeSwitch />
+      {(stage === 'home' || stage === 'studio') && <ModeSwitch />}
     </div>
   );
 }

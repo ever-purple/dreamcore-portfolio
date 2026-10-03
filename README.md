@@ -1,10 +1,40 @@
 # Dreamcore Portfolio
 
-一个梦核（dreamcore）风格的个人作品集网站：加载页 → 滚动驱动的首页 → 沉浸式工作室 → Green OS 桌面版 About Me。
+一个梦核（dreamcore）风格的个人作品集网站：加载页 → 滚动驱动的首页 →沉浸式工作室 → Green OS 桌面版 About Me。
 
-**技术栈：** Vite 7 · React 19 · TypeScript · Tailwind CSS 3 · Lenis（平滑滚动）· Three.js（3D 桌宠）
+另有一套**快速浏览版（Quick View）**：单页纵向叙事，把「我是谁 / 做过什么 / 作品 / 怎么找我」压进一屏到底的滚动长页，用 `?quick` 直达。
+
+**技术栈：** Vite 7 · React 19 · TypeScript · Tailwind CSS 3 · GSAP 3 · Lenis（平滑滚动）· Three.js（3D 桌宠）
 
 ---
+
+## 两个入口
+
+| | 探索版（主站） | 快速浏览版 |
+|---|---|---|
+| 入口 | 正常流程：加载页 → 首页滚动 → OPEN | `?quick` 直达，跳过加载页 |
+| 结构 | 多屏多场景，逐个进入 | **单页 4 段**，滚动到底 |
+| 适合 | 深度浏览、沉浸体验 | 面试官 30 秒扫完、简历附件式分享 |
+| 素材 | 120 张滚动序列帧 + 循环视频 + GLB | 纯静态图，无序列帧、无视频 |
+
+两套UI 完全独立（`src/quick-view.css` + `src/meadow-v2.css`，共约 200 KB），
+互不共享样式作用域 —— 改快速版不会碰到主站，反之亦然。
+
+---
+
+## 快速浏览版（`?quick`）
+
+4 个板块，单页滚动：
+
+| # | 板块 | 内容 |
+|---|---|---|
+| 01 | 关于我 | ID 卡（姓名/年龄/能力标签）+ 头像线稿 |
+| 02 | 实习与项目经历 | 手绘小猫图，节点可点，展开经历详情 |
+| 03 | 精选作品 | 策划案 / 视频 / 文案三章，**仅列片名**，视频在探索版播放 |
+| 04 | 联系 | 邮箱、下载简历、进入探索版 |
+
+- 末尾的 `ENTER EXPLORE` 会带着当前上下文跳回探索版对应位置。
+- 作品正文在 `src/data/copyProjects.ts`，改文案不用碰组件。
 
 ## 体验流程
 
@@ -160,38 +190,121 @@ POST {base}/upload  → multipart/form-data，字段 file，返回 { "url": "htt
 > 封面空白、也拿不到外链播放器（点播放没声音）。
 > 回归验证：`BASE=http://127.0.0.1:5199 node verify-music-link.mjs`。
 
+## 字体体系
+
+**12 个自托管字族，全部本地托管，不外链 Google Fonts。** 分片在 `public/fonts/sliced/`
+（思源宋体 70 片、思源黑体 56 片，按 `unicode-range` 按需下载）。
+
+站点的分配规则写在 `src/index.css` 顶部（**改字体前先读那段注释**）：
+
+| 场景 | 字族 |
+|---|---|
+| 屏幕内像素字 / 小标签 | Zpix、Cubic11 |
+| 屏幕外英文手写 | Caveat |
+| 屏幕外中文 display（**标题级，不是正文**） | NanoOldSongA（子集） |
+| 中文手写标注 | PF频凡胡涂体 |
+| 正文 | 思源黑体 |
+
+> ⚠️ **display 字族不能拿来渲染正文。** NanoOldSongA 的子集只收站点实际用到的字，
+> 正文里任何一个子集外的字都会掉回思源宋体 → 一行字里两种字体混排。
+
+###⚠️ 换文案后必须重跑子集脚本
+
+子集是**静态产物**，不会自动跟着文案更新。文案一改就会大面积缺字，表现为
+「有的字粗有的字细」或掉回系统字体。三个脚本：
+
+```bash
+python scripts/subset-nanooldsong.py   # 标题级中文 display（NanoOldSongA）
+python scripts/subset-qihei.py      # 正文（汉仪旗黑）
+python scripts/slice-cjk-font.py       # 思源宋体/黑体按 unicode-range 分片
+```
+
+`subset-nanooldsong.py` 里的 `add_cjk_from_jsx()` 负责扫**组件里写死的中文**
+（JSX 文本），不只是 `src/data/*.ts` 的字符串字面量 —— 只扫字面量会漏掉
+组件内硬编码的所有中文，这是之前踩过的坑。
+
+验证子集是否够用：
+
+```bash
+python scripts/check-font-subset.py     # 扫出站点用字 vs 子集字形的差集
+python scripts/verify-font-slices.py    # 验分片是否完整
+```
+
+### 已知的字体硬约束
+
+- **PF频凡胡涂体没有「晨」「龄」「载」**。线上 ttf、`D:\字体` 里的副本、原始压缩包、
+  历史备份四份文件 md5 完全一致（`7285c810…`，4901 字形仅 4347 有编码），
+  没有 U+6668 / U+9F84 / U+8F7D；另有 566 个「有轮廓没编码」的字形渲染出来
+  全部是希腊文 / 西里尔文 / 日文假名，**一个汉字都没有**。
+  → ID 卡姓名、年龄、「下载简历」这些位置改用NanoOldSongA，不要改回胡涂体。
+- **不要引入站点没用过的新字族**，也不要用非站点字族（`Georgia` / `Arial` 等）
+  渲染内容 —— 它们不托管在站内，会掉系统字体，在不同机器上表现不一致。
+- 装饰符号（★ ☆ · ↗ ↓）已确认在 NanoOldSongA 子集内。`✦` `✧` 不在任何字族里，
+  已全部换成 ★ ☆。
+
+---
+
 ## 目录结构
 
 ```
 dreamcore-loader-home/
 ├─ index.html
 ├─ vite.config.ts              # @/* 别名；base: './'
-├─ tailwind.config.js          # wine / cream / jheri 等自定义主题
+├─ tailwind.config.js# wine / cream / jheri 等自定义主题
 ├─ postcss.config.js
 ├─ tsconfig*.json
 ├─ .env.example                # 站点开关的可用变量
 ├─ package.json / package-lock.json
-├─ scripts/extract_frames.py   # 从源视频重新生成序列帧
+├─ scripts/                    # 素材与字体工具（见下）
+├─ api/                        # Vercel serverless：留言、访问日志、链接识别
 ├─ public/
 │  ├─ bell.mp3                 # 首页 OPEN 的门铃
 │  ├─ frames/                  # 首页滚动序列帧 0001–0120.jpg（120 张，已入库）
-│  ├─ fonts/                   # JheriCurls.ttf（首页标题）
-│  │                           # Cubic_11.woff2 / zpix.woff2（Green OS 像素字）
+│  ├─ fonts/                   # 12 个自托管字族+ sliced/ 分片
 │  ├─ studio/                  # studio-loop.mp4 循环视频 + poster + 背景音乐
+│  ├─ quick-view/              # 快速版：ID 卡线稿、4 个空间图标、撕纸效果
+│  ├─ quick-view-v2/           # 快速版：超现实桌面 / 草甸世界图层
+│  ├─ works/                   # 作品分章图（chiwei / guanxia / kuaike / shenzhou）
+│  ├─ journal/                 # 日记页素材（贴纸 / 胶带 / 拍立得边框等）
 │  └─ about/                   # 头像 / 横幅 / 底纹 / ascii-art.txt / mascot.glb
 └─ src/
    ├─ main.tsx
-   ├─ App.tsx                  # Lenis + 加载页 → 首页 → 工作室 的编排
+   ├─ App.tsx                  # Lenis + 加载页 → 首页 → 工作室 / 快速版的编排
    ├─ config.ts                # IS_ADMIN 站点开关
-   ├─ index.css / App.css
+   ├─ index.css / App.css     # index.css 顶部是字体分配规则
+   ├─ quick-view.css           # 快速版基础样式
+   ├─ meadow-v2.css            # 快速版草甸主题（在 quick-view.css 之后加载）
+   ├─ styles/fonts-sliced.css# 思源宋体 / 黑体的 unicode-range 分片声明
    ├─ context/                 # AdminContext（作者模式）、PlayerContext（播放器）
-   ├─ data/                    # studio.ts（4 个物件）、about.ts（导航）、inspiration.ts（内容）
-   ├─ lib/                     # contentApi（内容读写边界）、crtAudio、pixelCursor、audioTags
-   ├─ hooks/useImagePreloader.ts
+   ├─ data/                    # studio.ts（4 个物件）、about.ts、inspiration.ts
+   │                           # copyProjects.ts（快速版作品文案）
+   ├─ lib/                     # contentApi（内容读写边界）、crtAudio、pixelCursor…
    ├─ sections/                # HomeSection、StudioSection
    └─ components/              # LoadingScreen、ObjectZone、StudioMenu、NotebookOverlay、
-                               # AboutOverlay + About*（4 个板块）、GreenOs、MascotViewer …
+                               # AboutOverlay + About*（4 个板块）、GreenOs、MascotViewer、
+                               # QuickViewShell（快速版）、ExploreChoice、TornPaperReveal …
 ```
+
+> **快速版的开发副本在 `_quickview_v2_meadow_preview/`**（已 gitignore）——
+> 那是带自己 `package.json` / `node_modules` 的完整独立站，只作试验场。
+> **改动必须同步回上面的 `src/` 才算数**，否则推GitHub 上去的还是旧版。
+> 用 md5 逐文件比对同步，别整目录盲拷。
+
+## 常用脚本
+
+除字体脚本外，常用的还有：
+
+```bash
+python scripts/extract_frames.py    # 源视频 → 滚动序列帧
+python scripts/images-to-webp.py    # 批量图片转 webp
+python scripts/media-compress.py    # 视频压制
+node   scripts/compress-glb.mjs     # GLB 压缩到能进网页的体积
+node   scripts/check-assets.mjs     # 素材引用完整性检查（已挂在 build 最前）
+node   scripts/verify-mode.mjs      # 各预览模式冒烟
+```
+
+`npm run build` 的顺序是 `sync:link-meta → check:assets → tsc -b → vite build`，
+类型不过就不出包。
 
 ## 素材说明
 
@@ -221,15 +334,21 @@ npm run build
 ## 已知未完成 / 上线前清单
 
 - **移动端适配**：全站按桌面视口做的，窄屏只有零星 `@media (max-width:900px)` 兜底，
-  首页滚动帧、工作室 3D 感应区、Green OS 三栏都没正经适配。
+  首页滚动帧、工作室 3D 感应区、Green OS 三栏、快速版 4 段都没正经适配。
 - **产物体积**：`dist/` 现在约 **560MB** —— `public/media/` 306MB（单个视频最大 73MB）、
   `public/frames/` 64MB（120 张序列帧，每张 350–600KB）、`public/works/` 101MB。
   静态托管普遍有单文件 / 总容量上限，上线前必须压。
+  另：`public/fonts/PFHuTu.ttf` 整份 5.1 MB，但快速版只用到它 4347 字形里的 67 个。
 - **首屏等待**：进入首页要求 120 帧**全部**加载完（`ready` 才放行），慢网下会长时间卡在加载页。
 - **作者模式可被 URL 打开**：`?admin=1` 优先级最高，线上任何人加这个参数都会看到编辑入口。
   改动只落在他自己浏览器（不影响别人），但 `VITE_CONTENT_API` 一旦配上就会改到共享后端。
 - **无 SEO / 分享卡片**：`index.html` 只有 title，没有 description / og:image，
   链接贴到微信、飞书、Twitter 里是一块空白。
 - **留言板 / 访客计数**仍是本地 localStorage：访客看不到别人的留言，计数也只是自己刷新 +1。
+- **快速版的 Contact 导语对比度 2.64:1**，是全页唯一不及格的文字。
+  试过三种方案全被否（径向黑蒙版实测无效 / 深色玻璃片被否 / text-shadow 被禁），
+  维持原样。真要修只能动它下方的世界照或加深该处 scrim。
+- **快速版只列片名**，视频仍需跳到探索版播放，两版内容有重叠。
 - `src/components/StudioCursor.tsx` 已不再挂载（工作室改用系统光标），文件保留备用。
 - 全屏菜单除 About Me 之外 4 项尚未接页面。
+

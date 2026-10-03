@@ -100,27 +100,34 @@ function BrushMotifs() {
   </div>;
 }
 
+const TRANSPARENT_PIXEL = 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=';
+
+type SceneLayerProps = {
+  className: string;
+  desktopSrc: string;
+  mobileSrc?: string;
+  imageClassName?: string;
+  priority?: boolean;
+};
+
+function SceneLayer({ className, desktopSrc, mobileSrc, imageClassName, priority = false }: SceneLayerProps) {
+  return <picture className={className}>
+    <source media="(max-width: 760px)" srcSet={mobileSrc ?? TRANSPARENT_PIXEL} />
+    <img className={imageClassName} src={desktopSrc} alt="" fetchPriority={priority ? 'high' : 'auto'} decoding="async" />
+  </picture>;
+}
+
 function GrassWorldBackground() {
   return <div className="qv-world" aria-hidden="true">
-    <div className="qv-world__desktop">
-      <picture className="qv-world__layer qv-world__base"><img src="/quick-view-v2/surreal-desktop/base-sky-meadow.webp" alt="" fetchPriority="high" /></picture>
-      <picture className="qv-world__layer qv-world__house-shadow"><img src="/quick-view-v2/surreal-desktop/house-shadow.webp" alt="" /></picture>
-      <picture className="qv-world__layer qv-world__house"><img src="/quick-view-v2/surreal-desktop/floating-house.webp" alt="" /></picture>
-      <picture className="qv-world__layer qv-world__curtain"><img src="/quick-view-v2/surreal-desktop/curtain.webp" alt="" /></picture>
-      <picture className="qv-world__layer qv-world__goldfish"><img src="/quick-view-v2/surreal-desktop/goldfish.webp" alt="" /></picture>
-      <picture className="qv-world__layer qv-world__cloud"><img src="/quick-view-v2/surreal-desktop/cloud.webp" alt="" /></picture>
-      <picture className="qv-world__layer qv-world__house-front"><img src="/quick-view-v2/surreal-desktop/floating-house.webp" alt="" /></picture>
-      <picture className="qv-world__layer qv-world__desk-scene"><img src="/quick-view-v2/surreal-desktop/desk-crt-scene.webp" alt="" /></picture>
-      <picture className="qv-world__layer qv-world__desk-glow"><img src="/quick-view-v2/surreal-desktop/desk-crt-screen-glow.webp" alt="" /></picture>
-    </div>
-    <div className="qv-world__mobile">
-      <picture className="qv-world__layer qv-world__base"><img src="/quick-view-v2/surreal-mobile/base-sky-meadow.webp" alt="" fetchPriority="high" /></picture>
-      <picture className="qv-world__layer qv-world__house-shadow"><img src="/quick-view-v2/surreal-mobile/house-shadow.webp" alt="" /></picture>
-      <picture className="qv-world__layer qv-world__house"><img src="/quick-view-v2/surreal-mobile/floating-house.webp" alt="" /></picture>
-      <picture className="qv-world__layer qv-world__curtain"><img src="/quick-view-v2/surreal-mobile/curtain.webp" alt="" /></picture>
-      <picture className="qv-world__layer qv-world__goldfish"><img src="/quick-view-v2/surreal-mobile/goldfish.webp" alt="" /></picture>
-      <picture className="qv-world__layer qv-world__cloud"><img src="/quick-view-v2/surreal-mobile/cloud.webp" alt="" /></picture>
-    </div>
+    <SceneLayer className="qv-world__layer qv-world__base" desktopSrc="/quick-view-v2/surreal-desktop/base-sky-meadow.webp" mobileSrc="/quick-view-v2/surreal-mobile/base-sky-meadow.webp" priority />
+    <SceneLayer className="qv-world__layer qv-world__house-shadow" desktopSrc="/quick-view-v2/surreal-desktop/house-shadow.webp" mobileSrc="/quick-view-v2/surreal-mobile/house-shadow.webp" />
+    <SceneLayer className="qv-world__layer qv-world__house" desktopSrc="/quick-view-v2/surreal-desktop/floating-house.webp" mobileSrc="/quick-view-v2/surreal-mobile/floating-house.webp" />
+    <SceneLayer className="qv-world__layer qv-world__curtain" desktopSrc="/quick-view-v2/surreal-desktop/curtain.webp" mobileSrc="/quick-view-v2/surreal-mobile/curtain.webp" />
+    <SceneLayer className="qv-world__layer qv-world__goldfish" desktopSrc="/quick-view-v2/surreal-desktop/goldfish.webp" mobileSrc="/quick-view-v2/surreal-mobile/goldfish.webp" />
+    <SceneLayer className="qv-world__layer qv-world__cloud" desktopSrc="/quick-view-v2/surreal-desktop/cloud.webp" mobileSrc="/quick-view-v2/surreal-mobile/cloud.webp" />
+    <SceneLayer className="qv-world__layer qv-world__house-front" desktopSrc="/quick-view-v2/surreal-desktop/floating-house.webp" mobileSrc="/quick-view-v2/surreal-mobile/floating-house.webp" />
+    <SceneLayer className="qv-world__layer qv-world__desk-scene" desktopSrc="/quick-view-v2/surreal-desktop/desk-crt-scene.webp" />
+    <SceneLayer className="qv-world__layer qv-world__desk-glow" desktopSrc="/quick-view-v2/surreal-desktop/desk-crt-screen-glow.webp" />
     <div className="qv-world__scrim" />
     <div className="qv-world__grade" />
     <div className="qv-world__scanlines" />
@@ -129,14 +136,8 @@ function GrassWorldBackground() {
 
 function GrassWorldForeground() {
   return <div className="qv-foreground" aria-hidden="true">
-    <div className="qv-foreground__desktop">
-      <picture className="qv-foreground__track qv-foreground__curtain-track"><img className="qv-foreground__curtain" src="/quick-view-v2/surreal-desktop/curtain.webp" alt="" /></picture>
-      <picture className="qv-foreground__track qv-foreground__goldfish-track"><img className="qv-foreground__goldfish" src="/quick-view-v2/surreal-desktop/goldfish.webp" alt="" /></picture>
-    </div>
-    <div className="qv-foreground__mobile">
-      <picture className="qv-foreground__track qv-foreground__curtain-track"><img className="qv-foreground__curtain" src="/quick-view-v2/surreal-mobile/curtain.webp" alt="" /></picture>
-      <picture className="qv-foreground__track qv-foreground__goldfish-track"><img className="qv-foreground__goldfish" src="/quick-view-v2/surreal-mobile/goldfish.webp" alt="" /></picture>
-    </div>
+    <SceneLayer className="qv-foreground__track qv-foreground__curtain-track" imageClassName="qv-foreground__curtain" desktopSrc="/quick-view-v2/surreal-desktop/curtain.webp" mobileSrc="/quick-view-v2/surreal-mobile/curtain.webp" />
+    <SceneLayer className="qv-foreground__track qv-foreground__goldfish-track" imageClassName="qv-foreground__goldfish" desktopSrc="/quick-view-v2/surreal-desktop/goldfish.webp" mobileSrc="/quick-view-v2/surreal-mobile/goldfish.webp" />
   </div>;
 }
 

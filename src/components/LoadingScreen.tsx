@@ -4,8 +4,8 @@ import gsap from 'gsap';
 
 interface LoadingScreenProps {
   /**
-   * 首页素材是否到齐 = 整片序列帧全部定案 **或** 撞上 App 的 15s 硬上限。
-   * 到齐（readyToEnter）才允许淡出 —— 这样进门时 buffer 已满，首页不会「没加载完就锁滚动」。
+   * 首页首窗帧是否就绪，或是否命中慢网兜底。
+   * 首窗就绪即可淡出，其余序列帧在首页后台顺序加载。
    */
   ready: boolean;
   /** 真实加载进度 0~1，由 App 按「已下载资源 / 应下载资源」算出来 */

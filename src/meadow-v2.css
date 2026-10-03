@@ -189,9 +189,6 @@ body.quick-view-active { background: #899187; }
   contain: layout paint;
 }
 
-.qv-world__desktop,
-.qv-world__mobile { position: absolute; inset: 0; }
-.qv-world__mobile { display: none; }
 .qv-world__layer { position: absolute; inset: 0; display: block; transform-origin: 50% 100%; will-change: transform, opacity; }
 .qv-world__layer img { display: block; width: 100%; height: 100%; object-fit: cover; user-select: none; }
 .qv-world__base { z-index: 0; transform-origin: 50% 60%; }
@@ -255,9 +252,6 @@ body.quick-view-active { background: #899187; }
   pointer-events: none;
   contain: layout paint;
 }
-.qv-foreground__desktop,
-.qv-foreground__mobile { position: absolute; inset: 0; }
-.qv-foreground__mobile { display: none; }
 .qv-foreground__track { position: absolute; inset: 0; display: block; transform-origin: 50% 100%; will-change: transform, opacity; }
 .qv-foreground__track img { display: block; width: 100%; height: 100%; object-fit: cover; user-select: none; will-change: transform, opacity; }
 .qv-foreground__curtain-track { transform-origin: 20% 0; }
@@ -1038,10 +1032,6 @@ body.quick-view-active { background: #899187; }
 }
 
 @media (max-width: 760px) {
-  .qv-world__desktop { display: none; }
-  .qv-world__mobile { display: block; }
-  .qv-foreground__desktop { display: none; }
-  .qv-foreground__mobile { display: block; }
   .qv-world__base { transform-origin: 50% 72%; }
   .qv-world__cloud { transform-origin: 24% 0; }
   .qv-world__curtain { transform-origin: 38% 8%; }

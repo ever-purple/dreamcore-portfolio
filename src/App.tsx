@@ -179,20 +179,21 @@ const TAIL_FRAMES = 0;
 const ENTER_MAX_WAIT = 15000;
 
 /**
- * 进首页的**正常门槛** = 整片序列帧全部定案（`loadedCount >= TOTAL_FRAMES`）。
+ * 进首页的**正常门槛** = 首窗 `HEAD_FRAMES`（8）张定案（或 hook 的慢网兜底）。
  *
- * ⚠️ 这里推翻了 2026-09-29「只等首窗 8 张」（见 HEAD_FRAMES 注释里的 ③）。当时的
- * 目标是「尽快进门」，但那个决定的副作用是：**用户进门时后面 112 张还没到**，
- * 于是 HomeSection 的「滚轮只推进到已缓冲处」在用户正常下滚时频繁触发 ——
- * 观感就是用户报的「首页没加载出来就锁定滚动，很别扭」。
+ * ⚠️ 这条闸门被调整过三次，改之前先读完这段：
+ *  · 2026-09-29：只等首窗 8 张。副作用是进门时后面 112 张还没到，HomeSection 的
+ *    「滚轮只推进到已缓冲处」在正常下滚时频繁触发 —— 用户反馈「没加载出来就锁定滚动」。
+ *  · 2026-09-30：改成「等整片 120 张全部定案」。那条锁从结构上不再触发，代价是加载页
+ *    明显变久（3.5Mbps 下大屏要 18s）。
+ *  · 2026-10-03（当前）：改回首窗 8 张 —— 换更短的加载页。黑帧风险由**保留未删**的
+ *    HomeSection「滚动位置夹在连续缓冲前沿」这条机制兜住。若日后又出现「滚动被拦」
+ *    的反馈，优先怀疑这里。
  *
- * 现在改成「等整片下完再进门」：进门那一刻 buffer 已经满了，滚动永远跟得上画面，
- * 那条锁从结构上就不会触发（退化成「滚到片尾停住」这一条正常边界）。代价是加载页
- * 停得更久 —— 所以配套做了两件事：① `<head>` 里 preload 首窗帧（和 JS 并行下载，
- * 见 index.html）；② 把 useWindowedFrames 的并发从 12 提到 16。慢链路由上面那条
- * 15s 硬上限兜底。
+ * 配套：① `<head>` preload 前 8 帧（与 JS 主包并行下载，见 index.html）；
+ * ② useWindowedFrames 并发 16；③ 慢链路由 ENTER_MAX_WAIT(15s) 硬上限兜底。
  */
-const READY_FRAMES = TOTAL_FRAMES;
+const READY_FRAMES = HEAD_FRAMES;
 
 /**
  * 后台预热：进工作室才用得上的大件。不计进度、不卡加载页，且**加载页消失之后**
@@ -331,10 +332,10 @@ function App() {
   });
 
   /**
-   * 加载页的 0→100%：**整片**的完成度。
-   * 分母是 TOTAL_FRAMES（不是首窗 HEAD_FRAMES）—— 现在等的是整片，百分比就得反映整片。
-   * useWindowedFrames 每 16 张上报一次、全量到齐时补满，所以数字是分档前进的
-   * （配合 LoadingScreen 内部的插值 + 时间兜底，观感仍然连续）。
+   * 加载页的 0→100%：整片的完成度（分母是 TOTAL_FRAMES）。
+   * 注意：**进门只看首窗 8 张**，所以这个数字往往还没走到两位数就已放行 ——
+   * 它的作用是在慢网下「让数字一直在动、不冻屏」，不是进门的判据（判据见 readyToEnter）。
+   * useWindowedFrames 每 16 张上报一次，配合 LoadingScreen 的插值与时间爬升，观感连续。
    */
   const progress = Math.min(1, loadedCount / TOTAL_FRAMES);
 
@@ -349,10 +350,10 @@ function App() {
     return () => window.clearTimeout(t);
   }, [entered]);
 
-  /** 整片序列帧是否已全部定案（成功或失败都算，见 useWindowedFrames） */
+  /** 首窗序列帧是否已定案；后续帧继续后台加载。 */
   const filmBuffered = loadedCount >= READY_FRAMES;
-  /** 加载页放行判据：整片下完 或 撞上硬上限 */
-  const readyToEnter = filmBuffered || enterTimeoutHit;
+  /** hook 的 complete 含首窗成功与 7 秒慢网兜底；15 秒是最终保险。 */
+  const readyToEnter = framesComplete || filmBuffered || enterTimeoutHit;
 
   const lenisRef = useRef<Lenis | null>(null);
   const downBlockedRef = useRef(false);
@@ -577,7 +578,7 @@ function App() {
       {stage === 'home' ? (
         <>
           {!entered && (
-            // readyToEnter = 整片下完 或 撞上 15s 硬上限（不再是「首窗 8 张」）
+            // 首窗 8 帧就绪即可进入；其余序列帧在首页后台顺序加载。
             <LoadingScreen ready={readyToEnter} progress={progress} onEnter={handleEnter} />
           )}
           <HomeSection

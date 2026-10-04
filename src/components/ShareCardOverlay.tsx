@@ -213,9 +213,11 @@ function usePickCard(): CardSpec {
  *    HARDCODED_DISPLAY 再重跑；符号一律不进正文，关闭按钮那枚 ✕ 交给系统字体。
  */
 function hintFor(phase: Phase, busy: boolean): string {
-  if (busy) return '正在生成…';
+  if (busy) return '正在准备分享…';
+  if (phase === 'shared') return '已打开分享选项';
+  if (phase === 'aborted') return '已取消分享';
   if (phase === 'downloaded') return '图片已保存，内含二维码';
-  if (phase === 'copied') return '分享链接已复制';
+  if (phase === 'copied') return '当前浏览器不支持，链接已复制';
   if (phase === 'link') return '链接已复制';
   if (phase === 'failed') return '保存失败，请重试';
   return '分享后可直接进入网站';

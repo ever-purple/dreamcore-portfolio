@@ -192,12 +192,34 @@ export async function downloadCard(spec: CardSpec): Promise<boolean> {
 }
 
 /**
- * 分享网页 URL。平台抓取 index.html 的 OG 信息后显示卡片，整张预览可点击；
- * 不支持 Web Share API 时退回复制链接。
+ * 打开系统分享面板。优先把卡片图片与网址说明一起交给目标应用；
+ * 设备不支持文件分享时退为网页分享，再不支持才复制链接。
+ * 具体出现微信、小红书、邮件还是其他应用，由操作系统和已安装应用决定。
  */
-export async function shareCard(_spec: CardSpec): Promise<ShareOutcome> {
+export async function shareCard(spec: CardSpec): Promise<ShareOutcome> {
   const url = shareUrl();
-  /* 不弹系统分享面板：复制公开网址，粘贴进聊天后由平台生成 OG 卡片。 */
+  const title = '孙晨茜作品集';
+  const text = `来看看这间 2003 年的梦核工作室：${url}`;
+
+  if (typeof navigator.share === 'function') {
+    const file = await loadCardFile(spec);
+    try {
+      if (
+        file &&
+        typeof navigator.canShare === 'function' &&
+        navigator.canShare({ files: [file] })
+      ) {
+        await navigator.share({ files: [file], title, text });
+      } else {
+        await navigator.share({ title, text, url });
+      }
+      return 'shared';
+    } catch (error) {
+      if ((error as Error)?.name === 'AbortError') return 'aborted';
+      /* 浏览器或目标应用拒绝该数据组合时继续走复制链接兜底。 */
+    }
+  }
+
   try {
     await navigator.clipboard.writeText(url);
     return 'copied';

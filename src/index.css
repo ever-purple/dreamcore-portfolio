@@ -9435,7 +9435,7 @@ img {
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover; /* 16:9 恰好满铺；4:3 居中裁上下 —— 封面标语（画面中部）完整可见 */
+  object-fit: contain; /* 策划案封面必须完整显示，比例不同时保留纸色留白。 */
   display: block;
 }
 .wkp-hero-empty {
@@ -13899,6 +13899,140 @@ article.dx-sec1::before {
   background-repeat: repeat;
   opacity: 0.28;
   pointer-events: none;
+}
+
+/* 加载方案预览：仅使用 transform / opacity，避免和首屏素材争抢解码。 */
+.dream-loader-pixel {
+  position: absolute;
+  top: -18%;
+  width: 3px;
+  height: 20px;
+  background: #7ee8c7;
+  opacity: .72;
+  animation: dream-pixel-descent 1.8s linear infinite;
+  will-change: transform, opacity;
+}
+
+.dream-loader-pixel:nth-child(3n) {
+  width: 2px;
+  height: 9px;
+  background: #faf6e8;
+  opacity: .38;
+}
+
+.dream-loader-pixel:nth-child(4n) {
+  background: #d9d0e5;
+  opacity: .46;
+}
+
+@keyframes dream-pixel-descent {
+  0% { transform: translate3d(0, -30px, 0); opacity: 0; }
+  14% { opacity: .72; }
+  100% { transform: translate3d(0, 560px, 0); opacity: 0; }
+}
+
+.dream-loader-ripple {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: 170px;
+  height: 82px;
+  border: 1px solid rgba(126, 232, 199, .72);
+  border-radius: 50%;
+  transform: translate(-50%, -50%) scale(.42);
+  opacity: 0;
+  animation: dream-ripple-pass 2.9s cubic-bezier(.19, 1, .22, 1) infinite;
+  will-change: transform, opacity;
+}
+
+@keyframes dream-ripple-pass {
+  0% { transform: translate(-50%, -50%) scale(.38); opacity: 0; }
+  18% { opacity: .65; }
+  100% { transform: translate(-50%, -50%) scale(3.3); opacity: 0; }
+}
+
+.dream-loader-rift-pixel {
+  position: absolute;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  color: #7ee8c7;
+  background: transparent;
+  transform: translateX(-50%);
+  transition: top .08s linear, opacity .12s linear;
+  will-change: top, opacity;
+}
+
+.dream-loader-rift-pixel:nth-of-type(3n) {
+  width: 3px;
+  height: 9px;
+  color: #faf6e8;
+}
+
+.dream-loader-rift-pixel > b {
+  position: absolute;
+  inset: 0;
+  display: block;
+  background: currentColor;
+  animation: dream-rift-breathe 1.18s ease-in-out infinite alternate;
+  will-change: transform, opacity, filter;
+}
+
+@keyframes dream-rift-breathe {
+  0% { transform: scale(.56); opacity: .28; filter: brightness(.72); }
+  100% { transform: scale(1.16); opacity: 1; filter: brightness(1.24); }
+}
+
+.dream-loader-rift-ghost {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 1px;
+  height: 100%;
+  background: #7ee8c7;
+  opacity: 0;
+  will-change: transform, opacity;
+  animation: dream-rift-glitch-line 3.1s steps(1, end) infinite;
+}
+
+.dream-loader-rift-ghost--b {
+  background: #d9d0e5;
+  animation-delay: -1.37s;
+  animation-duration: 3.7s;
+}
+
+.dream-loader-rift-slice {
+  position: absolute;
+  left: 50%;
+  width: 24px;
+  height: 1px;
+  background: #7ee8c7;
+  opacity: 0;
+  animation: dream-rift-glitch-slice 3.3s steps(1, end) infinite;
+  will-change: transform, opacity;
+}
+
+@keyframes dream-rift-glitch-line {
+  0%, 76%, 86%, 100% { transform: translateX(-50%); opacity: 0; }
+  78% { transform: translateX(calc(-50% - 6px)); opacity: .22; }
+  80% { transform: translateX(calc(-50% + 4px)); opacity: .34; }
+  82% { transform: translateX(calc(-50% - 2px)); opacity: .16; }
+  84% { transform: translateX(-50%); opacity: 0; }
+}
+
+@keyframes dream-rift-glitch-slice {
+  0%, 63%, 70%, 100% { transform: translateX(-50%) scaleX(.15); opacity: 0; }
+  65% { transform: translateX(calc(-50% - 10px)) scaleX(1); opacity: .48; }
+  67% { transform: translateX(calc(-50% + 7px)) scaleX(.55); opacity: .28; }
+  69% { transform: translateX(-50%) scaleX(.12); opacity: 0; }
+}
+
+.dream-system-log {
+  animation: dream-system-log-in .36s cubic-bezier(.16, 1, .3, 1) both;
+}
+
+@keyframes dream-system-log-in {
+  from { transform: translate3d(0, 8px, 0); opacity: 0; }
+  to { transform: translate3d(0, 0, 0); opacity: .8; }
 }
 /* 板块页思维导图（2026-09-24 用户：「只放刚刚发的两张图片」——
    一张对应踏春块、一张对应妇女节块）——

@@ -33,14 +33,140 @@ const MIN_VISIBLE = 1400;
  */
 const CREEP_MS = 12000;
 
+const DREAM_LOGS = [
+  { at: 0, code: '00', text: '梦境入口校准中……' },
+  { at: 16, code: '01', text: '现实坐标正在远离。' },
+  { at: 34, code: '02', text: '正在读取视觉档案。' },
+  { at: 52, code: '03', text: '正在接近一个没有日期的夏天。' },
+  { at: 70, code: '04', text: '检测到云层、窗帘与金鱼。' },
+  { at: 86, code: '05', text: '请保管好你的记忆。' },
+  { at: 97, code: '06', text: "欢迎进入 Sun Chenxi's Portfolio。" },
+] as const;
+
+type DreamLog = (typeof DREAM_LOGS)[number];
+
+const PIXEL_COLUMNS = [8, 16, 24, 33, 43, 55, 64, 73, 84, 92, 12, 39, 68, 88];
+
+function SystemLog({ log, numbered = true }: { log: DreamLog; numbered?: boolean }) {
+  return (
+    <div
+      key={log.code}
+      className="dream-system-log mx-auto mt-5 flex max-w-[480px] items-start justify-center gap-3 text-center text-[11px] leading-[1.65] tracking-[.08em] text-[#faf6e8]/80"
+      style={{ fontFamily: "'Zpix', 'Noto Serif SC', ui-monospace, monospace" }}
+    >
+      {numbered ? <span className="shrink-0 text-[#7ee8c7]">[SYS.{log.code}]</span> : null}
+      <span>{log.text}</span>
+    </div>
+  );
+}
+
+function PixelRainVisual({ progress, log }: { progress: number; log: DreamLog }) {
+  return (
+    <div className="relative h-[430px] w-[86vw] max-w-[720px] overflow-hidden" aria-hidden="true">
+      {PIXEL_COLUMNS.map((left, index) => (
+        <i
+          key={`${left}-${index}`}
+          className="dream-loader-pixel"
+          style={{
+            left: `${left}%`,
+            animationDelay: `${-(index % 7) * .43}s`,
+            animationDuration: `${1.55 + (index % 5) * .24}s`,
+          }}
+        />
+      ))}
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <p className="mb-3 text-[10px] tracking-[.3em] text-[#faf6e8]/70">PIXEL DESCENT</p>
+        <strong className="text-2xl font-normal tabular-nums tracking-[.18em] text-[#7ee8c7]">
+          {Math.round(progress).toString().padStart(3, '0')}
+        </strong>
+        <SystemLog log={log} />
+      </div>
+    </div>
+  );
+}
+
+function RippleVisual({ progress, log }: { progress: number; log: DreamLog }) {
+  return (
+    <div className="w-[86vw] max-w-[620px]" aria-hidden="true">
+      <div className="relative mx-auto h-[320px] w-full">
+        {[0, 1, 2, 3].map((ring) => (
+          <i key={ring} className="dream-loader-ripple" style={{ animationDelay: `${ring * -.72}s` }} />
+        ))}
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <p className="mb-3 text-[10px] tracking-[.3em] text-[#faf6e8]/70">DREAM SIGNAL</p>
+          <strong className="text-2xl font-normal tabular-nums tracking-[.18em] text-[#7ee8c7]">
+            {Math.round(progress).toString().padStart(3, '0')}
+          </strong>
+        </div>
+      </div>
+      <SystemLog log={log} />
+    </div>
+  );
+}
+
+function RiftVisual({ progress, log }: { progress: number; log: DreamLog }) {
+  return (
+    <div className="w-[82vw] max-w-[560px]" aria-hidden="true">
+      <div className="relative mx-auto h-[300px] w-[190px] overflow-hidden">
+        <i className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-[#7ee8c7]/25" />
+        <i className="dream-loader-rift-ghost dream-loader-rift-ghost--a" />
+        <i className="dream-loader-rift-ghost dream-loader-rift-ghost--b" />
+        <i className="dream-loader-rift-slice" style={{ top: '24%', animationDelay: '-.7s' }} />
+        <i className="dream-loader-rift-slice" style={{ top: '61%', animationDelay: '-1.8s' }} />
+        <i className="dream-loader-rift-slice" style={{ top: '82%', animationDelay: '-2.6s' }} />
+        {Array.from({ length: 9 }, (_, index) => {
+          const top = ((index * 14 - progress * 1.18) % 126 + 126) % 126 - 13;
+          return (
+            <i
+              key={index}
+              className="dream-loader-rift-pixel"
+              style={{
+                top: `${top}%`,
+                marginLeft: `${(index % 3 - 1) * 3}px`,
+                animationDelay: `${index * -.17}s`,
+                opacity: top < 0 || top > 100 ? 0 : 1,
+              }}
+            >
+              <b
+                aria-hidden="true"
+                style={{
+                  animationDelay: `${index * -.19}s`,
+                  animationDuration: `${.92 + (index % 4) * .14}s`,
+                }}
+              />
+            </i>
+          );
+        })}
+        <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-3 bg-[#0a0a0a] px-3 text-[#7ee8c7]">
+          <i className="h-px w-4 bg-[#7ee8c7]" />
+          <strong
+            className="text-sm font-normal tabular-nums tracking-[.16em]"
+            style={{ fontFamily: "'Zpix', ui-monospace, monospace" }}
+          >
+            {Math.round(progress).toString().padStart(3, '0')}
+          </strong>
+          <i className="h-px w-4 bg-[#7ee8c7]" />
+        </div>
+      </div>
+      <div className="mt-10">
+        <SystemLog log={log} />
+      </div>
+    </div>
+  );
+}
+
 export function LoadingScreen({ ready, progress, onEnter }: LoadingScreenProps) {
+  const [previewMode] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.has('loading-simple') || params.has('loading-style');
+  });
+  const [previewStyle] = useState(() => new URLSearchParams(window.location.search).get('loading-style') ?? 'b');
   const [shown, setShown] = useState(0); // 屏幕上显示的百分比
   const [leaving, setLeaving] = useState(false);
   const [visible, setVisible] = useState(true);
   const [tick, setTick] = useState(0);
   const [startDt] = useState(() => Date.now());
   const rootRef = useRef<HTMLDivElement>(null);
-  const counterRef = useRef<HTMLSpanElement>(null);
 
   /**
    * 进度每帧重算（不靠 effect 缓存）：真实下载量 与 时间爬升 取较大值。
@@ -50,7 +176,9 @@ export function LoadingScreen({ ready, progress, onEnter }: LoadingScreenProps) 
     let raf = 0;
     const step = () => {
       const creep = Math.min(0.99, (Date.now() - startDt) / CREEP_MS);
-      const target = (ready ? 1 : Math.max(creep, Math.min(0.995, progress))) * 100;
+      const target = (ready && !previewMode
+        ? 1
+        : Math.max(creep, previewMode ? 0 : Math.min(0.995, progress))) * 100;
       setShown((s) => {
         const next = s + (target - s) * 0.16;
         return Math.abs(target - next) < 0.4 ? target : next;
@@ -59,14 +187,14 @@ export function LoadingScreen({ ready, progress, onEnter }: LoadingScreenProps) 
     };
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
-  }, [progress, ready, startDt]);
+  }, [previewMode, progress, ready, startDt]);
 
   // 进度到 100% 且素材到齐、也过了最短可见时间，才开始淡出
   useEffect(() => {
-    if (ready && shown >= 99.5 && !leaving && Date.now() - startDt >= MIN_VISIBLE) {
+    if (!previewMode && ready && shown >= 99.5 && !leaving && Date.now() - startDt >= MIN_VISIBLE) {
       setLeaving(true);
     }
-  }, [ready, shown, leaving, tick, startDt]);
+  }, [previewMode, ready, shown, leaving, tick, startDt]);
 
   // tick 只负责在最短可见时间到点后，把上面那个判断再跑一次
   useEffect(() => {
@@ -74,57 +202,100 @@ export function LoadingScreen({ ready, progress, onEnter }: LoadingScreenProps) 
     return () => window.clearTimeout(t);
   }, []);
 
-  // 淡出结束后进入首页
+  // 完成后只做一次短淡出，避免加载层本身成为第二段转场。
   useEffect(() => {
     if (!leaving) return;
-    const timer = setTimeout(() => {
-      setVisible(false);
-      onEnter();
-    }, 560);
-    return () => clearTimeout(timer);
+    if (!rootRef.current) return;
+    const tween = gsap.to(rootRef.current, {
+      opacity: 0,
+      duration: 0.28,
+      ease: EASE.io,
+      onComplete: () => {
+        setVisible(false);
+        onEnter();
+      },
+    });
+    return () => { tween.kill(); };
   }, [leaving, onEnter]);
 
-  // 加载数字轻微"呼吸"——让静止的加载页也有生命感
-  useEffect(() => {
-    if (!counterRef.current) return;
-    const tween = gsap.to(counterRef.current, {
-      scale: 1.06,
-      duration: 2.4,
-      ease: EASE.io,
-      yoyo: true,
-      repeat: -1,
-      transformOrigin: 'center',
-    });
-    return () => {
-      tween.kill();
-    };
-  }, []);
-
-  // 离场：放大 + 模糊 + 淡出（dreamcore 的"呼出"转场），替代原 CSS opacity 过渡
-  useEffect(() => {
-    if (!leaving || !rootRef.current) return;
-    gsap.to(rootRef.current, {
-      scale: 1.08,
-      filter: 'blur(12px)',
-      opacity: 0,
-      duration: 0.56,
-      ease: EASE.io,
-    });
-  }, [leaving]);
-
   if (!visible) return null;
+
+  const roundedProgress = Math.round(shown);
+  const currentLog = [...DREAM_LOGS].reverse().find((item) => roundedProgress >= item.at) ?? DREAM_LOGS[0];
+  const depthTicks = Array.from({ length: 11 }, (_, index) => index * 10);
+
+  if (previewStyle === 'a') {
+    return (
+      <div ref={rootRef} className="fixed inset-0 z-[10000] flex items-center justify-center text-[#faf6e8]" aria-label={`像素雨加载，${roundedProgress}%`}>
+        <PixelRainVisual progress={shown} log={currentLog} />
+      </div>
+    );
+  }
+
+  if (previewStyle === 'd') {
+    return (
+      <div ref={rootRef} className="fixed inset-0 z-[10000] flex items-center justify-center text-[#faf6e8]" aria-label={`空间波纹加载，${roundedProgress}%`}>
+        <RippleVisual progress={shown} log={currentLog} />
+      </div>
+    );
+  }
+
+  if (previewStyle === 'f') {
+    return (
+      <div ref={rootRef} className="fixed inset-0 z-[10000] flex items-center justify-center text-[#faf6e8]" aria-label={`像素裂缝加载，${roundedProgress}%`}>
+        <RiftVisual progress={shown} log={currentLog} />
+      </div>
+    );
+  }
 
   return (
     <div
       ref={rootRef}
-      className={`fixed inset-0 z-[100] bg-wine ${leaving ? 'pointer-events-none' : ''}`}
+      className={`fixed inset-0 z-[10000] flex items-center justify-center bg-transparent text-[#faf6e8] ${leaving ? 'pointer-events-none' : ''}`}
+      aria-label={`页面正在加载，${roundedProgress}%：${currentLog.text}`}
     >
-      <span
-        ref={counterRef}
-        className="font-body font-bold text-8xl md:text-9xl text-cream tabular-nums absolute bottom-8 right-8"
-      >
-        {Math.round(shown)}%
-      </span>
+      <div className="w-[82vw] max-w-[560px]" aria-hidden="true">
+        <div
+          className="mb-3 text-center text-[10px] md:text-[11px] tracking-[.28em] text-[#faf6e8]/75"
+          style={{ fontFamily: "'NanoOldSongA', 'Noto Serif SC', serif" }}
+        >
+          DREAM LOADING
+        </div>
+
+        <div className="relative mx-auto h-[310px] w-[210px] overflow-hidden">
+          <i className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-[rgba(250,246,232,.18)]" />
+
+          {depthTicks.map((value) => {
+            const distance = Math.abs(value - shown);
+            const opacity = Math.max(0.12, 1 - distance / 42);
+            return (
+              <i
+                key={value}
+                className="absolute left-1/2 h-px -translate-x-1/2 bg-[#faf6e8] will-change-transform"
+                style={{
+                  top: '50%',
+                  opacity,
+                  width: value % 20 === 0 ? 28 : 14,
+                  transform: `translate(-50%, calc(-50% + ${(value - shown) * 3.25}px))`,
+                }}
+              />
+            );
+          })}
+
+          <div
+            className="absolute left-1/2 top-1/2 flex w-[190px] -translate-x-1/2 -translate-y-1/2 items-center justify-between text-[#7ee8c7]"
+            style={{ fontFamily: "'NanoOldSongA', 'Noto Serif SC', serif" }}
+          >
+            <i className="h-px w-[58px] bg-[#7ee8c7]" />
+            <span className="text-sm tabular-nums tracking-[.12em]">
+              {roundedProgress.toString().padStart(3, '0')}
+            </span>
+            <i className="h-px w-[58px] bg-[#7ee8c7]" />
+          </div>
+        </div>
+
+        <SystemLog log={currentLog} numbered={false} />
+      </div>
     </div>
   );
 }

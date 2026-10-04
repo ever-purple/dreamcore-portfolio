@@ -45,8 +45,6 @@ const DREAM_LOGS = [
 
 type DreamLog = (typeof DREAM_LOGS)[number];
 
-const PIXEL_COLUMNS = [8, 16, 24, 33, 43, 55, 64, 73, 84, 92, 12, 39, 68, 88];
-
 function SystemLog({ log, numbered = true }: { log: DreamLog; numbered?: boolean }) {
   return (
     <div
@@ -56,50 +54,6 @@ function SystemLog({ log, numbered = true }: { log: DreamLog; numbered?: boolean
     >
       {numbered ? <span className="shrink-0 text-[#7ee8c7]">[SYS.{log.code}]</span> : null}
       <span>{log.text}</span>
-    </div>
-  );
-}
-
-function PixelRainVisual({ progress, log }: { progress: number; log: DreamLog }) {
-  return (
-    <div className="relative h-[430px] w-[86vw] max-w-[720px] overflow-hidden" aria-hidden="true">
-      {PIXEL_COLUMNS.map((left, index) => (
-        <i
-          key={`${left}-${index}`}
-          className="dream-loader-pixel"
-          style={{
-            left: `${left}%`,
-            animationDelay: `${-(index % 7) * .43}s`,
-            animationDuration: `${1.55 + (index % 5) * .24}s`,
-          }}
-        />
-      ))}
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <p className="mb-3 text-[10px] tracking-[.3em] text-[#faf6e8]/70">PIXEL DESCENT</p>
-        <strong className="text-2xl font-normal tabular-nums tracking-[.18em] text-[#7ee8c7]">
-          {Math.round(progress).toString().padStart(3, '0')}
-        </strong>
-        <SystemLog log={log} />
-      </div>
-    </div>
-  );
-}
-
-function RippleVisual({ progress, log }: { progress: number; log: DreamLog }) {
-  return (
-    <div className="w-[86vw] max-w-[620px]" aria-hidden="true">
-      <div className="relative mx-auto h-[320px] w-full">
-        {[0, 1, 2, 3].map((ring) => (
-          <i key={ring} className="dream-loader-ripple" style={{ animationDelay: `${ring * -.72}s` }} />
-        ))}
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <p className="mb-3 text-[10px] tracking-[.3em] text-[#faf6e8]/70">DREAM SIGNAL</p>
-          <strong className="text-2xl font-normal tabular-nums tracking-[.18em] text-[#7ee8c7]">
-            {Math.round(progress).toString().padStart(3, '0')}
-          </strong>
-        </div>
-      </div>
-      <SystemLog log={log} />
     </div>
   );
 }
@@ -160,7 +114,6 @@ export function LoadingScreen({ ready, progress, onEnter }: LoadingScreenProps) 
     const params = new URLSearchParams(window.location.search);
     return params.has('loading-simple') || params.has('loading-style');
   });
-  const [previewStyle] = useState(() => new URLSearchParams(window.location.search).get('loading-style') ?? 'b');
   const [shown, setShown] = useState(0); // 屏幕上显示的百分比
   const [leaving, setLeaving] = useState(false);
   const [visible, setVisible] = useState(true);
@@ -222,31 +175,6 @@ export function LoadingScreen({ ready, progress, onEnter }: LoadingScreenProps) 
 
   const roundedProgress = Math.round(shown);
   const currentLog = [...DREAM_LOGS].reverse().find((item) => roundedProgress >= item.at) ?? DREAM_LOGS[0];
-  const depthTicks = Array.from({ length: 11 }, (_, index) => index * 10);
-
-  if (previewStyle === 'a') {
-    return (
-      <div ref={rootRef} className="fixed inset-0 z-[10000] flex items-center justify-center text-[#faf6e8]" aria-label={`像素雨加载，${roundedProgress}%`}>
-        <PixelRainVisual progress={shown} log={currentLog} />
-      </div>
-    );
-  }
-
-  if (previewStyle === 'd') {
-    return (
-      <div ref={rootRef} className="fixed inset-0 z-[10000] flex items-center justify-center text-[#faf6e8]" aria-label={`空间波纹加载，${roundedProgress}%`}>
-        <RippleVisual progress={shown} log={currentLog} />
-      </div>
-    );
-  }
-
-  if (previewStyle === 'f') {
-    return (
-      <div ref={rootRef} className="fixed inset-0 z-[10000] flex items-center justify-center text-[#faf6e8]" aria-label={`像素裂缝加载，${roundedProgress}%`}>
-        <RiftVisual progress={shown} log={currentLog} />
-      </div>
-    );
-  }
 
   return (
     <div
@@ -254,48 +182,7 @@ export function LoadingScreen({ ready, progress, onEnter }: LoadingScreenProps) 
       className={`fixed inset-0 z-[10000] flex items-center justify-center bg-transparent text-[#faf6e8] ${leaving ? 'pointer-events-none' : ''}`}
       aria-label={`页面正在加载，${roundedProgress}%：${currentLog.text}`}
     >
-      <div className="w-[82vw] max-w-[560px]" aria-hidden="true">
-        <div
-          className="mb-3 text-center text-[10px] md:text-[11px] tracking-[.28em] text-[#faf6e8]/75"
-          style={{ fontFamily: "'NanoOldSongA', 'Noto Serif SC', serif" }}
-        >
-          DREAM LOADING
-        </div>
-
-        <div className="relative mx-auto h-[310px] w-[210px] overflow-hidden">
-          <i className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-[rgba(250,246,232,.18)]" />
-
-          {depthTicks.map((value) => {
-            const distance = Math.abs(value - shown);
-            const opacity = Math.max(0.12, 1 - distance / 42);
-            return (
-              <i
-                key={value}
-                className="absolute left-1/2 h-px -translate-x-1/2 bg-[#faf6e8] will-change-transform"
-                style={{
-                  top: '50%',
-                  opacity,
-                  width: value % 20 === 0 ? 28 : 14,
-                  transform: `translate(-50%, calc(-50% + ${(value - shown) * 3.25}px))`,
-                }}
-              />
-            );
-          })}
-
-          <div
-            className="absolute left-1/2 top-1/2 flex w-[190px] -translate-x-1/2 -translate-y-1/2 items-center justify-between text-[#7ee8c7]"
-            style={{ fontFamily: "'NanoOldSongA', 'Noto Serif SC', serif" }}
-          >
-            <i className="h-px w-[58px] bg-[#7ee8c7]" />
-            <span className="text-sm tabular-nums tracking-[.12em]">
-              {roundedProgress.toString().padStart(3, '0')}
-            </span>
-            <i className="h-px w-[58px] bg-[#7ee8c7]" />
-          </div>
-        </div>
-
-        <SystemLog log={currentLog} numbered={false} />
-      </div>
+      <RiftVisual progress={shown} log={currentLog} />
     </div>
   );
 }

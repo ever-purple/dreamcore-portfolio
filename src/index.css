@@ -13901,55 +13901,7 @@ article.dx-sec1::before {
   pointer-events: none;
 }
 
-/* 加载方案预览：仅使用 transform / opacity，避免和首屏素材争抢解码。 */
-.dream-loader-pixel {
-  position: absolute;
-  top: -18%;
-  width: 3px;
-  height: 20px;
-  background: #7ee8c7;
-  opacity: .72;
-  animation: dream-pixel-descent 1.8s linear infinite;
-  will-change: transform, opacity;
-}
-
-.dream-loader-pixel:nth-child(3n) {
-  width: 2px;
-  height: 9px;
-  background: #faf6e8;
-  opacity: .38;
-}
-
-.dream-loader-pixel:nth-child(4n) {
-  background: #d9d0e5;
-  opacity: .46;
-}
-
-@keyframes dream-pixel-descent {
-  0% { transform: translate3d(0, -30px, 0); opacity: 0; }
-  14% { opacity: .72; }
-  100% { transform: translate3d(0, 560px, 0); opacity: 0; }
-}
-
-.dream-loader-ripple {
-  position: absolute;
-  inset: 50% auto auto 50%;
-  width: 170px;
-  height: 82px;
-  border: 1px solid rgba(126, 232, 199, .72);
-  border-radius: 50%;
-  transform: translate(-50%, -50%) scale(.42);
-  opacity: 0;
-  animation: dream-ripple-pass 2.9s cubic-bezier(.19, 1, .22, 1) infinite;
-  will-change: transform, opacity;
-}
-
-@keyframes dream-ripple-pass {
-  0% { transform: translate(-50%, -50%) scale(.38); opacity: 0; }
-  18% { opacity: .65; }
-  100% { transform: translate(-50%, -50%) scale(3.3); opacity: 0; }
-}
-
+/* 首页加载：像素裂缝。仅使用 transform / opacity，不和首屏素材争抢解码。 */
 .dream-loader-rift-pixel {
   position: absolute;
   left: 50%;

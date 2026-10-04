@@ -78,10 +78,20 @@ type GuestEntry = {
   ts: number;
 };
 
+type ChatEntry = {
+  id: string;
+  question: string;
+  reply: string;
+  source: string;
+  ts: number;
+};
+
 const GB_KEY = 'dc:gb';
 const UV_KEY = 'dc:uv';
 const PV_KEY = 'dc:pv';
+const CHAT_KEY = 'dc:chat';
 const MAX_KEEP = 500;
+const MAX_CHAT_KEEP = 100;
 
 const num = (v: unknown) => Number(v ?? 0) || 0;
 const str = (v: unknown) => (typeof v === 'string' ? v : '');
@@ -105,10 +115,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const [uvRaw, pvRaw, rawRaw] = await Promise.all([
+    const [uvRaw, pvRaw, rawRaw, chatRaw] = await Promise.all([
       redis('get', UV_KEY),
       redis('get', PV_KEY),
       redis('lrange', GB_KEY, '0', String(MAX_KEEP - 1)),
+      redis('lrange', CHAT_KEY, '0', String(MAX_CHAT_KEEP - 1)),
     ]);
 
     const guestbook: GuestEntry[] = (Array.isArray(rawRaw) ? rawRaw : [])
@@ -132,12 +143,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // 最新的排最前
     guestbook.sort((a, b) => b.ts - a.ts);
 
+    const lisaChats: ChatEntry[] = (Array.isArray(chatRaw) ? chatRaw : [])
+      .map((item) => {
+        try {
+          const o = JSON.parse(str(item)) as Record<string, unknown>;
+          if (!o || typeof o !== 'object' || !str(o.question)) return null;
+          return {
+            id: str(o.id),
+            question: str(o.question),
+            reply: str(o.reply),
+            source: str(o.source),
+            ts: num(o.ts),
+          } satisfies ChatEntry;
+        } catch {
+          return null;
+        }
+      })
+      .filter((entry): entry is ChatEntry => entry !== null)
+      .sort((a, b) => b.ts - a.ts);
+
     res.setHeader('Cache-Control', 'no-store');
     res.status(200).json({
       ok: true,
       uv: num(uvRaw),
       pv: num(pvRaw),
       guestbook,
+      lisaChats,
       fetchedAt: Date.now(),
     });
   } catch (err) {

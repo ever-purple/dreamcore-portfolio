@@ -37,7 +37,7 @@ const DREAM_LOGS = [
   { at: 0, code: '00', text: '梦境入口校准中……' },
   { at: 16, code: '01', text: '现实坐标正在远离。' },
   { at: 34, code: '02', text: '正在读取视觉档案。' },
-  { at: 52, code: '03', text: '正在接近一个没有日期的夏天。' },
+  { at: 52, code: '03', text: '正在进入 2003 年的夏天。' },
   { at: 70, code: '04', text: '检测到云层、窗帘与金鱼。' },
   { at: 86, code: '05', text: '请保管好你的记忆。' },
   { at: 97, code: '06', text: "欢迎进入 Sun Chenxi's Portfolio。" },

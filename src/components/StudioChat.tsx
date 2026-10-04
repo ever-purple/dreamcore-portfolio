@@ -6,27 +6,9 @@ import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
  * 视觉：去掉黑底盒子、去掉边框、隐去滚动条，文字直接浮在 3D 空气里。
  * 样式全部走 .hud-* 类（注入 <style>）。
  *
- * 接口：统一走 fetchAIReply()。AI_CONFIG.useRealAPI=false 时走本地语义知识库
- * (LOCAL_KNOWLEDGE)；部署上线连 API 时把 useRealAPI 改为 true，并填好
- * apiEndpoint / apiKey / model 即可。
- *
- * ⚠️ 安全提示：前端直连大模型会把 apiKey 暴露在浏览器里。正式上线建议把
- * fetchAIReply 的 B 模式改成请求「你自己的后端 / 云函数」，由后端持有 key 再转发。
+ * 接口：统一走 fetchAIReply() 请求站内 /api/chat，由后端安全持有硅基流动 Key。
+ * 后端尚未配置或暂时不可用时，会自动退回本地语义知识库，网站不会失效。
  */
-
-// ==========================================
-// 1. 配置中心：API 切换开关与 Key 预留
-// ==========================================
-const AI_CONFIG = {
-  // 🔴 关键开关：当前 false（本地 Mock）；部署上线连 API 时改成 true 即可！
-  useRealAPI: false,
-  // 替换为你届时部署的 API 接口地址（OpenAI 兼容格式）
-  apiEndpoint: 'https://api.openai.com/v1/chat/completions',
-  // 届时填写你的 API Key（建议改走自有后端中转，勿前端直连暴露）
-  apiKey: 'YOUR_API_KEY_HERE',
-  // 届时调用的模型名称
-  model: 'gpt-4o-mini',
-};
 
 // ==========================================
 // 2. 本地 Mock 逻辑（useRealAPI=false 时生效）
@@ -35,22 +17,20 @@ const LOCAL_KNOWLEDGE: Record<
   string,
   { keywords: string[]; responses: string[] }
 > = {
-  // 维度一：关于空间主人（Milly / 孙晨茜）
+  // 维度一：关于空间主人
   owner: {
-    keywords: ['谁', '主人', '作者', '名字', 'milly', '孙晨茜', '身份', '履历'],
+    keywords: ['谁', '主人', '作者', '身份', '履历', '经历', '能力', '关于我'],
     responses: [
-      '空间主人叫 Milly（孙晨茜），一位沉迷于把品牌营销、AI 视觉与 Web 交互揉在一起的数字创作者。',
-      '检测到访客意图：关于空间主人。她是这里的主理人，善于用逻辑思考策划项目，用视觉搭建叙事空间。',
-      '这里是 Milly 的精神工作室。她把自己的策划案、实习思考和 AI 实验都投影成了房间里的实体。',
+      '空间主人具备品牌营销、内容策划、新媒体运营、文案与视频制作经验。进入思维终端，可以查看更完整的能力与经历档案。',
+      '系统记录显示：空间主人曾参与品牌新媒体、整合营销、内容生产与活动传播，并持续尝试 AI 视觉与网页交互创作。',
     ],
   },
   // 维度二：关于旋转木马（重点项目）
   carousel: {
-    keywords: ['木马', '旋转木马', '项目', '作品', '策划', '香氛', '观夏', '米莉'],
+    keywords: ['木马', '旋转木马', '项目', '作品', '策划', '香氛', '观夏', '神州', '赤尾', '快克'],
     responses: [
-      '旋转木马承载着她的核心策划案。比如《观夏》夏季营销、神州租车提案，以及《米莉的入沪奇遇》。不妨去转转它？',
-      '那是记忆齿轮驱动的【项目展台】。上面挂着用逻辑与创意构建的营销策划，点击它就能进入细节。',
-      '想看作品？旋转木马上有她最核心的项目展示，包含完整的营销策略与视觉提案。',
+      '项目档案收录了观夏「隙月」、神州租车新媒体代运营、赤尾品牌策划与快克品牌 TVC，可查看背景、洞察、执行和项目角色。',
+      '那是由记忆齿轮驱动的项目展台。点击策划案封面，可以进入完整的策略与执行档案。',
     ],
   },
   // 维度三：关于复古电脑（个人介绍 / About Me）
@@ -65,17 +45,16 @@ const LOCAL_KNOWLEDGE: Record<
   shelf: {
     keywords: ['书架', '实习', '足迹', '笔记', '日记', '思考', '实验室', 'ai'],
     responses: [
-      '书架上摆放着【实习足迹】与 Creative Lab。记录着她在北京、上海等地实操项目时的沉淀与 AI 视觉实验。',
-      '那是她的思考抽屉。里面有她写过的营销 Hook、社交媒体预热策略，以及各种手稿。',
+      '书架与日记保存着实习足迹、内容笔记、灵感收藏和 AI 视觉实验，可以继续打开房间里的发光物件查看。',
+      '这里保存着策划、视频、品牌文案与创作实验。系统只会依据工作室已经收录的档案回答。',
     ],
   },
   // 维度五：暗号 / 隐藏彩蛋
   easterEgg: {
     keywords: ['彩蛋', '秘密', '穿越', '房间', '遗忘', '乐园', '你好', 'hi', 'hello'],
     responses: [
-      '你好，穿越者。这里是一个远离喧嚣的数字游乐园，所有时间都在此刻凝固了。',
-      '你注意到了光影里的颗粒感吗？这个房间正以 60FPS 维持着主人的记忆微缩场景。',
-      '提示：试试点击房间里发光的物体，它们会带你跳转到不同的维度。',
+      '欢迎，访客。时间停在 2003 年的夏天，这间工作室保存着经历、作品与尚未褪色的创作档案。',
+      '系统提示：点击房间里发光的物体，可以进入不同的作品与记忆区域。',
     ],
   },
 };
@@ -95,42 +74,23 @@ function getLocalMockReply(input: string): string {
 // 3. 统一请求适配器（核心：无论是否连 API，UI 只调这个）
 // ==========================================
 export async function fetchAIReply(userInput: string): Promise<string> {
-  // A 模式：尚未部署 API，走本地假接口
-  if (!AI_CONFIG.useRealAPI) {
-    // 模拟网络延迟 300ms，让体验更逼真
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    return getLocalMockReply(userInput);
-  }
-
-  // B 模式：上线连 API（届时直接生效）
   try {
-    const response = await fetch(AI_CONFIG.apiEndpoint, {
+    const response = await fetch('/api/chat', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${AI_CONFIG.apiKey}`,
       },
-      body: JSON.stringify({
-        model: AI_CONFIG.model,
-        messages: [
-          {
-            role: 'system',
-            content:
-              '你现在是运行在 3D 复古工作室里的【空间守卫系统 AI】。提问者是一位穿越者，你的职责是引导他了解空间主人 Milly 的作品（旋转木马）和思维终端（复古电脑）。语气冷静温和，控制在 100 字以内。',
-          },
-          { role: 'user', content: userInput },
-        ],
-        temperature: 0.7,
-      }),
+      body: JSON.stringify({ message: userInput }),
+      signal: AbortSignal.timeout(17_000),
     });
 
-    const data = await response.json();
-    // 若你的后端返回格式不同，改这里即可（此处按 OpenAI 兼容格式解析）
-    return (data as { choices?: { message?: { content?: string } }[] }).choices?.[0]
-      ?.message?.content ?? '【系统信号微弱】未能解析深度记忆网关的回响。';
+    const data = (await response.json()) as { ok?: boolean; reply?: string; reason?: string };
+    if (response.status === 429) return '[SYS.LIMIT] 访问频率过高，请稍后再向空间系统提问。';
+    if (response.ok && data.ok && data.reply) return data.reply;
+    return getLocalMockReply(userInput);
   } catch (error) {
     console.error('API Fetch Error:', error);
-    return '[系统信号微弱] 无法连接到深度记忆网关，请稍后再试。';
+    return getLocalMockReply(userInput);
   }
 }
 
@@ -139,11 +99,8 @@ export async function fetchAIReply(userInput: string): Promise<string> {
 // ==========================================
 type Msg = { id: number; role: 'system' | 'user' | 'agent'; text: string };
 
-const INTRO = [
-  '检测到异次元访客接入...',
-  '你似乎不小心闯入了这间私人工作区。',
-  '若对空间主人（Milly）感到好奇，可随时向我询问。',
-].join('\n');
+const INTRO =
+  'You have arrived. 这里是 2003 年的夏天，在这间遗落的梦核工作室里，如果你想了解空间主人的经历、作品或创作档案，请直接向我提问。';
 
 let nextId = 2;
 

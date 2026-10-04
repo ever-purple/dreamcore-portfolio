@@ -1,217 +1,26 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>网站管理面板 · everpurple</title>
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>网站管理中心 · everpurple</title>
 <style>
-  :root {
-    --bg: #f4f1ea;
-    --card: #ffffff;
-    --ink: #1f1b16;
-    --muted: #8a8377;
-    --line: #e6e0d5;
-    --accent: #3b2b21;
-    --red: #c0392b;
-    --green: #1d9e75;
-    --amber: #ba7517;
-    --radius: 14px;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
-    background: var(--bg);
-    color: var(--ink);
-    line-height: 1.6;
-    padding: 28px 32px 60px;
-  }
-  header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
-  h1 { font-size: 22px; font-weight: 600; }
-  h1 small { font-size: 13px; color: var(--muted); font-weight: 400; margin-left: 10px; }
-  .status-pill { font-size: 12px; padding: 4px 10px; border-radius: 999px; background: var(--line); color: var(--muted); }
-  .status-pill.ok { background: #e1f5ee; color: var(--green); }
-  .status-pill.warn { background: #faeeda; color: var(--amber); }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px; }
-  .metric { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 20px; }
-  .metric .label { font-size: 13px; color: var(--muted); margin-bottom: 6px; }
-  .metric .value { font-size: 28px; font-weight: 600; }
-  .metric .sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
-  section { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px 22px; margin-bottom: 20px; }
-  section h2 { font-size: 15px; font-weight: 600; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
-  section h2 .tag { font-size: 11px; font-weight: 400; color: var(--muted); background: var(--line); padding: 2px 8px; border-radius: 999px; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); }
-  th { color: var(--muted); font-weight: 500; font-size: 12px; }
-  td.ellip { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .badge { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 999px; }
-  .badge.device { background: #e6f1fb; color: #185fa5; }
-  .badge.event { background: #fbeaf0; color: #993556; }
-  .badge.state-ready { background: #e1f5ee; color: var(--green); }
-  .badge.state-building { background: #faeeda; color: var(--amber); }
-  .badge.state-error { background: #fcebeb; color: var(--red); }
-  .kbd { display: inline-block; font-family: monospace; background: #f1efe8; border: 1px solid var(--line); border-radius: 5px; padding: 1px 7px; font-size: 12px; }
-  .author-flow { background: #faf7f0; border: 1px dashed var(--line); border-radius: 10px; padding: 14px 16px; font-size: 13px; }
-  .author-flow .step { margin: 6px 0; }
-  .author-flow .num { display: inline-block; width: 20px; height: 20px; line-height: 20px; text-align: center; background: var(--accent); color: #fff; border-radius: 50%; font-size: 12px; margin-right: 8px; }
-  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-  button { font-size: 13px; padding: 7px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); cursor: pointer; }
-  button:hover { border-color: var(--accent); }
-  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-  input[type=text], input[type=number] { font-size: 13px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
-  .muted { color: var(--muted); }
-  .empty { color: var(--muted); font-size: 13px; padding: 12px 0; }
-  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-  @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
-</style>
-</head>
-<body>
-<header>
-  <h1>网站管理面板 <small>everpurple.top</small></h1>
-  <span class="status-pill" id="cfgPill">读取配置中…</span>
-</header>
-
-<div class="grid" id="metrics"></div>
-
-<div class="two-col">
-  <section>
-    <h2>访问日志 <span class="tag">visitlog</span></h2>
-    <div id="visitlog"></div>
-  </section>
-  <section>
-    <h2>留言板 <span class="tag">guestbook</span></h2>
-    <div id="guestbook"></div>
-  </section>
-</div>
-
-<div class="two-col">
-  <section>
-    <h2>作者模式进入方式 <span class="tag">author</span></h2>
-    <div class="author-flow" id="authorFlow"></div>
-  </section>
-  <section>
-    <h2>Vercel 部署状态 <span class="tag">deploy</span></h2>
-    <div id="deploy"></div>
-  </section>
-</div>
-
-<section>
-  <h2>流量 / 存储用量 <span class="tag">手动记录 · Hobby 套餐无法自动拉取</span></h2>
-  <p class="muted" style="font-size:12px;margin-bottom:10px;">Vercel 的用量 API 需要 Pro 套餐，你当前是 Hobby，数字只能手动抄。每月 1 号登录 vercel.com 看一眼填进来。</p>
-  <div class="row" style="margin-bottom:8px;">
-    流量已用 <input type="number" id="bandwidth" placeholder="GB" style="width:90px;">
-    存储已用 <input type="number" id="storage" placeholder="GB" style="width:90px;">
-    <button class="primary" onclick="saveManual()">保存</button>
-  </div>
-  <div id="manualShow" class="muted" style="font-size:13px;"></div>
-</section>
-
+:root{--bg:#171512;--card:#25211c;--card2:#2d2822;--mint:#9cf0d0;--cream:#fff4df;--muted:#b8ad9d;--line:#4a4238;--orange:#f1aa68;--red:#ff8d84}*{box-sizing:border-box}html{color-scheme:dark;scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--cream);font-family:"Microsoft YaHei","PingFang SC",sans-serif;line-height:1.6}body:before{content:"";position:fixed;inset:0;pointer-events:none;opacity:.1;background-image:radial-gradient(#fff .6px,transparent .7px);background-size:5px 5px}.shell{width:min(1380px,calc(100% - 40px));margin:auto;padding:34px 0 70px;position:relative}header{display:flex;justify-content:space-between;align-items:end;padding-bottom:25px;border-bottom:1px solid var(--line);margin-bottom:20px}.sys,.tag{font:11px ui-monospace,"Cascadia Mono",monospace;letter-spacing:.11em;color:var(--mint)}h1{font-size:clamp(30px,4vw,52px);font-weight:500;letter-spacing:-.04em;margin:4px 0}.sub{color:var(--muted);font-size:13px}.status{padding:7px 12px;border:1px solid var(--line);border-radius:99px;color:var(--muted);font-size:12px}.status.ok{color:var(--mint);border-color:#3b7964}nav,.links,.actions{display:flex;gap:8px;flex-wrap:wrap}nav{margin:0 0 20px}nav a,.btn,.links a{color:var(--cream);text-decoration:none;background:var(--card);border:1px solid var(--line);border-radius:99px;padding:7px 13px;font-size:12px;cursor:pointer}nav a:hover,.btn:hover,.links a:hover{border-color:var(--mint);color:var(--mint)}.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:11px;margin-bottom:16px}.metric,.card{background:linear-gradient(145deg,var(--card2),var(--card));border:1px solid var(--line);border-radius:16px}.metric{padding:16px 18px}.metric b{display:block;font:31px ui-monospace,"Cascadia Mono",monospace;color:var(--mint);line-height:1.15}.metric span{font-size:12px;color:var(--muted)}.grid{display:grid;grid-template-columns:1fr 1fr;gap:15px}.card{padding:19px;min-width:0}.wide{grid-column:1/-1}.head{display:flex;justify-content:space-between;align-items:center;margin-bottom:13px}.head h2{font-size:16px;font-weight:500;margin:0}.count{font:11px ui-monospace,monospace;color:var(--muted)}.scroll{max-height:380px;overflow:auto;padding-right:4px}.empty{color:var(--muted);font-size:13px;padding:17px 0}.item{padding:12px 0;border-top:1px solid var(--line)}.item:first-child{border-top:0}.item-top{display:flex;justify-content:space-between;gap:10px;color:var(--muted);font-size:11px}.item strong{display:block;font-size:14px;font-weight:500;margin:4px 0}.answer{font-size:12px;color:#d8cdbd}.pill{padding:2px 7px;border:1px solid var(--line);border-radius:99px;font:10px ui-monospace,monospace}.pill.qwen{color:var(--mint)}.pill.error{color:var(--red)}table{width:100%;border-collapse:collapse;font-size:12px}th,td{text-align:left;padding:8px 7px;border-top:1px solid var(--line);vertical-align:top}th{color:var(--muted);font-weight:400}.truncate{max-width:270px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.steps{display:grid;gap:9px}.step{display:grid;grid-template-columns:24px 1fr;gap:8px;color:#ded2c1;font-size:13px}.step i{font:11px ui-monospace,monospace;color:var(--mint);font-style:normal}.kbd,code{font:11px ui-monospace,monospace;color:var(--mint)}.kbd{padding:2px 6px;border:1px solid var(--line);border-radius:5px;background:#151310}.map{display:grid;grid-template-columns:repeat(2,1fr);gap:9px}.map-item{background:#1c1916;border:1px solid var(--line);border-radius:11px;padding:12px}.map-item b{font-size:13px}.map-item code{display:block;word-break:break-all;margin-top:4px}.map-item p,.note{font-size:11px;color:var(--muted);margin:4px 0 0}.note{padding:10px 12px;border:1px dashed var(--line);border-radius:10px;margin-top:12px}.generator{display:grid;grid-template-columns:1fr auto;gap:9px}.generator input{width:100%;border:1px solid var(--line);background:#151310;color:var(--cream);border-radius:10px;padding:10px 12px;outline:none}.generator input:focus{border-color:var(--mint)}.result{margin-top:10px;padding:11px 12px;background:#151310;border:1px solid var(--line);border-radius:10px;color:var(--mint);font:12px ui-monospace,monospace;word-break:break-all;min-height:44px}.checks{display:grid;grid-template-columns:1fr 1fr;gap:8px}.check{padding:9px 11px;border:1px solid var(--line);border-radius:10px;font-size:12px}.check i{float:right;font-style:normal;color:var(--muted)}.check.ok i{color:var(--mint)}@media(max-width:850px){header{align-items:start;gap:16px;flex-direction:column}.metrics{grid-template-columns:1fr 1fr}.grid{grid-template-columns:1fr}.wide{grid-column:auto}.map,.checks{grid-template-columns:1fr}}
+</style></head><body><main class="shell">
+<header><div><div class="sys">LOCAL CONTROL ROOM / 2003</div><h1>网站管理中心</h1><div class="sub">问答、访客、留言、部署与内容修改入口集中在这里</div></div><div id="status" class="status">正在连接…</div></header>
+<nav><a href="#generator">专属链接</a><a href="#chat">L.I.S.A. 问答</a><a href="#visits">访客</a><a href="#guestbook">留言</a><a href="#author">作者模式</a><a href="#content">修改地图</a><a href="https://www.everpurple.top" target="_blank">打开网站 ↗</a></nav>
+<section id="metrics" class="metrics"><div class="metric"><b>—</b><span>累计访客</span></div><div class="metric"><b>—</b><span>浏览量</span></div><div class="metric"><b>—</b><span>留言</span></div><div class="metric"><b>—</b><span>L.I.S.A. 提问</span></div></section>
+<div class="grid">
+<section id="generator" class="card"><div class="head"><h2>专属链接生成器</h2><span class="tag">SOURCE LINK</span></div><p class="sub">输入公司名，生成带来源标记的作品集链接。</p><div class="generator"><input id="company" placeholder="例如：米哈游"><button class="btn" id="makeLink">生成链接</button></div><div id="linkResult" class="result">等待输入公司名…</div><div class="actions" style="margin-top:9px"><button class="btn" id="copyLink">复制链接</button><button class="btn" id="openLink">打开测试</button></div><div class="note">面试官点开后，访问日志会标出公司来源、停留时间、浏览板块和简历下载动作。</div></section>
+<section class="card"><div class="head"><h2>状态检查</h2><span class="tag">SYSTEM</span></div><div id="checks" class="checks"><div class="check">本地配置<i>检查中</i></div><div class="check">管理接口<i>检查中</i></div><div class="check">L.I.S.A. 记录<i>检查中</i></div><div class="check">最近部署<i>检查中</i></div></div><div class="links" style="margin-top:13px"><a href="https://vercel.com/dashboard" target="_blank">Vercel</a><a href="https://cloud.siliconflow.cn/me/account/ak" target="_blank">硅基流动密钥</a><a href="https://cloud.siliconflow.cn/me/models" target="_blank">模型列表</a><a href="https://github.com" target="_blank">GitHub</a></div><div id="deploy" class="note">正在读取部署状态…</div></section>
+<section id="chat" class="card wide"><div class="head"><h2>L.I.S.A. 问答记录</h2><span id="chatCount" class="count">最近 100 条</span></div><div id="chatList" class="scroll"><div class="empty">正在读取问答记录…</div></div><div class="actions" style="margin-top:10px"><button class="btn" id="exportData">导出全部数据</button></div><div class="note">仅保存问题、回答、时间和回答来源，不保存访客 IP。</div></section>
+<section id="visits" class="card"><div class="head"><h2>访客记录</h2><span class="tag">VISIT LOG</span></div><div id="visitList" class="scroll"><div class="empty">正在读取…</div></div></section>
+<section id="guestbook" class="card"><div class="head"><h2>留言</h2><span class="tag">GUESTBOOK</span></div><div id="guestList" class="scroll"><div class="empty">正在读取…</div></div></section>
+<section id="author" class="card"><div class="head"><h2>作者模式进入方法</h2><span class="tag">AUTHOR</span></div><div class="steps"><div class="step"><i>01</i><div>打开正式网站，3 秒内连续按 <span class="kbd">M</span> 四次。</div></div><div class="step"><i>02</i><div>输入 Vercel 环境变量 <span class="kbd">ADMIN_KEY</span> 对应的口令。</div></div><div class="step"><i>03</i><div>验证成功后进入作者模式，当前浏览器保持 14 天。</div></div><div class="step"><i>04</i><div>本地开发预览可使用 <span class="kbd">?admin=1</span>。</div></div></div></section>
+<section class="card"><div class="head"><h2>需维护的环境变量</h2><span class="tag">ENV</span></div><div class="steps"><div class="step"><i>01</i><div><code>ADMIN_KEY</code>：后台和作者模式口令。</div></div><div class="step"><i>02</i><div><code>SILICONFLOW_API_KEY</code>：L.I.S.A. 大模型密钥。</div></div><div class="step"><i>03</i><div><code>SILICONFLOW_MODEL</code>：Qwen 模型名称。</div></div><div class="step"><i>04</i><div><code>KV_REST_API_URL / TOKEN</code>：访客、留言和问答记录存储。</div></div></div></section>
+<section id="content" class="card wide"><div class="head"><h2>需要自行查看或修改的地方</h2><span class="tag">CONTENT MAP</span></div><div class="map">
+<div class="map-item"><b>个人介绍与四段经历</b><code>src/components/QuickViewShell.tsx</code><p>能力标签、经历时间、职责和成果。</p></div><div class="map-item"><b>策划案</b><code>src/data/works.ts · src/data/work-pages.ts</code><p>背景、洞察、执行、结果与角色。</p></div><div class="map-item"><b>视频与文案</b><code>src/data/mediaWorks.ts · src/data/copyProjects.ts</code><p>视频条目、分类和品牌文案正文。</p></div><div class="map-item"><b>联系方式与简历</b><code>src/data/contact.ts · public/孙晨茜简历-市场营销策划岗.pdf</code><p>公开邮箱、社交地址和简历。</p></div><div class="map-item"><b>L.I.S.A. 知识库</b><code>api/chat.ts</code><p>世界观、真实资料、回答规则与限流。</p></div><div class="map-item"><b>引子与对话界面</b><code>src/components/LisaHud.tsx · StudioChat.tsx</code><p>引子、快捷按钮、字体和打字效果。</p></div><div class="map-item"><b>Loading 提示词</b><code>src/components/LoadingScreen.tsx</code><p>系统编号、阶段文案与 2003 年设定。</p></div><div class="map-item"><b>部署与服务器</b><code>.env.production · server.mjs · deploy-server.yml</code><p>密钥、自动部署和自托管服务。</p></div>
+</div></section></div></main>
 <script>
-const $ = (id) => document.getElementById(id);
-const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-
-function fmtTime(ts) {
-  if (!ts) return '—';
-  const d = new Date(ts);
-  return d.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
-}
-function fmtGB(mb) { return (mb / 1024).toFixed(2); }
-
-async function getJSON(p) {
-  const r = await fetch(p);
-  return r.json();
-}
-
-async function init() {
-  // 配置状态
-  const cs = await getJSON('/api/config-status');
-  const pill = $('cfgPill');
-  if (cs.hasToken && cs.hasAdminKey) { pill.textContent = '密钥已配置 ✓'; pill.className = 'status-pill ok'; }
-  else if (!cs.hasToken || !cs.hasAdminKey) { pill.textContent = '密钥未配置 ⚠ 请编辑 dashboard/config.json'; pill.className = 'status-pill warn'; }
-
-  // 访问日志
-  try {
-    const v = await getJSON('/api/visitlog');
-    if (v && v.logs) {
-      const logs = v.logs.slice(0, 30);
-      let html = logs.length ? '<table><tr><th>时间</th><th>来源</th><th>地区</th><th>设备</th><th>停留</th><th>动作</th></tr>' : '';
-      logs.forEach((l) => {
-        const events = (l.events || []).map((e) => `<span class="badge event">${esc(e)}</span>`).join(' ');
-        html += `<tr><td>${fmtTime(l.ts)}</td><td class="ellip">${esc(l.from || l.ref || l.path || '/')}</td><td>${esc(l.geo || '—')}</td><td><span class="badge device">${esc(l.device || '—')}</span></td><td>${l.dwell ? l.dwell + 's' : '—'}</td><td>${events || '—'}</td></tr>`;
-      });
-      html += logs.length ? '</table>' : '<div class="empty">暂无访问记录</div>';
-      $('visitlog').innerHTML = html;
-    } else {
-      $('visitlog').innerHTML = '<div class="empty">' + esc((v && v.reason) || '无法读取（检查 ADMIN_KEY）') + '</div>';
-    }
-  } catch (e) { $('visitlog').innerHTML = '<div class="empty">读取失败：' + esc(e.message) + '</div>'; }
-
-  // 留言
-  try {
-    const g = await getJSON('/api/guestbook');
-    if (g && g.list) {
-      let html = '<table><tr><th>时间</th><th>昵称</th><th>内容</th></tr>';
-      g.list.forEach((e) => {
-        html += `<tr><td>${fmtTime(e.ts)}</td><td>${esc(e.name)}</td><td class="ellip">${esc(e.html.replace(/<[^>]*>/g, ''))}</td></tr>`;
-      });
-      html += '</table>';
-      if (g.all) html += `<div class="muted" style="font-size:12px;margin-top:6px;">全部 ${g.total} 条</div>`;
-      $('guestbook').innerHTML = html;
-    } else {
-      $('guestbook').innerHTML = '<div class="empty">' + esc((g && g.reason) || '无法读取') + '</div>';
-    }
-  } catch (e) { $('guestbook').innerHTML = '<div class="empty">读取失败：' + esc(e.message) + '</div>'; }
-
-  // 作者模式说明（静态）
-  $('authorFlow').innerHTML = `
-    <div class="step"><span class="num">1</span>在网站任意页面，<b>3 秒内连按 <span class="kbd">m</span> 键 4 次</b></div>
-    <div class="step"><span class="num">2</span>弹出输入框，输入后台口令（Vercel 环境变量 <span class="kbd">ADMIN_KEY</span>）</div>
-    <div class="step"><span class="num">3</span>校验通过后写入 cookie <span class="kbd">dc_author</span>，<b>14 天有效</b></div>
-    <div class="step muted" style="margin-top:8px;">注：口令只在服务端校验，前端代码里没有；开发环境（?admin=1）不设门。</div>`;
-
-  // Vercel 部署
-  try {
-    const d = await getJSON('/api/vercel/deployments');
-    if (d && d.ok) {
-      const deploys = d.deployments.slice(0, 8);
-      let html = `<div class="muted" style="font-size:12px;margin-bottom:8px;">项目 ${esc(d.project.name)} · ${esc(d.project.plan)} · ${d.project.live ? '在线' : '离线'}</div>`;
-      if (d.deploymentExpiration) {
-        html += `<div class="muted" style="font-size:12px;margin-bottom:8px;">保留策略：${d.deploymentExpiration.expirationDays} 天过期 · 保留 ${d.deploymentExpiration.deploymentsToKeep} 个</div>`;
-      }
-      html += '<table><tr><th>状态</th><th>时间</th><th>提交</th></tr>';
-      deploys.forEach((x) => {
-        const stateCls = x.state === 'READY' ? 'state-ready' : x.state === 'BUILDING' ? 'state-building' : 'state-error';
-        html += `<tr><td><span class="badge ${stateCls}">${esc(x.state)}</span></td><td>${fmtTime(x.readyAt || x.createdAt)}</td><td class="ellip">${esc(x.commitMessage)}</td></tr>`;
-      });
-      html += '</table>';
-      $('deploy').innerHTML = html;
-    } else {
-      $('deploy').innerHTML = '<div class="empty">' + esc((d && d.error && d.error.message) || '无法读取（检查 Vercel Token）') + '</div>';
-    }
-  } catch (e) { $('deploy').innerHTML = '<div class="empty">读取失败：' + esc(e.message) + '</div>'; }
-
-  // 手动记录
-  loadManual();
-}
-
-function loadManual() {
-  try {
-    const m = JSON.parse(localStorage.getItem('dc-dash-manual') || '{}');
-    if (m.bandwidth) $('bandwidth').value = m.bandwidth;
-    if (m.storage) $('storage').value = m.storage;
-    if (m.ts) {
-      const used = m.bandwidth ? `${m.bandwidth}GB` : '—';
-      const pct = m.bandwidth ? ((m.bandwidth / 100) * 100).toFixed(1) + '%' : '';
-      $('manualShow').textContent = `上次记录（${fmtTime(m.ts)}）：流量 ${used}${pct ? '（占 100GB 的 ' + pct + '）' : ''}${m.storage ? ' · 存储 ' + m.storage + 'GB（限额 10GB）' : ''}`;
-    }
-  } catch {}
-}
-function saveManual() {
-  const m = { bandwidth: Number($('bandwidth').value) || 0, storage: Number($('storage').value) || 0, ts: Date.now() };
-  localStorage.setItem('dc-dash-manual', JSON.stringify(m));
-  loadManual();
-}
-
-init();
-</script>
-</body>
-</html>
+const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),fmt=ts=>ts?new Date(ts).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';let snapshot={};
+async function get(url){const r=await fetch(url);return r.json()}function empty(s){return `<div class="empty">${esc(s)}</div>`}function check(label,ok,pending='待配置'){return `<div class="check ${ok?'ok':''}">${label}<i>${ok?'正常':pending}</i></div>`}
+function make(){const name=$('company').value.trim();const url=name?`https://www.everpurple.top/?from=${encodeURIComponent(name)}`:'';$('linkResult').textContent=url||'请输入公司名';localStorage.setItem('dc-last-source-link',JSON.stringify({name,url,ts:Date.now()}));return url}
+$('makeLink').onclick=make;$('company').onkeydown=e=>{if(e.key==='Enter')make()};$('copyLink').onclick=async()=>{const u=make();if(u){await navigator.clipboard.writeText(u);$('copyLink').textContent='已复制 ✓';setTimeout(()=>$('copyLink').textContent='复制链接',1200)}};$('openLink').onclick=()=>{const u=make();if(u)open(u,'_blank')};
+async function load(){try{const [cfg,admin,visits,deploy]=await Promise.all([get('/api/config-status'),get('/api/admin'),get('/api/visitlog'),get('/api/vercel/deployments')]);snapshot={admin,visits,deploy,exportedAt:Date.now()};const chats=admin.lisaChats||[],guests=admin.guestbook||[];$('status').textContent=cfg.hasAdminKey?'本地密钥已连接':'请配置 dashboard/config.json';$('status').className='status '+(cfg.hasAdminKey?'ok':'');$('metrics').innerHTML=[[admin.uv,'累计访客'],[admin.pv,'浏览量'],[guests.length,'留言'],[chats.length,'L.I.S.A. 提问']].map(x=>`<div class="metric"><b>${esc(x[0]??'—')}</b><span>${x[1]}</span></div>`).join('');$('checks').innerHTML=check('本地配置',cfg.hasAdminKey)+check('管理接口',admin.ok,'等待网站部署')+check('L.I.S.A. 记录',Array.isArray(admin.lisaChats),'等待网站部署')+check('最近部署',deploy.ok,'连接失败');$('chatCount').textContent=`共 ${chats.length} 条 · 最多保留 100 条`;$('chatList').innerHTML=chats.length?chats.map(x=>`<article class="item"><div class="item-top"><span>${fmt(x.ts)}</span><span class="pill ${esc(x.source)}">${esc(x.source||'unknown')}</span></div><strong>${esc(x.question)}</strong><div class="answer">${esc(x.reply||'—')}</div></article>`).join(''):empty('还没有问答记录。重新部署后产生的新提问会显示在这里。');const logs=(visits.logs||[]).slice(0,30);$('visitList').innerHTML=logs.length?`<table><tr><th>时间</th><th>来源</th><th>设备</th><th>停留</th></tr>${logs.map(x=>`<tr><td>${fmt(x.ts)}</td><td class="truncate">${esc(x.from||x.ref||x.path||'/')}</td><td>${esc(x.device||'—')}</td><td>${x.dwell?esc(x.dwell)+'s':'—'}</td></tr>`).join('')}</table>`:empty('暂无访客记录');$('guestList').innerHTML=guests.length?guests.map(x=>`<article class="item"><div class="item-top"><span>${fmt(x.ts)}</span><span>${esc(x.name||'匿名')}</span></div><strong>${esc(String(x.html||'').replace(/<[^>]*>/g,''))}</strong>${x.email?`<div class="answer">${esc(x.email)}</div>`:''}</article>`).join(''):empty('暂无留言');$('deploy').textContent=deploy.ok?`最近部署：${deploy.deployments?.[0]?.state||'—'} · ${fmt(deploy.deployments?.[0]?.readyAt||deploy.deployments?.[0]?.createdAt)}`:'暂时无法读取部署状态，请检查 Vercel Token。'}catch(e){$('status').textContent='连接失败';$('chatList').innerHTML=empty(e.message)}}
+$('exportData').onclick=()=>{const blob=new Blob([JSON.stringify(snapshot,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`everpurple-data-${new Date().toISOString().slice(0,10)}.json`;a.click();URL.revokeObjectURL(a.href)};try{const h=JSON.parse(localStorage.getItem('dc-last-source-link')||'{}');if(h.name){$('company').value=h.name;$('linkResult').textContent=h.url}}catch{}load();
+</script></body></html>

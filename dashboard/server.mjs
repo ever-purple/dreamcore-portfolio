@@ -77,6 +77,12 @@ async function fetchGuestbook(cfg) {
   return r.json;
 }
 
+async function fetchAdmin(cfg) {
+  const url = `${cfg.site}/api/admin?key=${encodeURIComponent(cfg.adminKey)}`;
+  const r = await httpJson(url);
+  return r.json;
+}
+
 async function fetchVercelDeployments(cfg) {
   // 项目信息 + 最近部署（已验证可用）
   const url = `https://api.vercel.com/v9/projects/${cfg.projectId}?teamId=${cfg.teamId}`;
@@ -146,6 +152,11 @@ const server = http.createServer(async (req, res) => {
     }
     if (p === '/api/guestbook') {
       const data = await fetchGuestbook(cfg);
+      jsonReply(res, 200, data);
+      return;
+    }
+    if (p === '/api/admin') {
+      const data = await fetchAdmin(cfg);
       jsonReply(res, 200, data);
       return;
     }

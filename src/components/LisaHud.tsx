@@ -14,7 +14,7 @@ import { fetchAIReply } from './StudioChat';
 const QUICK_PILLS = ['关于空间主人', '探索旋转木马', '查看思维终端'];
 
 const INTRO =
-  'You have arrived. 你似乎不小心闯入了这间私人工作区。如果你对这个空间的主人（Milly）感到好奇，可以随时向我询问。';
+  'You have arrived. 这里是 2003 年的夏天，在这间遗落的梦核工作室里，如果你想了解空间主人的经历、作品或创作档案，请直接向我提问。';
 
 export function LisaHud({ hidden = false }: { hidden?: boolean }) {
   const [typed, setTyped] = useState('');
@@ -157,6 +157,7 @@ export function LisaHud({ hidden = false }: { hidden?: boolean }) {
           placeholder="输入对话或点击上方按钮..."
         />
       </div>
+      <p className="hud-privacy-note">提问内容可能用于优化作品集问答。</p>
 
       <style>{`
 .lisa-hud-container {
@@ -165,7 +166,7 @@ export function LisaHud({ hidden = false }: { hidden?: boolean }) {
   left: 5%;
   width: 360px;
   z-index: 100;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+  font-family: 'Zpix', 'Noto Serif SC', ui-monospace, monospace;
   color: #fff8f0;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
   pointer-events: auto;
@@ -218,7 +219,7 @@ export function LisaHud({ hidden = false }: { hidden?: boolean }) {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 10px;
+  font-size: 9px;
   letter-spacing: 1.5px;
   color: #ffb74d;
   margin-bottom: 12px;
@@ -232,7 +233,7 @@ export function LisaHud({ hidden = false }: { hidden?: boolean }) {
   animation: lisa-pulse 1.5s infinite;
 }
 .typed-box {
-  font-size: 15px;
+  font-size: 13px;
   line-height: 1.6;
   font-weight: 500;
   min-height: 54px;
@@ -255,6 +256,7 @@ export function LisaHud({ hidden = false }: { hidden?: boolean }) {
   transition: opacity 0.4s ease;
 }
 .quick-pills button {
+  font-family: inherit;
   background: rgba(255, 255, 255, 0.2);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
@@ -262,7 +264,7 @@ export function LisaHud({ hidden = false }: { hidden?: boolean }) {
   border-radius: 20px;
   color: #ffffff;
   padding: 6px 14px;
-  font-size: 12px;
+  font-size: 11px;
   cursor: pointer;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
   transition: all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -302,7 +304,7 @@ export function LisaHud({ hidden = false }: { hidden?: boolean }) {
   color: #ffaa00;
   font-weight: bold;
   margin-right: 8px;
-  font-size: 14px;
+  font-size: 12px;
 }
 .hud-input-row input {
   width: 100%;
@@ -310,12 +312,18 @@ export function LisaHud({ hidden = false }: { hidden?: boolean }) {
   border: none;
   outline: none;
   color: #ffffff;
-  font-size: 13px;
+  font-size: 11px;
   font-family: inherit;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
 }
 .hud-input-row input::placeholder {
   color: rgba(255, 235, 215, 0.45);
+}
+.hud-privacy-note {
+  margin: 6px 0 0 20px;
+  color: rgba(255, 235, 215, 0.42);
+  font-size: 8px;
+  letter-spacing: 0.04em;
 }
 @keyframes lisa-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
 @keyframes lisa-pulse { 0% { transform: scale(0.95); opacity: 0.8; } 50% { transform: scale(1.2); opacity: 1; } 100% { transform: scale(0.95); opacity: 0.8; } }

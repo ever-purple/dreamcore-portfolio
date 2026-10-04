@@ -960,6 +960,37 @@
   align-items: center;
   gap: 14px;
 }
+.studio-sound-toggle {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid rgba(243, 233, 210, 0.42);
+  border-radius: 50%;
+  color: #f3e9d2;
+  background: rgba(33, 25, 20, 0.24);
+  box-shadow: 0 5px 18px rgba(0, 0, 0, 0.16);
+  cursor: pointer;
+  transition: transform 0.26s var(--ease-pop), background-color 0.22s ease, border-color 0.22s ease;
+}
+.studio-sound-toggle:hover,
+.studio-sound-toggle:focus-visible {
+  transform: scale(1.08);
+  border-color: rgba(181, 227, 214, 0.9);
+  background: rgba(33, 25, 20, 0.52);
+}
+.studio-sound-toggle.is-muted { color: var(--pal-mint, #b5e3d6); }
+.studio-sound-toggle svg {
+  width: 21px;
+  height: 21px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.65;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.studio-sound-toggle svg path:first-child { fill: currentColor; stroke: none; }
 
 .studio-chrome__back {
   display: inline-flex;
@@ -7080,8 +7111,8 @@ body.is-diary-dragging * {
 .share-card__stage {
   position: relative;
   width: 100%;
-  /* ⚠️ 不要 clip-path / overflow:hidden —— 圆角由 <img> 自己给，
-     这一层再加一刀会把下面按钮的投影也削掉 */
+  overflow: hidden;
+  border-radius: 18px;
 }
 .share-card__img {
   display: block;
@@ -7215,6 +7246,97 @@ body.is-diary-dragging * {
   .share-card__panel--tall {
     width: 100%;
   }
+}
+
+/* 2026-10-04：分享层只保留 OG 卡本体；一个主操作，两个次级操作。 */
+.share-card {
+  background: rgba(8, 12, 11, 0.34);
+  backdrop-filter: blur(12px) saturate(0.82);
+  -webkit-backdrop-filter: blur(12px) saturate(0.82);
+}
+.share-card__panel,
+.share-card__panel--tall {
+  width: min(900px, 100%);
+  gap: 14px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.share-card__panel--tall { width: min(430px, 100%); }
+.share-card__stage { filter: drop-shadow(0 26px 52px rgba(10, 7, 5, 0.34)); }
+.share-card__img { border-radius: 0; }
+.share-card__close {
+  z-index: 2;
+  top: 12px;
+  right: 12px;
+  color: #402f27;
+  border-color: rgba(64, 47, 39, 0.18);
+  background: rgba(181, 227, 214, 0.72);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.share-card__controls {
+  display: grid;
+  width: min(520px, 92%);
+  grid-template-columns: 1fr;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+}
+.share-card__send {
+  width: 100%;
+  padding: 12px 24px;
+  border: 0;
+  border-radius: 14px;
+  font-size: clamp(15px, 1.5vw, 18px);
+  background: rgba(181, 227, 214, 0.94);
+  color: #3f3028;
+  box-shadow: 0 10px 28px rgba(11, 8, 6, 0.2);
+}
+.share-card__acts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+.share-card__act {
+  width: 100%;
+  padding: 9px 14px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--pal-mint, #b5e3d6);
+  color: #3f3028;
+  box-shadow: none;
+  white-space: nowrap;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.share-card__act:hover,
+.share-card__act:focus-visible {
+  border: 0;
+  background: var(--pal-mint, #b5e3d6);
+  filter: brightness(1.04);
+}
+.share-card__hint {
+  min-height: 0;
+  padding: 2px 0 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  font-size: clamp(11px, 1.2vw, 13px);
+  color: rgba(239, 251, 247, 0.82);
+}
+@media (max-width: 720px) {
+  .share-card__panel,
+  .share-card__panel--tall { width: 100%; padding: 0; }
+  .share-card__controls { width: min(100%, 440px); gap: 8px; }
+}
+@media (max-width: 340px) {
+  .share-card__acts { grid-template-columns: 1fr; }
 }
 
 

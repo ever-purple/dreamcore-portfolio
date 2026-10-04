@@ -929,6 +929,9 @@
 .quick-view .qv-contact__content>span{display:block;max-width:32em;margin:0;font-family:'NanoOldSongA','Noto Serif SC',serif!important;font-size:14px;line-height:1.9;letter-spacing:.06em;text-align:left}
 .quick-view .qv-contact__content>div{display:flex;justify-content:flex-start;gap:14px;margin-top:50px}
 .quick-view .qv-contact__content a,.quick-view .qv-contact__content button{min-width:138px;padding:13px 22px;font-family:'NanoOldSongA','Noto Serif SC',serif!important;font-size:12px;letter-spacing:.08em}
+.quick-view .qv-contact__actions .qv-contact__share{display:grid;width:48px;min-width:48px;height:48px;padding:0;place-items:center;border-radius:50%;color:#f0ebe2;background:var(--qv-red);cursor:pointer;transition:transform .28s cubic-bezier(.16,1,.3,1),background-color .22s ease}
+.quick-view .qv-contact__actions .qv-contact__share:hover,.quick-view .qv-contact__actions .qv-contact__share:focus-visible{transform:translateY(-3px);background:#70443a}
+.quick-view .qv-contact__share svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round}
 /* [P1-11] footer 回到文档流，只保留一套居中机制（margin:auto），
    不再让绝对定位的 left/right/bottom 与 margin:auto 互相打架。 */
 .quick-view .qv-contact footer{position:static;width:min(780px,68vw);margin:var(--qv-gap-bottom) auto 0;font-family:'NanoOldSongA','Noto Serif SC',serif!important;font-size:9px;letter-spacing:.14em}

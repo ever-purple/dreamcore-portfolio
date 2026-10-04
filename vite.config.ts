@@ -17,7 +17,7 @@ const SITE_URL = (process.env.VITE_SITE_URL || '').replace(/\/+$/, '');
 /**
  * 分享卡元信息：见 index.html 里「社交分享卡」一段。
  *
- * index.html 里已经把 og:image / og:url 硬编码成 everpurple.top 的绝对地址了
+ * index.html 里把 og:image / og:url 默认写成当前可用的临时 Vercel 地址
  * （微信/小红书爬虫只认 https:// 开头的绝对地址，相对路径会显示成裸链接）。
  * 这个插件只做一件事：若配置了 VITE_SITE_URL（换域名时），用它覆盖掉硬编码的域名。
  */
@@ -26,7 +26,7 @@ const shareCardPlugin = {
   transformIndexHtml(html: string) {
     if (!SITE_URL) return html; // 没配就用 index.html 里的绝对地址
     return html
-      .replace(/https:\/\/www\.everpurple\.top/g, SITE_URL);
+      .replace(/https:\/\/(?:www\.everpurple\.top|portfolio-ten-blush-61\.vercel\.app)/g, SITE_URL);
   },
 };
 

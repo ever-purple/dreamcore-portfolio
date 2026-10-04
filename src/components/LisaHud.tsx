@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { fetchAIReply } from './StudioChat';
+import { isGlobalMuted } from '@/lib/globalAudio';
 
 /**
  * My Studio 最上层（top:62% / left:5%）的 L.I.S.A. 风格对话 HUD：
@@ -11,7 +12,7 @@ import { fetchAIReply } from './StudioChat';
  */
 
 // 快捷预设按钮
-const QUICK_PILLS = ['关于空间主人', '探索旋转木马', '查看思维终端'];
+const QUICK_PILLS = ['她擅长什么？', '哪份作品值得看？', '她适合什么岗位？'];
 
 const INTRO =
   'You have arrived. 这里是 2003 年的夏天，在这间遗落的梦核工作室里，如果你想了解空间主人的经历、作品或创作档案，请直接向我提问。';
@@ -38,6 +39,7 @@ export function LisaHud({ hidden = false }: { hidden?: boolean }) {
     return ctx;
   };
   const playKeySound = () => {
+    if (isGlobalMuted()) return;
     const ctx = ensureAudio();
     if (!ctx) return;
     const dur = 0.01; // ~10ms
@@ -250,8 +252,8 @@ export function LisaHud({ hidden = false }: { hidden?: boolean }) {
 }
 .quick-pills {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-wrap: nowrap;
+  gap: 7px;
   margin-bottom: 20px;
   transition: opacity 0.4s ease;
 }
@@ -263,8 +265,9 @@ export function LisaHud({ hidden = false }: { hidden?: boolean }) {
   border: 1px solid rgba(255, 255, 255, 0.4);
   border-radius: 20px;
   color: #ffffff;
-  padding: 6px 14px;
-  font-size: 11px;
+  padding: 6px 11px;
+  font-size: 10px;
+  white-space: nowrap;
   cursor: pointer;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
   transition: all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);

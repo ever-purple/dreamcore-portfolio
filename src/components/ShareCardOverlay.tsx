@@ -5,8 +5,6 @@ import {
   NARROW_MAX,
   copyLink,
   downloadCard,
-  isCoarsePointer,
-  isInAppBrowser,
   loadCardFile,
   pickCard,
   shareCard,
@@ -65,7 +63,7 @@ export function ShareCardOverlay({ open, onClose }: Props) {
   const spec = usePickCard();
   const [phase, setPhase] = useState<Phase>('idle');
   const [busy, setBusy] = useState(false);
-  const sendRef = useRef<HTMLButtonElement>(null);
+  const shareRef = useRef<HTMLButtonElement>(null);
 
   useEscape(onClose, open);
 
@@ -77,9 +75,9 @@ export function ShareCardOverlay({ open, onClose }: Props) {
     void loadCardFile(spec);
   }, [open, spec]);
 
-  /* 打开后把焦点挪到"转发卡片"上：键盘可达 + 回车就能发 */
+  /* 打开后把焦点挪到主操作上：键盘可达 + 回车就能分享 */
   useEffect(() => {
-    if (open) sendRef.current?.focus({ preventScroll: true });
+    if (open) shareRef.current?.focus({ preventScroll: true });
   }, [open]);
 
   /* 分享成功后自动收掉浮层 —— 系统分享面板已经在上面了，这层留着只会挡视线 */
@@ -89,21 +87,21 @@ export function ShareCardOverlay({ open, onClose }: Props) {
     return () => window.clearTimeout(t);
   }, [phase, onClose]);
 
-  const onSend = useCallback(async () => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      setPhase(await shareCard(spec));
-    } finally {
-      setBusy(false);
-    }
-  }, [busy, spec]);
-
   const onSave = useCallback(async () => {
     if (busy) return;
     setBusy(true);
     try {
       setPhase((await downloadCard(spec)) ? 'downloaded' : 'failed');
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, spec]);
+
+  const onShare = useCallback(async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      setPhase(await shareCard(spec));
     } finally {
       setBusy(false);
     }
@@ -139,8 +137,6 @@ export function ShareCardOverlay({ open, onClose }: Props) {
           ✕
         </button>
 
-        <p className="share-card__kicker">share this</p>
-
         <div className="share-card__stage" style={{ aspectRatio: `${spec.w} / ${spec.h}` }}>
           {/* ⚠️ 不包 button、并且带 data-allow-save —— 见文件头第 2 条 */}
           <img
@@ -154,32 +150,30 @@ export function ShareCardOverlay({ open, onClose }: Props) {
           />
         </div>
 
-        <p className="share-card__lead">
-          转发给朋友，他们点卡上的 <span className="share-card__lead-mark">come in</span> 就能进来
-        </p>
-
-        <button
-          ref={sendRef}
-          type="button"
-          className="share-card__send"
-          onClick={onSend}
-          disabled={busy}
-        >
-          转发卡片
-        </button>
-
-        <div className="share-card__acts">
-          <button type="button" className="share-card__act" onClick={onSave} disabled={busy}>
-            保存图片
+        <div className="share-card__controls">
+          <button
+            ref={shareRef}
+            type="button"
+            className="share-card__send"
+            onClick={onShare}
+            disabled={busy}
+          >
+            分享卡片
           </button>
-          <button type="button" className="share-card__act" onClick={onCopy} disabled={busy}>
-            复制链接
-          </button>
+
+          <div className="share-card__acts">
+            <button type="button" className="share-card__act" onClick={onSave} disabled={busy}>
+              保存图片
+            </button>
+            <button type="button" className="share-card__act" onClick={onCopy} disabled={busy}>
+              保存链接
+            </button>
+          </div>
+
+          <p className="share-card__hint" role="status" aria-live="polite">
+            {hintFor(phase, busy)}
+          </p>
         </div>
-
-        <p className="share-card__hint" role="status" aria-live="polite">
-          {hintFor(phase, busy)}
-        </p>
       </div>
     </div>,
     document.body,
@@ -219,14 +213,10 @@ function usePickCard(): CardSpec {
  *    HARDCODED_DISPLAY 再重跑；符号一律不进正文，关闭按钮那枚 ✕ 交给系统字体。
  */
 function hintFor(phase: Phase, busy: boolean): string {
-  if (busy) return '正在准备图片…';
-  if (phase === 'shared') return '已唤起分享，选微信 / 小红书就发出去了';
-  if (phase === 'copied') return '图片已复制，去微信 / 小红书粘贴即可';
-  if (phase === 'downloaded') return '图片已保存，去微信 / 小红书发出去吧';
-  if (phase === 'link') return '链接已复制，发出去朋友点卡上的 come in 就能进来';
-  if (phase === 'failed') return '图片没取到 —— 长按卡片保存，或点下面的「保存图片」';
-  /* idle / aborted（用户在系统面板里取消了）→ 都回到初始提示 */
-  if (isInAppBrowser()) return '长按卡片保存到相册，再去微信 / 小红书发出去';
-  if (isCoarsePointer()) return '点「转发卡片」发出去，也可以长按卡片保存';
-  return '点「转发卡片」把这张图发出去';
+  if (busy) return '正在生成…';
+  if (phase === 'downloaded') return '图片已保存，内含二维码';
+  if (phase === 'copied') return '分享链接已复制';
+  if (phase === 'link') return '链接已复制';
+  if (phase === 'failed') return '保存失败，请重试';
+  return '分享后可直接进入网站';
 }

@@ -4,6 +4,7 @@ import '../meadow-v2.css';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { CursorLabel } from './CursorLabel';
+import { ShareCardOverlay } from './ShareCardOverlay';
 import { StudioChrome } from './StudioChrome';
 import { CONTACT, RESUME_FILENAME, RESUME_URL } from '../data/contact';
 import { WORKS } from '../data/works';
@@ -188,6 +189,7 @@ function SectionHeading({ no, children, zh, variant = 'stars', align = 'start' }
 export function QuickViewShell({ onBack, onExplore }: QuickViewShellProps) {
   const rootRef = useRef<HTMLElement | null>(null);
   const [activeSection, setActiveSection] = useState('overview');
+  const [shareOpen, setShareOpen] = useState(false);
   const [drawStep, setDrawStep] = useState(0);
   const [selectedExperience, setSelectedExperience] = useState<number | null>(null);
   const [activePlan, setActivePlan] = useState(0);
@@ -564,7 +566,8 @@ export function QuickViewShell({ onBack, onExplore }: QuickViewShellProps) {
       </div>
     </section>
 
-    <section className="qv-section qv-contact" id="contact"><BrushMotifs /><div className="qv-contact__sky" aria-hidden="true"><span>☆</span><span>★</span><span>☆</span><span>·</span><span>☆</span></div><SectionHeading no="04" zh="联系" variant="portfolio">Let’s connect.</SectionHeading><div className="qv-contact__content qv-reveal"><span className="qv-contact__intro">期待与你相遇，在下一片绿地。</span><a className="qv-contact__email" href={`mailto:${CONTACT.email}`} data-cursor="Email" data-cursor-tone="dark"><small>EMAIL</small><strong>{CONTACT.email}</strong><i aria-hidden="true">↗</i></a><div className="qv-contact__actions"><a href={RESUME_URL} download={RESUME_FILENAME} data-cursor="Resume" data-cursor-tone="dark"><span>DOWNLOAD RESUME <i aria-hidden="true">↓</i></span><small>下载简历</small></a></div><button className="qv-enter-explore" type="button" onClick={() => onExplore()} data-cursor="Enter" data-cursor-tone="dark"><span>ENTER EXPLORE</span><small>进入建筑 · 探索内部空间</small></button></div></section>
+    <section className="qv-section qv-contact" id="contact"><BrushMotifs /><div className="qv-contact__sky" aria-hidden="true"><span>☆</span><span>★</span><span>☆</span><span>·</span><span>☆</span></div><SectionHeading no="04" zh="联系" variant="portfolio">Let’s connect.</SectionHeading><div className="qv-contact__content qv-reveal"><span className="qv-contact__intro">期待与你相遇，在下一片绿地。</span><a className="qv-contact__email" href={`mailto:${CONTACT.email}`} data-cursor="Email" data-cursor-tone="dark"><small>EMAIL</small><strong>{CONTACT.email}</strong><i aria-hidden="true">↗</i></a><div className="qv-contact__actions"><a href={RESUME_URL} download={RESUME_FILENAME} data-cursor="Resume" data-cursor-tone="dark"><span>DOWNLOAD RESUME <i aria-hidden="true">↓</i></span><small>下载简历</small></a><button className="qv-contact__share" type="button" onClick={() => setShareOpen(true)} aria-label="分享网站" data-cursor="Share" data-cursor-tone="dark"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="m8.2 10.8 7.6-4.5M8.2 13.2l7.6 4.5"/></svg></button></div><button className="qv-enter-explore" type="button" onClick={() => onExplore()} data-cursor="Enter" data-cursor-tone="dark"><span>ENTER EXPLORE</span><small>进入建筑 · 探索内部空间</small></button></div></section>
+    <ShareCardOverlay open={shareOpen} onClose={() => setShareOpen(false)} />
   </main>
   </>;
 }

@@ -39,6 +39,7 @@ import { studioObjects, type StudioObject } from '@/data/studio';
 import { CHANNEL_BY_DEVICE, type MediaChannel } from '@/data/mediaWorks';
 import { playCrtOff, playCrtOn } from '@/lib/crtAudio';
 import { createStudioMusic, type StudioMusic } from '@/lib/studioMusic';
+import { installGlobalMediaGuard, isGlobalMuted, setGlobalMuted, subscribeGlobalMuted } from '@/lib/globalAudio';
 import type { QuickViewExploreTarget } from '@/components/QuickViewShell';
 
 /**
@@ -138,6 +139,7 @@ const POINT_BY_ID = Object.fromEntries(studioObjects.map((o) => [o.id, o.point])
  */
 export function StudioSection({ entryTarget = 'studio', entryPlanSlot = null, onSelectObject, onBack, onReturnToQuickWorks }: Props) {
   const [hoveredId, setHoveredId] = useState<StudioObject['id'] | null>(null);
+  const [soundMuted, setSoundMuted] = useState(isGlobalMuted);
   /* —— 预热实习日记单文件（2026-09-28，2026-09-30 改为**只认悬停**）——
      日记整本是 public/diary-book/index.html 一个 3MB 单文件（封面照片也内联在其 CSS 里）。
      Vercel 上等用户点开笔记本才去拉：书壳先渲染、封面照片 1s 后才到（"白封面"），
@@ -263,6 +265,15 @@ export function StudioSection({ entryTarget = 'studio', entryPlanSlot = null, on
   const magneticBackRef = useMagnetic<HTMLButtonElement>();
   const magneticMenuRef = useMagnetic<HTMLButtonElement>();
 
+  useEffect(() => {
+    const removeGuard = installGlobalMediaGuard();
+    const unsubscribe = subscribeGlobalMuted(setSoundMuted);
+    return () => {
+      removeGuard();
+      unsubscribe();
+    };
+  }, []);
+
   /**
    * 房间的「鼠标动、背景也动」景深视差（2026-09-16 第六轮 / 用户第 1 条需求）。
    * ⚠️ 主量写在 **section（.studio-scope）** 上，**不是** .studio-cam：
@@ -312,6 +323,7 @@ export function StudioSection({ entryTarget = 'studio', entryPlanSlot = null, on
   useEffect(() => {
     const music = createStudioMusic('/studio/studio-music.mp3');
     musicRef.current = music;
+    music.setMuted(soundMuted);
     music.play(); // 进站时已被手势解锁；若被自动播放策略拦住，下面的 unlock 会补播
 
     // AudioContext 出生即 suspended，必须在**用户手势**里 resume，
@@ -332,6 +344,10 @@ export function StudioSection({ entryTarget = 'studio', entryPlanSlot = null, on
       musicRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    musicRef.current?.setMuted(soundMuted);
+  }, [soundMuted]);
 
   /**
    * 音乐档位（第二档 ④，2026-09-16 晚按用户听感重做）—— **一处派生**，
@@ -766,6 +782,22 @@ export function StudioSection({ entryTarget = 'studio', entryPlanSlot = null, on
         tone="light"
         zIndex={50}
         className="studio-topbar"
+        extra={(
+          <button
+            type="button"
+            className={`studio-sound-toggle${soundMuted ? ' is-muted' : ''}`}
+            onClick={() => setGlobalMuted(!soundMuted)}
+            aria-label={soundMuted ? '打开所有声音' : '关闭所有声音'}
+            aria-pressed={soundMuted}
+            data-cursor={soundMuted ? 'Sound on' : 'Mute'}
+            data-cursor-tone="dark"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 10v4h3l4 3V7l-4 3H4Z" />
+              {soundMuted ? <path d="m15.5 9.5 5 5m0-5-5 5" /> : <path d="M15.5 9.2c1.5 1.55 1.5 4.05 0 5.6m2.4-8c2.8 2.9 2.8 7.5 0 10.4" />}
+            </svg>
+          </button>
+        )}
         backRef={magneticBackRef}
         menuRef={magneticMenuRef}
       />

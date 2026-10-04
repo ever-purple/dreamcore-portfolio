@@ -115,6 +115,8 @@ export type StudioMusic = {
   away(): void;
   /** 立刻停：暂停元素，`play()` 可以重新拉起。只在进「视频与音乐」页时用。 */
   halt(): void;
+  /** 用户主动关闭 / 恢复全站声音。 */
+  setMuted(muted: boolean): void;
   /** 终态停：只在**离开工作室**（回首页）时用，之后不再恢复。 */
   stop(): void;
   isStopped(): boolean;
@@ -142,6 +144,7 @@ export function createStudioMusic(src: string): StudioMusic {
   let stopped = false;
   /** 临时停：进视频页，`play()` 可以解除 */
   let halted = false;
+  let userMuted = false;
   /** 降级路径下的 rAF 淡出手柄 */
   let fadeRaf = 0;
 
@@ -241,6 +244,10 @@ export function createStudioMusic(src: string): StudioMusic {
     unlock() {
       build();
       resumeCtx();
+      if (userMuted) {
+        audio.muted = true;
+        if (gainNode && ctx) gainNode.gain.setValueAtTime(0, ctx.currentTime);
+      }
     },
 
     play() {
@@ -248,6 +255,7 @@ export function createStudioMusic(src: string): StudioMusic {
       halted = false;
       tryPlay();
       resumeCtx();
+      if (userMuted) return;
       if (gainNode && ctx) scheduleRise();
       else fadeVolumeManually(FULL_GAIN, 0);
     },
@@ -266,6 +274,20 @@ export function createStudioMusic(src: string): StudioMusic {
       halted = true;
       // 直接暂停；不先淡出 —— 视频页有自己的声音，多留 3 秒反而是干扰
       audio.pause();
+    },
+
+    setMuted(muted: boolean) {
+      userMuted = muted;
+      audio.muted = muted;
+      if (gainNode && ctx) {
+        const p = gainNode.gain;
+        const t = ctx.currentTime;
+        p.cancelScheduledValues(t);
+        p.setValueAtTime(muted ? 0 : currentGain(), t);
+        if (!muted && !stopped && !halted) p.setTargetAtTime(FULL_GAIN, t, TAU_UP);
+      } else if (!muted && !stopped && !halted) {
+        audio.volume = FULL_GAIN;
+      }
     },
 
     stop() {

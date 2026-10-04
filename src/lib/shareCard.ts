@@ -1,30 +1,15 @@
 /**
- * 分享卡：把「转发按钮 → 拿到图片文件 → 分享 / 逐级降级」整条链路收在一处。
+ * 分享卡：网页分享与图片保存是两条独立路径。
  *
  * ## 两个角色，别混淆（2026-09-28 用户明确纠正过）
  *   · 卡片**图上**那个 `come in` 药丸是画给**收到卡片的人**的：他点卡上的 come in
  *     进来。链接形式的卡片在微信里会渲染成 og 预览、整张预览可点 → 所以 come in
  *     是真的能点进去的，**卡片图上的文案保持 come in，别改成动作词**。
- *   · **转发**是浮层里另给的一枚按钮（`.share-card__send`），不在图上 ——
- *     图会被原样发出去，把"转发按钮"画进图里，收件人那边就会出现一个按不动的假按钮。
- *
- * ## 为什么不再直接 `navigator.share({ url })`
- * 旧实现只发链接，用户原话：「只能复制链接，把链接发给好友只是链接不是图片」。
- * 现在改成发**图片文件**（同时把链接塞进文案，两边都不落空）。
- *
- * ## 三级降级（缺一级就有整类设备用不了）
- *   ① `navigator.canShare({ files })` 为真 → `navigator.share({ files })`
- *      —— iOS Safari / 安卓 Chrome / 部分桌面 Chromium，唯一"真·分享图片"的路。
- *   ② 剪贴板写图片（`ClipboardItem`）—— 桌面 Chrome / Safari 有，白捡一级。
- *   ③ `<a download>` 下载 —— 桌面必定成功；手机视平台而定。
- *      **微信 / 小红书的内置浏览器 ①② 都不支持**（没有 `navigator.share`，
- *      `clipboard.write` 也被拦），那边唯一可行的动作是「长按图片 → 保存到相册」，
- *      所以卡片必须是可长按的 `<img>`（见 ShareCardOverlay 文件头第 2 条）。
+ *   · **分享网站**发送 URL，让微信、飞书、X 抓取 OG 图，整张预览都能点击。
+ *   · **保存图片**动态叠加当前网址的二维码，普通图片也能扫码进入。
  *
  * ## 「已取到」的缓存
- * `navigator.share` 要求**瞬时用户激活**。点下去才 `fetch` 的话，网络一慢激活就过期
- * → `NotAllowedError`。所以文件按 `src` 缓存，浮层**一打开就预热**；
- * 用户真正点按钮时只等一个微任务，激活稳稳还在。
+ * 卡片文件按 `src` 缓存，浮层打开时预热；保存时只额外生成二维码和合成图片。
  */
 
 export type CardSpec = {
@@ -66,15 +51,7 @@ export const NARROW_MAX = 720;
 
 export const pickCard = (narrow: boolean): CardSpec => (narrow ? CARD_TALL : CARD_WIDE);
 
-export const SHARE_TITLE = '孙晨茜 作品集';
-export const SHARE_TEXT = '孙晨茜 作品集 · stay for a moment';
-
 export type ShareOutcome = 'shared' | 'copied' | 'downloaded' | 'aborted' | 'failed';
-
-type NavigatorWithShare = Navigator & {
-  canShare?: (data: ShareData) => boolean;
-  share?: (data: ShareData) => Promise<void>;
-};
 
 /**
  * 全站的**调试 / 预览**参数（都是给自己测试用的，见各自的 `URLSearchParams` 调用）。
@@ -98,6 +75,8 @@ const DEBUG_PARAMS = [
   'channel',
   'contact',
   'contactv',
+  'quick',
+  'choice',
   'lensreveal',
   'roompar',
   'motion',
@@ -115,6 +94,13 @@ export function shareUrl(): string {
     for (const k of DEBUG_PARAMS) u.searchParams.delete(k);
     /* 全摘空了就把 `?` 也去掉，别留一个光秃秃的问号 */
     if ([...u.searchParams.keys()].length === 0) u.search = '';
+    if (u.hostname === '127.0.0.1' || u.hostname === 'localhost') {
+      u.protocol = 'https:';
+      u.hostname = 'portfolio-ten-blush-61.vercel.app';
+      /* URL.hostname 不会自动清掉原来的开发端口，必须显式归零。 */
+      u.port = '';
+      u.pathname = '/';
+    }
     return u.toString();
   } catch {
     return window.location.href;
@@ -153,7 +139,45 @@ export function loadCardFile(spec: CardSpec): Promise<File | null> {
 export async function downloadCard(spec: CardSpec): Promise<boolean> {
   const file = await loadCardFile(spec);
   if (!file) return false;
-  const url = URL.createObjectURL(file);
+  let url = '';
+  try {
+    const [{ default: QRCode }, bitmap] = await Promise.all([
+      import('qrcode'),
+      createImageBitmap(file),
+    ]);
+    const canvas = document.createElement('canvas');
+    canvas.width = spec.w;
+    canvas.height = spec.h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return false;
+    ctx.drawImage(bitmap, 0, 0, spec.w, spec.h);
+    bitmap.close();
+
+    const qrSize = Math.round(Math.min(spec.w, spec.h) * 0.18);
+    const pad = Math.round(qrSize * 0.12);
+    const tile = qrSize + pad * 2;
+    const x = spec.w - tile - Math.round(spec.w * 0.025);
+    const y = spec.h - tile - Math.round(spec.h * 0.04);
+    ctx.fillStyle = 'rgba(243, 238, 227, 0.96)';
+    ctx.beginPath();
+    ctx.roundRect(x, y, tile, tile, Math.round(tile * 0.08));
+    ctx.fill();
+
+    const qr = document.createElement('canvas');
+    await QRCode.toCanvas(qr, shareUrl(), {
+      width: qrSize,
+      margin: 0,
+      errorCorrectionLevel: 'M',
+      color: { dark: '#4d2d23', light: '#f3eee3' },
+    });
+    ctx.drawImage(qr, x + pad, y + pad, qrSize, qrSize);
+    const output = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+    if (!output) return false;
+    url = URL.createObjectURL(output);
+  } catch {
+    /* 较旧浏览器不支持 canvas 合成时，仍允许保存原图。 */
+    url = URL.createObjectURL(file);
+  }
   const a = document.createElement('a');
   a.href = url;
   a.download = spec.file;
@@ -168,56 +192,19 @@ export async function downloadCard(spec: CardSpec): Promise<boolean> {
 }
 
 /**
- * 转发这张卡。返回语义化结果，调用方据此给文案（见 ShareCardOverlay 的 hintFor）。
- * 三级降级的顺序与理由见文件头。
- *
- * ⚠️ 文案里**带上链接**：有些接收端只吃得下文字（或用户在选择器里挑了个
- *    不支持图片的目标），带上链接对方至少能点进去 —— 而那正是卡片上
- *    come in 的用法。两者一起发，谁都不落空。
+ * 分享网页 URL。平台抓取 index.html 的 OG 信息后显示卡片，整张预览可点击；
+ * 不支持 Web Share API 时退回复制链接。
  */
-export async function shareCard(spec: CardSpec): Promise<ShareOutcome> {
-  const file = await loadCardFile(spec);
-  if (!file) return 'failed';
-
+export async function shareCard(_spec: CardSpec): Promise<ShareOutcome> {
   const url = shareUrl();
-  const caption = `${SHARE_TEXT}\n${url}`;
-  const nav = navigator as NavigatorWithShare;
-
-  if (typeof nav.share === 'function' && typeof nav.canShare === 'function') {
-    let can = false;
-    try {
-      can = nav.canShare({ files: [file] });
-    } catch {
-      can = false;
-    }
-    if (can) {
-      try {
-        /* ⚠️ 只传 files + title + text，**不要**再单独传 `url` 字段：
-           iOS Safari 在 files 与 url 同时存在时会把 url 一起塞进去，
-           有些接收端（小红书）会因此退化成"只拿到链接"。链接已经写在 text 里了。 */
-        await nav.share({ files: [file], title: SHARE_TITLE, text: caption });
-        return 'shared';
-      } catch (err) {
-        const name = (err as Error)?.name;
-        if (name === 'AbortError') return 'aborted';
-        /* NotAllowedError / TypeError / 平台自定义错误 → 继续降级，不直接判失败 */
-      }
-    }
-  }
-
-  /* ② 剪贴板写图片 */
+  /* 不弹系统分享面板：复制公开网址，粘贴进聊天后由平台生成 OG 卡片。 */
   try {
-    const CI = (globalThis as { ClipboardItem?: typeof ClipboardItem }).ClipboardItem;
-    if (CI && navigator.clipboard?.write) {
-      await navigator.clipboard.write([new CI({ [file.type || 'image/png']: file })]);
-      return 'copied';
-    }
+    await navigator.clipboard.writeText(url);
+    return 'copied';
   } catch {
-    /* 大多数移动端 WebView 会在这里被拦，正常 */
+    window.prompt('复制此链接分享：', url);
+    return 'failed';
   }
-
-  /* ③ 下载 */
-  return (await downloadCard(spec)) ? 'downloaded' : 'failed';
 }
 
 /** 复制干净链接（浮层里的次级动作）。复制的是 `shareUrl()`，不是 `location.href`。 */

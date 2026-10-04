@@ -1,3 +1,5 @@
+import { isGlobalMuted } from '@/lib/globalAudio';
+
 /**
  * CRT 显像管音效（Web Audio 实时合成，不引入任何音频文件）。
  *
@@ -111,6 +113,7 @@ function flyback(ac: AudioContext, at: number, dur: number, gain = 0.012) {
  * 组成 = 低频"咚" + 金属感下扫 boing + 静电雪花 + 持续的行频啸叫。
  */
 export function playCrtOn(): void {
+  if (isGlobalMuted()) return;
   const ac = ready();
   if (!ac) return;
   tone(ac, { freq: 78, to: 44, dur: 0.16, gain: 0.32 }); // 通电"咚"
@@ -126,6 +129,7 @@ export function playCrtOn(): void {
  * 返回（Zoom Out）时用。
  */
 export function playCrtOff(): void {
+  if (isGlobalMuted()) return;
   const ac = ready();
   if (!ac) return;
   tone(ac, { freq: 900, to: 60, dur: 0.3, gain: 0.2 }); // 下扫

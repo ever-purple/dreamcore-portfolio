@@ -16,9 +16,8 @@
     <!-- ── 社交分享卡（微信 / 小红书 / X / LinkedIn / iMessage 都读这套）──────────
          og:image 用 1200×630 的横版卡片，正好是各平台推荐的 1.91:1。
          图源在 public/og/card-share-wide.png。
-         ⚠️ og:image / og:url 填的是「相对路径」兜底：万一构建时没配 VITE_SITE_URL，
-            爬虫会按页面地址自己补全，照样能显示；配了 VITE_SITE_URL 后（见 vite.config.ts
-             的 shareCard()），构建时会自动改成绝对地址，Facebook / X 这类只认绝对地址的平台也稳。
+         默认使用当前可访问的临时 Vercel 地址；配了 VITE_SITE_URL 后（见 vite.config.ts），
+         构建时会自动替换为指定站点，备案完成后可直接切回正式域名。
 
          同目录下还有一张 **竖版** public/og/card-share-tall.png（1080×1440，3:4），
          它**不做 og:image**，是站内「联系方式 → 分享网站」那个浮层在窄屏上展示 /
@@ -28,7 +27,7 @@
     -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="孙晨茜 作品集" />
-    <meta property="og:url" content="https://www.everpurple.top/" />
+    <meta property="og:url" content="https://portfolio-ten-blush-61.vercel.app/" />
     <meta
       property="og:title"
       content="孙晨茜 作品集 · stay for a moment"
@@ -37,8 +36,8 @@
       property="og:description"
       content="观夏「隙月」夏季营销、神州租车新媒体代运营、赤尾品牌策划案 —— 品牌、内容策划与视觉作品集。进来坐一会儿吧。"
     />
-    <meta property="og:image" content="https://www.everpurple.top/og/card-share-wide.png" />
-    <meta property="og:image:secure_url" content="https://www.everpurple.top/og/card-share-wide.png" />
+    <meta property="og:image" content="https://portfolio-ten-blush-61.vercel.app/og/card-share-wide.png" />
+    <meta property="og:image:secure_url" content="https://portfolio-ten-blush-61.vercel.app/og/card-share-wide.png" />
     <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
@@ -47,7 +46,7 @@
       content="孙晨茜 作品集 · stay for a moment，横版分享卡"
     />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:image" content="https://www.everpurple.top/og/card-share-wide.png" />
+    <meta name="twitter:image" content="https://portfolio-ten-blush-61.vercel.app/og/card-share-wide.png" />
     <meta name="theme-color" content="#3b2b21" />
     <!-- 首屏防闪：CSS 包（含 body 的 bg-wine=#3b2b21）还没下载解析时，浏览器默认
          画白底 / 上面的 theme-color 薄荷绿，慢网（海外机房）下这层会先暴露好几秒，

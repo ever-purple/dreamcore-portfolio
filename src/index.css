@@ -14034,6 +14034,50 @@ article.dx-sec1::before {
   from { transform: translate3d(0, 8px, 0); opacity: 0; }
   to { transform: translate3d(0, 0, 0); opacity: .8; }
 }
+
+.internal-loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  font-family: 'Zpix', 'Noto Serif SC', ui-monospace, monospace;
+  font-size: 12px;
+  letter-spacing: .08em;
+}
+
+.internal-loader__pixels {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 12px;
+}
+
+.internal-loader__pixels i {
+  display: block;
+  width: 5px;
+  height: 5px;
+  background: #7ee8c7;
+  animation: internal-pixel-breathe 1.05s ease-in-out infinite alternate;
+  will-change: transform, opacity, filter;
+}
+
+.internal-loader__pixels i:nth-child(even) {
+  width: 3px;
+  height: 3px;
+  background: #faf6e8;
+}
+
+.internal-loader p {
+  margin: 0;
+  color: rgba(250, 246, 232, .82);
+}
+
+.internal-loader p span { color: #7ee8c7; }
+
+@keyframes internal-pixel-breathe {
+  0% { transform: translateY(3px) scale(.55); opacity: .24; filter: brightness(.7); }
+  100% { transform: translateY(-3px) scale(1.18); opacity: 1; filter: brightness(1.2); }
+}
 /* 板块页思维导图（2026-09-24 用户：「只放刚刚发的两张图片」——
    一张对应踏春块、一张对应妇女节块）——
    容器绝对定位挂在正文右侧留白处（不进文档流、翻页层 12 份副本零状态、

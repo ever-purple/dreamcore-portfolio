@@ -56,6 +56,28 @@ type Props = {
   onReturnToQuickWorks?: () => void;
 };
 
+function StudioPanelFallback({ label, onBack }: { label: string; onBack: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[400] grid place-items-center bg-[rgba(10,10,10,.74)] text-[#f3eee3]" role="status" aria-live="polite">
+      <button
+        type="button"
+        className="absolute left-7 top-6 rounded-full border border-white/30 px-4 py-2 text-sm"
+        onClick={onBack}
+      >
+        ← 返回
+      </button>
+      <div className="internal-loader" aria-label={`正在加载${label}`}>
+        <div className="internal-loader__pixels" aria-hidden="true">
+          {Array.from({ length: 5 }, (_, index) => (
+            <i key={index} style={{ animationDelay: `${index * -.18}s` }} />
+          ))}
+        </div>
+        <p><span>[SYS.LOAD]</span> 正在载入{label}…</p>
+      </div>
+    </div>
+  );
+}
+
 /** 转场时间轴（ms）—— 与需求里的 1.2s 三段式一一对应 */
 const T = {
   /** 镜头扎进屏幕的时长 */
@@ -188,6 +210,13 @@ export function StudioSection({ entryTarget = 'studio', entryPlanSlot = null, on
       window.location.hash === '#about'
     );
   });
+
+  // 入口目标可能在同一个React批次或复用的Studio实例中更新，不能只依赖useState初始化器。
+  useEffect(() => {
+    if (entryTarget === 'plans') setWorksOpen(true);
+    if (entryTarget === 'media') setMediaOpen(true);
+    if (entryTarget === 'copy') setCopyOpen(true);
+  }, [entryTarget]);
   /** 镜头推进状态：idle 静止 / in 扎进屏幕 / out 拉回来 */
   const [dive, setDive] = useState<'idle' | 'in' | 'out'>('idle');
   /**
@@ -666,6 +695,10 @@ export function StudioSection({ entryTarget = 'studio', entryPlanSlot = null, on
     aboutOpen ||
     menuOpen;
 
+  if (new URLSearchParams(window.location.search).has('loading-internal')) {
+    return <StudioPanelFallback label="策划项目" onBack={onBack ?? (() => undefined)} />;
+  }
+
   return (
     <StudioNavProvider value={nav}>
     <section
@@ -739,7 +772,7 @@ export function StudioSection({ entryTarget = 'studio', entryPlanSlot = null, on
 
       {/* 线圈本弹层 */}
       {notebookOpen ? (
-        <Suspense fallback={null}>
+        <Suspense fallback={<StudioPanelFallback label="实习日记" onBack={() => { setNotebookOpen(false); closeFocused(); }} />}>
           <NotebookOverlay
             open={notebookOpen}
             onClose={() => {
@@ -780,7 +813,10 @@ export function StudioSection({ entryTarget = 'studio', entryPlanSlot = null, on
 
       {/* 木马策划案（点旋转木马物件 → 原地展开 3D 木马，策划案挂在上面） */}
       {worksOpen ? (
-        <Suspense fallback={null}>
+        <Suspense fallback={<StudioPanelFallback label="策划项目" onBack={() => {
+          if (entryTarget === 'plans' && onReturnToQuickWorks) onReturnToQuickWorks();
+          else { setWorksOpen(false); closeFocused(); }
+        }} />}>
           <WorksCarousel
             open={worksOpen}
             initialActive={entryPlanSlot}
@@ -801,7 +837,7 @@ export function StudioSection({ entryTarget = 'studio', entryPlanSlot = null, on
           2026-09-16：书架在落地页开着时**保持挂载**（盖住≠卸载），落地页 Back 先回到书架。
           covered = 被落地页盖住 → NewsstandScene 暂停 GL 循环 + 让出 Esc（见 escape-stack）。 */}
       {newsstandOpen ? (
-        <Suspense fallback={null}>
+        <Suspense fallback={<StudioPanelFallback label="创作档案" onBack={() => { setNewsstandOpen(false); closeFocused(); }} />}>
           <NewsstandScene
             open={newsstandOpen}
             covered={mediaOpen || copyOpen}
@@ -819,7 +855,10 @@ export function StudioSection({ entryTarget = 'studio', entryPlanSlot = null, on
           Back 只关落地页、回到书架模型 —— 那时 musicCue 是 away（仍然静音），
           直到关掉书架、真正看见工作室画面，音乐才被拉回前台。 */}
       {mediaOpen ? (
-        <Suspense fallback={null}>
+        <Suspense fallback={<StudioPanelFallback label="影像作品" onBack={() => {
+          if (entryTarget === 'media' && onReturnToQuickWorks) onReturnToQuickWorks();
+          else setMediaOpen(false);
+        }} />}>
           <MediaGalleryPage
             channel={mediaChannel}
             onClose={() => {
@@ -835,7 +874,7 @@ export function StudioSection({ entryTarget = 'studio', entryPlanSlot = null, on
 
       {/* 第二排落地页：文案与 AI 项目（点报刊亭下层档案 → 独立全屏页） */}
       {copyOpen ? (
-        <Suspense fallback={null}>
+        <Suspense fallback={<StudioPanelFallback label="文案作品" onBack={() => setCopyOpen(false)} />}>
           <CopyProjectPage
             onClose={() => {
               setCopyOpen(false); // → 回到书架模型界面（同第一排，2026-09-16）
@@ -851,7 +890,10 @@ export function StudioSection({ entryTarget = 'studio', entryPlanSlot = null, on
 
       {/* About Me / Green OS 页（点电脑物件 → 钻进屏幕 → 原地浮层） */}
       {aboutOpen ? (
-        <Suspense fallback={null}>
+        <Suspense fallback={<StudioPanelFallback label="关于我" onBack={() => {
+          if (viaCrt) closeCrt();
+          else setAboutOpen(false);
+        }} />}>
           <AboutOverlay
             open={aboutOpen}
             greenOs={viaCrt}

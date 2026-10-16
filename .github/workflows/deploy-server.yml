@@ -1,0 +1,77 @@
+# 推 main → 自动部署到国内服务器（SSH 上去执行服务器端的部署脚本）。
+#
+# 这是本站唯一的服务器部署通道。
+# （原 `.github/workflows/deploy.yml`（GitHub Pages）已于 2026-10-04 删除，
+#   它与 Vercel 功能重复、且每次 push 都要白跑一遍完整构建。）
+#
+# Vercel 的 Git 集成仍在，切换期与本 workflow 并行；确认服务器稳定后再断开。
+#
+# ── 首次启用前要配 4 个 Secret ────────────────────────────────
+# 仓库 Settings → Secrets and variables → Actions → New repository secret：
+#
+#   SERVER_HOST      服务器 IP 或域名
+#   SERVER_USER      SSH 用户名（root / ubuntu，省略则默认 root）
+#   SERVER_SSH_KEY   部署专用私钥（Ed25519 全量文本，含 BEGIN/END 行）
+#   SERVER_PORT      SSH 端口（可省略，默认 22）
+#
+# 可选变量（Settings → Variables）：
+#   SERVER_APP_DIR   服务器上的部署目录，默认 /var/www/dreamcore
+#
+# ⚠️ 四个 Secret 补齐之前，本 workflow 会「跳过」并显示绿色，不会报红，
+#    所以可以放心先合进 main，等服务器就绪再填。
+#
+# 服务器侧的一次性准备（装 Node、建目录、配 nginx、生成密钥）见
+# docs/deploy-to-server.md。
+
+name: Deploy to Server
+
+on:
+  push:
+    branches: [main]
+  # 允许在 Actions 页手动点一下重新部署
+  workflow_dispatch:
+
+# 同一时间只跑一个部署；新推送会取消还在跑的旧部署
+concurrency:
+  group: deploy-server
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检查服务器信息是否已配置
+        id: guard
+        env:
+          HOST: ${{ secrets.SERVER_HOST }}
+          KEY: ${{ secrets.SERVER_SSH_KEY }}
+        run: |
+          if [ -z "$HOST" ] || [ -z "$KEY" ]; then
+            echo "::notice title=跳过服务器部署::SERVER_HOST / SERVER_SSH_KEY 未配置，本次只走 Vercel。"
+            echo "skip=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=0" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 通过 SSH 触发服务器端部署
+        if: steps.guard.outputs.skip == '0'
+        env:
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          HOST: ${{ secrets.SERVER_HOST }}
+          SSH_USER: ${{ secrets.SERVER_USER || 'root' }}
+          SSH_PORT: ${{ secrets.SERVER_PORT || '22' }}
+          APP_DIR: ${{ vars.SERVER_APP_DIR || '/var/www/dreamcore' }}
+          SHA: ${{ github.sha }}
+        run: |
+          mkdir -p ~/.ssh
+          # 用 env 中转而不是直接内插，避免密钥里的特殊字符被 shell 解释
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # 部署可能要跑几分钟（npm ci + 构建），给足保活
+          ssh -i ~/.ssh/deploy_key -p "$SSH_PORT" \
+              -o StrictHostKeyChecking=accept-new \
+              -o ConnectTimeout=20 \
+              -o ServerAliveInterval=30 \
+              -o ServerAliveCountMax=20 \
+              "$SSH_USER@$HOST" \
+              "cd '$APP_DIR' && TARGET_SHA='$SHA' bash scripts/server/deploy-on-server.sh"

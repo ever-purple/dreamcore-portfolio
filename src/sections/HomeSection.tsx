@@ -447,7 +447,7 @@ export function HomeSection({
     <section id="home" ref={containerRef} className="relative h-[300vh]">
       <div
         ref={innerRef}
-        className={`sticky top-0 h-screen w-full overflow-hidden bg-[#3b2b21] transition-opacity duration-300 ${
+        className={`sticky top-0 h-screen w-full overflow-hidden bg-[#0a0a0a] transition-opacity duration-300 ${
           leaving ? 'opacity-0' : 'opacity-100'
         }`}
       >

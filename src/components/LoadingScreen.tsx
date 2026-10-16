@@ -190,7 +190,7 @@ export function LoadingScreen({ ready, progress, onEnter }: LoadingScreenProps) 
   return (
     <div
       ref={rootRef}
-      className={`fixed inset-0 z-[10000] flex items-center justify-center bg-[#3b2b21] text-[#faf6e8] ${leaving ? 'pointer-events-none' : ''}`}
+      className={`fixed inset-0 z-[10000] flex items-center justify-center bg-[#0a0a0a] text-[#faf6e8] ${leaving ? 'pointer-events-none' : ''}`}
       aria-label={`页面正在加载，${roundedProgress}%：${currentLog.text}`}
     >
       <RiftVisual progress={shown} log={currentLog} />

@@ -719,14 +719,14 @@ function App() {
 
   // HTML、loading、App 与首页使用同一块底色；冷启动和遮罩淡出时不再跨色闪烁。
   return (
-    <div className="relative min-h-screen bg-[#3b2b21]">
+    <div className="relative min-h-screen bg-[#0a0a0a]">
       {stage === 'home' ? (
         <>
           {!entered && (
             // 首窗 8 帧就绪即可进入；其余序列帧在首页后台顺序加载。
             <LoadingScreen ready={readyToEnter} progress={progress} onEnter={handleEnter} />
           )}
-          <Suspense fallback={<div className="fixed inset-0 bg-[#3b2b21]" aria-hidden="true" />}>
+          <Suspense fallback={<div className="fixed inset-0 bg-[#0a0a0a]" aria-hidden="true" />}>
             <HomeSection
               images={images}
               ready={framesComplete}

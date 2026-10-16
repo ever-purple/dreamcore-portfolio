@@ -47,14 +47,12 @@
     />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content="https://portfolio-ten-blush-61.vercel.app/og/card-share-wide.png" />
-    <meta name="theme-color" content="#3b2b21" />
-    <!-- 首屏防闪：CSS 包（含 body 的 bg-wine=#3b2b21）还没下载解析时，浏览器默认
-         画白底 / 上面的 theme-color 薄荷绿，慢网（海外机房）下这层会先暴露好几秒，
-         React 挂载后再跳成巧克力色 = 用户看到的「屏闪」。这里内联同款深色底，
-         让 html/body 从 HTML 落地那一刻起就是站点色，前后零跳变。 -->
+    <meta name="theme-color" content="#0a0a0a" />
+    <!-- 首屏防闪：CSS 和 React 还没就绪时先由 HTML 铺同款近黑底，
+         避免浏览器默认白底 → Loading 黑底的跨色跳变。 -->
     <style>
       html, body {
-        background-color: #3b2b21;
+        background-color: #0a0a0a;
       }
     </style>
 
@@ -102,7 +100,7 @@
       })();
     </script>
   </head>
-  <body>
+  <body style="background-color: #0a0a0a">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

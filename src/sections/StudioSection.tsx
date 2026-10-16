@@ -460,41 +460,25 @@ export function StudioSection({ entryTarget = 'studio', entryPlanSlot = null, on
     later(460, () => setCrtOn(true)); // OS 铺满后再收房间 + 点亮 CRT 质感层
   }, [aboutOpen, later]);
 
-  /** 关掉 Green OS → 反向 Zoom Out，CRT 质感层淡出，平滑回到房间视角 */
+  /** 关掉 Green OS：原子化复位所有全局 CRT / 镜头状态，稳定回到房间。 */
   const closeCrt = useCallback(() => {
-    // 先把"打开时还挂着"的定时器全部清掉（比如面试官模式那个 460ms 后才收房间的），
-    // 否则它会在关闭之后才触发，把已经关掉的 CRT 层又点亮一次。
-    // 清完再排下面这套关闭步骤，所以自己的定时器不受影响。
+    // Green OS 旧退出同时操作全屏闪光、16 倍 transform/filter、
+    // 房间 visibility 和 CRT 抖动层。这些都作用在工作室的共享背景上，
+    // 所以会继续影响退出后打开的其他页面。
     timersRef.current.forEach(window.clearTimeout);
     timersRef.current = [];
     setSkipBoot(false);
     playCrtOff();
-    /**
-     * 关键修复 —— "关闭后 3D 与 2D 重叠交错" 的根因：
-     * 旧实现让 2D OS 慢吞吞地淡出（0.34s），而镜头拉远要 700ms，于是有很长的重叠窗口：
-     * 半透明的 2D 页面 + 被放大到 16 倍、还带 brightness(1.66)/blur(3.2px) 的 3D 房间
-     * 同时可见、同时在动 = 叠影 / 交错。
-     *
-     * 现在改成和"开机推进"镜像的收场：
-     *   t=0       立刻打一道过曝闪光（既是断电白斑，也是即时视觉反馈），同时把 Green OS
-     *             的淡出从 0.34s 压到 0.12s（见 CSS `.is-greenos.is-closing`）—— 比白光的
-     *             0.13s 还短，所以 2D 在白光褪去前就已彻底消失；房间等白光爬满（~25ms）
-     *             再显形，从 scale(16) 的模糊态开始拉回。
-     *   0–0.13s   白光盖住"2D 消失"这一帧
-     *   0–0.70s   房间从贴屏的放大态平滑拉回 1:1（与开机推进互为镜像）
-     *   0.70s     到位：解锁感应区、恢复背景音乐
-     * 结果：2D 与 3D 在时间轴上完全不重叠，旧版那段 ~600ms 的叠影窗口被彻底消掉。
-     */
-    setCrtFlash(true); // 断电白斑 + 遮住 2D→3D 的切换瞬间
-    setDive('out'); // 房间从 scale(16) 拉回 1:1
-    setAboutOpen(false); // Green OS 快速淡出（CSS 里 .is-greenos.is-closing 只需 0.12s）
-    // 等白光爬满全屏（~18ms）再把房间放出来 —— 否则白光还没盖住，放大 16 倍的房间就先露脸了。
-    later(25, () => setCrtOn(false));
-    later(130, () => setCrtFlash(false));
-    later(T.out, () => setDive('idle'));
-    later(T.out + 30, () => setViaCrt(false));
-    // 音乐不在这里手动恢复：dive 回 'idle' 后由 musicCue 自己把音乐拉回前台
-  }, [later]);
+    setCrtFlash(false);
+    setAboutOpen(false);
+    setCrtOn(false);
+    setDive('idle');
+    setViaCrt(false);
+    // effect 会在 React 提交后清理；这里同步摘掉全局类，避免闪烁层
+    // 或开机层多存活一个浏览器画面。
+    document.body.classList.remove('green-os', 'green-boot-on');
+    // 音乐由 musicCue 在状态回到 idle 后恢复。
+  }, []);
 
   /**
    * 打开某个物件的内容 —— **先推镜头，再长内容**（2026-09-16 第一档改造 ②）。

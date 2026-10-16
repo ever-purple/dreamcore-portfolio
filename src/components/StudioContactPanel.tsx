@@ -14,6 +14,30 @@ import { ShareCardOverlay } from '@/components/ShareCardOverlay';
 import { CONTACT } from '@/data/contact';
 
 /**
+ * ICP 备案号 —— 备案通过后填这里，页脚会自动出现。
+ *
+ * 2026-10-04 建：服务器还没买、备案还没提，所以先留空字符串。
+ * 留空时页脚不渲染任何东西（不会出现空链接或占位符）。
+ *
+ * ⚠️ 拿到备案号后的两步：
+ *   1. 把号填进下面引号里，**含「京ICP备」前缀，与证件完全一致**
+ *      例：export const ICP_LICENSE = '京ICP备2026012345号-1';
+ *   2. 提交推送，等自动部署完成
+ *
+ * ⚠️ 为什么必须有这个链接：管局要求备案号**在网站首页底部可见且可点击**，
+ *    链接必须指向 https://beian.miit.gov.cn/ —— 抽查时会点它。
+ *    只有数字、没有超链接，属于不合规。
+ */
+const ICP_LICENSE = '鲁ICP备2026026728号-2';
+
+/**
+ * 公安联网备案号 —— ICP 通过后 **30 天内**要办的第二道备案。
+ * 办完同样填这里（例：'京公网安备11010502012345号'）。
+ * 同样留空即不渲染。
+ */
+const POLICE_LICENSE = '';
+
+/**
  * 工作室房间 → 向下滚动露出「联系方式」（2026-09-16 第六轮 / 用户第 2 条需求）。
  *
  * ## 需求与参考
@@ -682,6 +706,39 @@ export const StudioContactPanel = forwardRef<StudioContactHandle, Props>(functio
                   少一个兄弟后 Credits 会被甩到左端；已改成 flex-end 让它留在原位。 */}
           <div className="studio-contact__meta-row">
             <span>Credits</span>
+            {/* ─────────────────────────────────────────────────────────
+                ICP 备案号 —— 备案通过后**必须**在页脚露出，且必须是
+                指向 https://beian.miit.gov.cn/ 的可点击超链接（管局会核查）。
+
+                2026-10-04 先占位：号还没下来，所以留空 → 整段不渲染。
+                **拿到备案号后，只改下面 ICP_LICENSE 这一行即可**，
+                不用动结构。写法要和证件上完全一致，含「京ICP备」前缀。
+                例：const ICP_LICENSE = '京ICP备2026012345号-1';
+                ───────────────────────────────────────────────────────── */}
+            {ICP_LICENSE && (
+              <a
+                className="studio-contact__icp"
+                href="https://beian.miit.gov.cn/"
+                target="_blank"
+                rel="noopener noreferrer"
+                /* 内联样式：不为这一行去动 index.css（那边有别处的未提交改动） */
+                style={{ color: 'inherit', textDecoration: 'none' }}
+              >
+                {ICP_LICENSE}
+              </a>
+            )}
+            {/* 公安联网备案（ICP 通过后 30 天内办，见文件顶部常量注释） */}
+            {POLICE_LICENSE && (
+              <a
+                className="studio-contact__police"
+                href="https://beian.mps.gov.cn/"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: 'inherit', textDecoration: 'none' }}
+              >
+                {POLICE_LICENSE}
+              </a>
+            )}
           </div>
         </div>
       </div>

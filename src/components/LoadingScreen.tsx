@@ -142,11 +142,22 @@ export function LoadingScreen({ ready, progress, onEnter }: LoadingScreenProps) 
     return () => cancelAnimationFrame(raf);
   }, [previewMode, progress, ready, startDt]);
 
-  // 进度到 100% 且素材到齐、也过了最短可见时间，才开始淡出
+  // 进度到 100% 且素材到齐、也过了最短可见时间，才开始淡出。
+  // 多等两次绘制机会，让下面的首页 canvas 先把首帧真正画出来；否则 loading
+  // 一透明，浏览器会短暂露出尚未绘制的底色，看起来像整页闪了一次。
   useEffect(() => {
-    if (!previewMode && ready && shown >= 99.5 && !leaving && Date.now() - startDt >= MIN_VISIBLE) {
-      setLeaving(true);
-    }
+    if (previewMode || !ready || shown < 99.5 || leaving || Date.now() - startDt < MIN_VISIBLE) return;
+
+    let firstFrame = 0;
+    let secondFrame = 0;
+    firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => setLeaving(true));
+    });
+
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      window.cancelAnimationFrame(secondFrame);
+    };
   }, [previewMode, ready, shown, leaving, tick, startDt]);
 
   // tick 只负责在最短可见时间到点后，把上面那个判断再跑一次
@@ -179,7 +190,7 @@ export function LoadingScreen({ ready, progress, onEnter }: LoadingScreenProps) 
   return (
     <div
       ref={rootRef}
-      className={`fixed inset-0 z-[10000] flex items-center justify-center bg-transparent text-[#faf6e8] ${leaving ? 'pointer-events-none' : ''}`}
+      className={`fixed inset-0 z-[10000] flex items-center justify-center bg-[#3b2b21] text-[#faf6e8] ${leaving ? 'pointer-events-none' : ''}`}
       aria-label={`页面正在加载，${roundedProgress}%：${currentLog.text}`}
     >
       <RiftVisual progress={shown} log={currentLog} />

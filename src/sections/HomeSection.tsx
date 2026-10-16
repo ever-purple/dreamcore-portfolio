@@ -249,7 +249,9 @@ export function HomeSection({
 
   // 滚动驱动：逻辑用原始进度（响应即时），视觉用帧率无关指数平滑（丝滑）
   useEffect(() => {
-    if (!entered || !ready || !containerRef.current) return;
+    // loading 层仍盖着时就先把首帧画进 canvas。这样遮罩淡出时下面已经是完整
+    // 首页画面，而不是先露底色、等 onEnter 后才突然出现画面。
+    if (!ready || !containerRef.current) return;
 
     const container = containerRef.current;
 
@@ -367,7 +369,7 @@ export function HomeSection({
       window.removeEventListener('resize', resizeCanvas);
       cancelAnimationFrame(rafRef.current);
     };
-  }, [entered, ready, images, setDownBlocked, onFrameFocus]);
+  }, [ready, images, setDownBlocked, onFrameFocus]);
 
   // 待机呼吸：房间在静止时也缓慢缩放，像在"呼吸"，消除死板感
   useEffect(() => {
@@ -445,7 +447,7 @@ export function HomeSection({
     <section id="home" ref={containerRef} className="relative h-[300vh]">
       <div
         ref={innerRef}
-        className={`sticky top-0 h-screen w-full overflow-hidden bg-[#0a0a0a] transition-opacity duration-300 ${
+        className={`sticky top-0 h-screen w-full overflow-hidden bg-[#3b2b21] transition-opacity duration-300 ${
           leaving ? 'opacity-0' : 'opacity-100'
         }`}
       >

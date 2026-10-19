@@ -360,6 +360,128 @@ function drawPlaceholder(ctx: CanvasRenderingContext2D, w: number, h: number, i:
   paper(ctx, w, h);
 }
 
+/**
+ * 「个人实验作品」入口封面（cover=4）。
+ *
+ * 这是整个实验档案的入口，后续会容纳多个产品，因此封面只呈现通用的
+ * CREATIVE LAB / PERSONAL EXPERIMENT ARCHIVE 身份，不提前写具体产品名。
+ * 视觉沿用产品页的 X 光底片、冷银金属和薄荷扫描色，在书架的小尺寸下
+ * 仍以大面积放射标本和醒目的英文入口标题建立识别度。
+ */
+function drawExperimentArchiveCover(ctx: CanvasRenderingContext2D, w: number, h: number) {
+  const mint = '#b7fff1';
+  const mintSoft = 'rgba(183,255,241,.48)';
+  const silver = '#d8e4e7';
+  const pad = w * 0.072;
+
+  // 深蓝黑底片：边缘更暗，中心保留扫描透光。
+  const base = ctx.createLinearGradient(0, 0, w, h);
+  base.addColorStop(0, '#050b12');
+  base.addColorStop(.46, '#071b27');
+  base.addColorStop(1, '#02070c');
+  ctx.fillStyle = base;
+  ctx.fillRect(0, 0, w, h);
+
+  const glow = ctx.createRadialGradient(w * .48, h * .46, 0, w * .48, h * .46, w * .54);
+  glow.addColorStop(0, 'rgba(97,220,223,.24)');
+  glow.addColorStop(.42, 'rgba(32,112,137,.13)');
+  glow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, w, h);
+
+  // 冷银双层机械框。
+  ctx.strokeStyle = 'rgba(216,228,231,.78)';
+  ctx.lineWidth = Math.max(1, w * .004);
+  ctx.strokeRect(pad, pad, w - pad * 2, h - pad * 2);
+  ctx.strokeStyle = 'rgba(183,255,241,.24)';
+  ctx.strokeRect(pad + w * .018, pad + w * .018, w - pad * 2 - w * .036, h - pad * 2 - w * .036);
+
+  // 顶部档案身份。
+  ctx.fillStyle = silver;
+  ctx.font = `600 ${w * .041}px ${SANS}`;
+  tracked(ctx, 'CREATIVE LAB', pad * 1.45, pad * 1.92, w * .014);
+  ctx.fillStyle = mintSoft;
+  ctx.font = `500 ${w * .021}px ${SANS}`;
+  tracked(ctx, 'PERSONAL EXPERIMENT ARCHIVE', pad * 1.45, pad * 2.55, w * .006);
+
+  // 中央 X 光标本：用一组透明椭圆、骨节与扫描切片构成，不绑定某个产品。
+  ctx.save();
+  ctx.translate(w * .50, h * .47);
+  ctx.rotate(-.13);
+  ctx.globalCompositeOperation = 'screen';
+  ctx.shadowColor = 'rgba(126,244,235,.72)';
+  ctx.shadowBlur = w * .055;
+
+  const rings = [
+    { rx: .29, ry: .15, y: -.07, a: .76 },
+    { rx: .24, ry: .12, y: .04, a: .62 },
+    { rx: .18, ry: .09, y: .14, a: .52 },
+  ];
+  rings.forEach((ring, index) => {
+    ctx.beginPath();
+    ctx.ellipse(0, h * ring.y, w * ring.rx, h * ring.ry, 0, Math.PI, Math.PI * 2);
+    ctx.strokeStyle = index === 0 ? `rgba(183,255,241,${ring.a})` : `rgba(88,184,202,${ring.a})`;
+    ctx.lineWidth = w * (index === 0 ? .018 : .013);
+    ctx.stroke();
+  });
+
+  // 中轴与骨节节点，形成放射透视结构。
+  ctx.strokeStyle = 'rgba(196,255,246,.72)';
+  ctx.lineWidth = w * .012;
+  ctx.beginPath();
+  ctx.moveTo(0, -h * .25);
+  ctx.bezierCurveTo(-w * .055, -h * .12, w * .06, h * .07, 0, h * .24);
+  ctx.stroke();
+  for (let n = 0; n < 7; n++) {
+    const y = -h * .205 + n * h * .069;
+    const x = Math.sin(n * 1.25) * w * .018;
+    ctx.fillStyle = n % 2 ? 'rgba(183,255,241,.88)' : 'rgba(88,184,202,.8)';
+    ctx.beginPath();
+    ctx.ellipse(x, y, w * .022, h * .012, -.12, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // 横向扫描切片与定位点，强化医疗影像语义。
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  for (let i = 0; i < 8; i++) {
+    const y = h * (.30 + i * .047);
+    ctx.fillStyle = i === 4 ? 'rgba(183,255,241,.28)' : 'rgba(88,184,202,.075)';
+    ctx.fillRect(pad * 1.35, y, w - pad * 2.7, i === 4 ? 3 : 1);
+  }
+  ctx.restore();
+
+  // 四角定位标识。
+  ctx.strokeStyle = mint;
+  ctx.lineWidth = w * .009;
+  const mark = w * .05;
+  const mx = pad * 1.35;
+  const my = h * .255;
+  [[mx, my, 1, 1], [w - mx, my, -1, 1], [mx, h * .685, 1, -1], [w - mx, h * .685, -1, -1]].forEach(([x, y, sx, sy]) => {
+    ctx.beginPath();
+    ctx.moveTo(x, y + sy * mark);
+    ctx.lineTo(x, y);
+    ctx.lineTo(x + sx * mark, y);
+    ctx.stroke();
+  });
+
+  // 底部参数带与入口标题。这里不放编号，也不绑定某个具体产品。
+  ctx.fillStyle = 'rgba(183,255,241,.13)';
+  ctx.fillRect(pad, h * .735, w - pad * 2, h * .16);
+  ctx.strokeStyle = 'rgba(183,255,241,.34)';
+  ctx.strokeRect(pad, h * .735, w - pad * 2, h * .16);
+  ctx.fillStyle = mint;
+  ctx.font = `600 ${w * .052}px ${SANS}`;
+  tracked(ctx, 'EXPERIMENTAL', pad * 1.42, h * .787, w * .007);
+  ctx.fillStyle = silver;
+  ctx.font = `500 ${w * .091}px ${SANS}`;
+  tracked(ctx, 'PRODUCTS', pad * 1.42, h * .866, w * .012);
+  barcode(ctx, w - pad * 3.55, h * .754, pad * 2.05, h * .018, mint);
+
+  paper(ctx, w, h, .035);
+}
+
 const CW = 512;
 const CH = 716;
 /** 封面宽高比，供将来校验真封面尺寸 */
@@ -391,8 +513,9 @@ export function coverTexture(i: number, onReal?: (tex: THREE.Texture) => void): 
   placeholder.colorSpace = THREE.SRGBColorSpace;
   placeholder.anisotropy = 8;
   if (ctx) {
-    // 第一本书（cover=1）＝「文案」主题插画封面；其余保持占位（2026-09-22）
+    // cover=1 为文案入口；cover=4 为容纳多个产品的个人实验作品入口。
     if (i === 1) drawCopywritingCover(ctx, CW, CH);
+    else if (i === 4) drawExperimentArchiveCover(ctx, CW, CH);
     else drawPlaceholder(ctx, CW, CH, key);
   }
   placeholder.needsUpdate = true;

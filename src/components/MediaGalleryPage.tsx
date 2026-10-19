@@ -96,6 +96,8 @@ type Props = {
   /** 进入入口的频道 —— **只决定初始定位**（DVD→第一条横屏 / DV→第一条 AI / MP3→第一条竖屏），
       不再过滤列表：三个入口看到的是同一份全量循环片单（2026-09-21）。 */
   channel?: MediaChannel;
+  /** 快速版点击具体作品时，直接定位到该作品。 */
+  initialWorkId?: string;
   onClose: () => void;
 };
 
@@ -133,7 +135,7 @@ const BURST_MS = 160;
 const fmt = (s: number) =>
   `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
-export function MediaGalleryPage({ channel, onClose }: Props) {
+export function MediaGalleryPage({ channel, initialWorkId, onClose }: Props) {
   /**
    * 片单 = 属于当前频道的作品。
    * **没标 `channel` 的作品在任何频道都显示** —— 现在 AI 频道还没有片子（第二条频道），
@@ -150,7 +152,10 @@ export function MediaGalleryPage({ channel, onClose }: Props) {
   const copies = 3;
   const nodes = total * copies;
   /** 进门位置：DVD→第一条横屏 / DV→第一条 AI(没有就落插入点) / MP3→第一条竖屏 */
-  const startIndex = useMemo(() => startIndexFor(channel), [channel]);
+  const startIndex = useMemo(() => {
+    const requestedIndex = initialWorkId ? list.findIndex((work) => work.id === initialWorkId) : -1;
+    return requestedIndex >= 0 ? requestedIndex : startIndexFor(channel);
+  }, [channel, initialWorkId, list]);
   /** 逻辑下标（0..n-1：信息块 / 刻度尺用） */
   const [index, setIndex] = useState(startIndex);
   /** 绝对下标（0..3n-1：哪一格在屏幕中间 / 哪一格在播） */

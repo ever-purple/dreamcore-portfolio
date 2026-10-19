@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-labelledby="title description">
+  <title id="title">FIRST MIX 产品体验闭环地图</title>
+  <desc id="description">零经验用户从 00 课开始，在打碟台实际操作并听见第一次 A 到 B 的转场，然后录制、回看、继续练习。AI 教练提供解释与提示，确定性逻辑负责声音和完成判定。</desc>
+  <defs>
+    <style>
+      .ground{fill:#f7f6f2}.ink{fill:#1f2031}.muted{fill:#686979}.violet{fill:#7953d7}.rule{stroke:#d8d5dd;stroke-width:2}.card{fill:#fff;stroke:#dfdce5;stroke-width:2}.card-focus{fill:#f2edff;stroke:#b9a4f1;stroke-width:2}.card-result{fill:#d7ff7a;stroke:#9bd927;stroke-width:2}.card-soft{fill:#e9f2f5;stroke:#bfd7e2;stroke-width:2}.path{fill:none;stroke:#7953d7;stroke-width:4;stroke-linecap:round;stroke-linejoin:round}.loop{fill:none;stroke:#8c80ad;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}.support{fill:#fff;stroke:#d8d5dd;stroke-width:2}.cn{font-family:'Microsoft YaHei UI','PingFang SC',Arial,sans-serif}.latin{font-family:Arial,sans-serif;letter-spacing:3px}.num{font-family:Arial,sans-serif;font-weight:700}
+    </style>
+    <marker id="arrow" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="9" markerHeight="9" orient="auto"><path d="M1 1 11 6 1 11" fill="none" stroke="#7953d7" stroke-width="2" stroke-linejoin="round"/></marker>
+    <marker id="arrow-loop" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="9" markerHeight="9" orient="auto"><path d="M1 1 11 6 1 11" fill="none" stroke="#8c80ad" stroke-width="2" stroke-linejoin="round"/></marker>
+  </defs>
+  <rect class="ground" width="1600" height="900"/>
+  <circle cx="1447" cy="105" r="10" fill="#7953d7" opacity=".35"/><circle cx="1482" cy="105" r="10" fill="#7953d7" opacity=".2"/><circle cx="1517" cy="105" r="10" fill="#7953d7" opacity=".12"/>
+  <text x="84" y="74" class="latin muted" font-size="20">FIRST MIX / CASE STUDY</text>
+  <text x="1362" y="74" class="latin violet" font-size="19">MAP 01</text>
+  <line x1="84" y1="101" x2="1516" y2="101" class="rule"/>
+  <text x="84" y="171" class="cn ink" font-size="51" font-weight="700">产品体验闭环</text>
+  <text x="84" y="220" class="cn muted" font-size="25">把“学会打碟”缩成一件可以亲手完成、亲耳听见的事。</text>
+
+  <path d="M311 421H352M611 421H652M955 421H996M1257 421H1298" class="path" marker-end="url(#arrow)"/>
+
+  <g class="cn">
+    <rect x="84" y="283" width="227" height="274" rx="24" class="card"/>
+    <text x="111" y="323" class="latin violet" font-size="18">START</text>
+    <text x="111" y="390" class="ink" font-size="30" font-weight="700">有点好奇</text>
+    <text x="111" y="439" class="muted" font-size="21">零经验，也想</text>
+    <text x="111" y="473" class="muted" font-size="21">试着打一次碟</text>
+    <circle cx="281" cy="524" r="17" fill="#ece9f2"/><text x="281" y="530" text-anchor="middle" class="num violet" font-size="17">0</text>
+
+    <rect x="352" y="283" width="259" height="274" rx="24" class="card-focus"/>
+    <text x="380" y="323" class="latin violet" font-size="18">LEARN / 00</text>
+    <text x="380" y="390" class="ink" font-size="30" font-weight="700">第一个动作</text>
+    <text x="380" y="439" class="muted" font-size="21">00 课一次只给</text>
+    <text x="380" y="473" class="muted" font-size="21">一个可执行的提示</text>
+    <circle cx="580" cy="524" r="17" fill="#dfd4fb"/><text x="580" y="530" text-anchor="middle" class="num violet" font-size="17">1</text>
+
+    <rect x="652" y="283" width="303" height="274" rx="24" class="card-soft"/>
+    <text x="681" y="323" class="latin violet" font-size="18">PRACTICE</text>
+    <text x="681" y="390" class="ink" font-size="30" font-weight="700">动手操作</text>
+    <text x="681" y="439" class="muted" font-size="21">双 Deck 的按钮与推子</text>
+    <text x="681" y="473" class="muted" font-size="21">真实改变播放的声音</text>
+    <circle cx="924" cy="524" r="17" fill="#d4e8ee"/><text x="924" y="530" text-anchor="middle" class="num violet" font-size="17">2</text>
+
+    <rect x="996" y="283" width="261" height="274" rx="24" class="card-result"/>
+    <text x="1024" y="323" class="latin ink" font-size="18">FIRST MIX</text>
+    <text x="1024" y="390" class="ink" font-size="30" font-weight="700">听见交接</text>
+    <text x="1024" y="439" class="ink" font-size="21">让声音从 Deck A</text>
+    <text x="1024" y="473" class="ink" font-size="21">过渡到 Deck B</text>
+    <circle cx="1226" cy="524" r="17" fill="#b7ed53"/><text x="1226" y="530" text-anchor="middle" class="num ink" font-size="17">3</text>
+
+    <rect x="1298" y="283" width="218" height="274" rx="24" class="card"/>
+    <text x="1325" y="323" class="latin violet" font-size="18">MY SPACE</text>
+    <text x="1325" y="390" class="ink" font-size="30" font-weight="700">留下作品</text>
+    <text x="1325" y="439" class="muted" font-size="21">录制、备注、回看</text>
+    <text x="1325" y="473" class="muted" font-size="21">再做下一次练习</text>
+    <circle cx="1484" cy="524" r="17" fill="#ece9f2"/><text x="1484" y="530" text-anchor="middle" class="num violet" font-size="17">4</text>
+  </g>
+
+  <path d="M1407 557v47q0 30-30 30H824q-28 0-28-28v-49" class="loop" marker-end="url(#arrow-loop)"/>
+  <rect x="994" y="606" width="207" height="51" rx="25" fill="#f7f6f2"/>
+  <text x="1098" y="639" text-anchor="middle" class="cn muted" font-size="20">回看后，继续练习</text>
+
+  <line x1="84" y1="693" x2="1516" y2="693" class="rule"/>
+  <rect x="84" y="724" width="691" height="111" rx="19" class="support"/>
+  <circle cx="121" cy="760" r="12" fill="#7953d7"/>
+  <text x="146" y="768" class="cn ink" font-size="25" font-weight="700">AI 教练</text>
+  <text x="110" y="809" class="cn muted" font-size="20">根据当前操作解释和提示，不替用户操作。</text>
+  <rect x="800" y="724" width="716" height="111" rx="19" class="support"/>
+  <circle cx="837" cy="760" r="12" fill="#a7da42"/>
+  <text x="862" y="768" class="cn ink" font-size="25" font-weight="700">确定性逻辑</text>
+  <text x="826" y="809" class="cn muted" font-size="20">负责音频状态、控件反馈与课程完成判定。</text>
+</svg>

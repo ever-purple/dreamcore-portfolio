@@ -695,6 +695,20 @@ export const StudioContactPanel = forwardRef<StudioContactHandle, Props>(functio
             ))}
           </div>
 
+          <a
+            className="studio-contact__xiaohongshu"
+            href="https://www.xiaohongshu.com/user/profile/65e69637000000000d025c76"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="访问小红书主页"
+            title="小红书"
+          >
+            <span className="studio-contact__xiaohongshu-mark" aria-hidden="true">
+              <img src="/contact/xiaohongshu.png" alt="" />
+            </span>
+            <span>小红书</span>
+          </a>
+
         </div>
 
         {/* 压在纸底的那一行小字 + 发丝线（同参考站页脚） */}

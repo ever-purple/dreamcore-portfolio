@@ -30,6 +30,24 @@ function loadConfig() {
   }
 }
 
+function configuredSites(cfg) {
+  const rows = Array.isArray(cfg.sites) ? cfg.sites : [];
+  const normalized = rows
+    .filter((row) => row && typeof row.url === 'string' && /^https?:\/\//.test(row.url))
+    .map((row, index) => ({
+      id: String(row.id || `site-${index + 1}`),
+      label: String(row.label || row.url),
+      url: row.url.replace(/\/+$/, ''),
+    }));
+  if (normalized.length) return normalized;
+  return [{ id: 'default', label: '当前网站', url: String(cfg.site || 'https://www.everpurple.top').replace(/\/+$/, '') }];
+}
+
+function pickSite(cfg, requested) {
+  const sites = configuredSites(cfg);
+  return sites.find((site) => site.id === requested) || sites[0];
+}
+
 function httpJson(url, { method = 'GET', headers = {}, body = null } = {}) {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
@@ -65,20 +83,20 @@ const jsonReply = (res, code, obj) => {
 };
 
 // ---------- 各数据源 ----------
-async function fetchVisitLog(cfg) {
-  const url = `${cfg.site}/api/visitlog?key=${encodeURIComponent(cfg.adminKey)}`;
+async function fetchVisitLog(cfg, site) {
+  const url = `${site.url}/api/visitlog?key=${encodeURIComponent(cfg.adminKey)}`;
   const r = await httpJson(url);
   return r.json;
 }
 
-async function fetchGuestbook(cfg) {
-  const url = `${cfg.site}/api/guestbook?key=${encodeURIComponent(cfg.adminKey)}`;
+async function fetchGuestbook(cfg, site) {
+  const url = `${site.url}/api/guestbook?key=${encodeURIComponent(cfg.adminKey)}`;
   const r = await httpJson(url);
   return r.json;
 }
 
-async function fetchAdmin(cfg) {
-  const url = `${cfg.site}/api/admin?key=${encodeURIComponent(cfg.adminKey)}`;
+async function fetchAdmin(cfg, site) {
+  const url = `${site.url}/api/admin?key=${encodeURIComponent(cfg.adminKey)}`;
   const r = await httpJson(url);
   return r.json;
 }
@@ -124,6 +142,7 @@ const server = http.createServer(async (req, res) => {
   const cfg = loadConfig();
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const p = url.pathname;
+  const site = pickSite(cfg, url.searchParams.get('site'));
 
   // 静态资源：前端页面
   if (p === '/' || p === '/index.html') {
@@ -139,24 +158,26 @@ const server = http.createServer(async (req, res) => {
       jsonReply(res, 200, {
         hasToken: Boolean(cfg.vercelToken),
         hasAdminKey: Boolean(cfg.adminKey),
-        site: cfg.site,
+        site: site.url,
+        activeSite: site.id,
+        sites: configuredSites(cfg),
         projectId: cfg.projectId,
         teamId: cfg.teamId,
       });
       return;
     }
     if (p === '/api/visitlog') {
-      const data = await fetchVisitLog(cfg);
+      const data = await fetchVisitLog(cfg, site);
       jsonReply(res, 200, data);
       return;
     }
     if (p === '/api/guestbook') {
-      const data = await fetchGuestbook(cfg);
+      const data = await fetchGuestbook(cfg, site);
       jsonReply(res, 200, data);
       return;
     }
     if (p === '/api/admin') {
-      const data = await fetchAdmin(cfg);
+      const data = await fetchAdmin(cfg, site);
       jsonReply(res, 200, data);
       return;
     }

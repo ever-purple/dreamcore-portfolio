@@ -188,6 +188,7 @@ export default function NewsstandScene({ open, covered = false, onClose, onPick 
   const [closing, setClosing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
+  const [hoverHint, setHoverHint] = useState('');
   const pointerInsideRef = useRef(false);
   /**
    * onPick 用 ref 镜像：建场景的 effect 只在 mounted 变化时跑一次，
@@ -299,6 +300,8 @@ export default function NewsstandScene({ open, covered = false, onClose, onPick 
        * 'books' = 下层三本书（第二排 → 文案/AI）。点开时据此决定进哪个页面。
        */
       row: 'devices' | 'books';
+      /** 第三本目前只陈列，不响应悬停或点击。 */
+      enabled: boolean;
       /** 设备序号（0 DVD / 1 DV / 2 MP3）；书架恒为 0 —— 决定进哪个片单 */
       deviceIndex: number;
       baseY: number;
@@ -441,6 +444,7 @@ export default function NewsstandScene({ open, covered = false, onClose, onPick 
         group: holder,
         label: spot.file,
         row: 'devices', // 顶层三件设备 = 第一排 → 视频/音乐页
+        enabled: true,
         // 从左到右 0 DVD / 1 DV / 2 MP3 —— 三台设备各进一个片单
         deviceIndex: Math.max(0, DEVICE_SLOTS.indexOf(spot)),
         baseY: holder.position.y,
@@ -574,7 +578,7 @@ export default function NewsstandScene({ open, covered = false, onClose, onPick 
 
         /* 下层书籍：完整展示（程序化生成，每本独立 canvas 封面） */
         BOOK_ROWS.forEach((row) => {
-          row.books.forEach((spec) => {
+          row.books.forEach((spec, bookIndex) => {
             const book = createBook(spec);
             book.position.set(spec.x, row.lipY, row.z);
             // 绕书脚微微后仰（参考图 A 字架姿态），封面正对镜头
@@ -613,7 +617,8 @@ export default function NewsstandScene({ open, covered = false, onClose, onPick 
               pickObj: proxy,
               label: `book:${spec.cover}`,
               row: 'books', // 下层三本书 = 第二排 → 文案/AI 项目页
-              deviceIndex: 0, // 书架不分流
+              enabled: bookIndex < 2,
+              deviceIndex: bookIndex,
               baseY: book.position.y,
               baseZ: book.position.z,
               baseScale: 1,
@@ -921,17 +926,27 @@ export default function NewsstandScene({ open, covered = false, onClose, onPick 
         missStreak = 0;
         if (g === hovered) return;
         hovered = g;
+        const item = hoverItems.find((b) => b.group === g);
+        if (!item?.enabled) {
+          setHoverHint('');
+        } else if (item.row === 'devices') {
+          setHoverHint(['查看横屏视频', '查看AI视频', '查看竖屏视频'][item.deviceIndex] ?? '查看视频');
+        } else {
+          setHoverHint(item.deviceIndex === 0 ? '查看文案' : '查看个人实验作品');
+        }
       } else if (hovered) {
         missStreak += 1;
         if (missStreak < HOVER_MISS_STREAK) return; // 滞回：偶发脱靶不掉 hover
         missStreak = 0;
         hovered = null;
+        setHoverHint('');
       } else {
         return; // 本来就没悬停，也无命中
       }
-      renderer.domElement.style.cursor = hovered ? 'pointer' : '';
+      const activeItem = hoverItems.find((b) => b.group === hovered);
+      renderer.domElement.style.cursor = activeItem?.enabled ? 'pointer' : '';
       hoverItems.forEach((b) => {
-        b.target = b.group === hovered ? b.liftAmount : 0;
+        b.target = b.enabled && b.group === hovered ? b.liftAmount : 0;
       });
     };
     const onPointerLeave = () => {
@@ -940,6 +955,7 @@ export default function NewsstandScene({ open, covered = false, onClose, onPick 
       rotateState.targetY = 0;
       rotateState.targetX = 0;
       resetHover();
+      setHoverHint('');
     };
 
     /**
@@ -959,7 +975,7 @@ export default function NewsstandScene({ open, covered = false, onClose, onPick 
       const g = hitsItem(e.clientX, e.clientY);
       if (!g) return;
       const item = hoverItems.find((b) => b.group === g);
-      if (item) onPickRef.current?.(item.row, item.deviceIndex);
+      if (item?.enabled) onPickRef.current?.(item.row, item.deviceIndex);
     };
     renderer.domElement.addEventListener('pointermove', onPointerMove);
     renderer.domElement.addEventListener('pointerleave', onPointerLeave);
@@ -1050,6 +1066,10 @@ export default function NewsstandScene({ open, covered = false, onClose, onPick 
       <div className="newsstand-contact" aria-hidden="true" />
 
       <div className="newsstand-canvas-host" ref={hostRef} />
+
+      <div className={`newsstand-pick-hint${hoverHint ? ' is-visible' : ''}`} aria-live="polite">
+        {hoverHint}
+      </div>
 
       {/* 统一外壳（第一档改造 ①）：左上「RETURN TO STUDIO」+ 右上「MENU」。
           原来这里是**正中**一颗白圈 ✕ —— 位置和别的板块都不一样，

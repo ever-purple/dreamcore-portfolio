@@ -75,16 +75,8 @@ export function initWkpMotion(scrollEl: HTMLElement): WkpMotion {
     const heroImg = scrollEl.querySelector<HTMLElement>('.wkp-hero-img');
     const heroCopy = scrollEl.querySelector<HTMLElement>('.wkp-hero-copy');
     if (heroImg) {
-      gsap.set(heroImg, { transformOrigin: '50% 50%' });
-      gsap.fromTo(
-        heroImg,
-        { yPercent: amp(-5) },
-        {
-          yPercent: amp(6),
-          ease: 'none',
-          scrollTrigger: { trigger: '.wkp-hero', scroller: scrollEl, start: 'top top', end: 'bottom top', scrub: true },
-        },
-      );
+      // 封面承担完整信息展示，不做位移或缩放，避免滚动视差裁掉边缘文字与 Logo。
+      gsap.set(heroImg, { transformOrigin: '50% 50%', yPercent: 0, scale: 1 });
     }
     if (heroCopy) {
       gsap.to(heroCopy, {

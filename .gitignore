@@ -8,6 +8,9 @@ dist-openfix
 dist-modefix
 dist-insplab
 dist-visitlog
+# server.mjs 启动时把 api/*.ts 编译到这里（见根目录 server.mjs），产物不入库
+_api
+_apitest
 .vite
 
 # 日志
@@ -100,6 +103,7 @@ public/works/*.pdf
 
 # 本地工作记忆与技能数据（不进公开仓库）
 .workbuddy/
+/.codex/
 _cleanup-manifest.txt
 dist-ogtest
 # 试构建出来的临时产物目录（dist-ogtest / dist-seedfix …）：只是本地验证用，
@@ -113,3 +117,9 @@ dashboard/config.json
 # 结果在仓库根下按字面量创建了一个目录，里面是 Windows 缓存 .db（与项目无关）。
 # 直接删本地副本即可；先在这里排除，免得哪天 `git add .` 把它带进仓库。
 /%SystemDrive%/
+
+.vercel
+.env*
+
+# 服务器部署私钥（Ed25519 全量文本）—— 绝不进仓库
+_deploy_key_DO_NOT_COMMIT.txt

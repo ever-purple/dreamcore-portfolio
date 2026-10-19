@@ -12,21 +12,21 @@ import { MEDIA_WORKS } from '../data/mediaWorks';
 import { COPY_PROJECTS } from '../data/copyProjects';
 
 gsap.registerPlugin(ScrollTrigger);
-export type QuickViewExploreTarget = 'studio' | 'plans' | 'media' | 'copy';
+export type QuickViewExploreTarget = 'studio' | 'plans' | 'product' | 'media' | 'copy';
 type QuickViewShellProps = {
   onBack: () => void;
-  onExplore: (target?: QuickViewExploreTarget, projectSlot?: number) => void;
+  onExplore: (target?: QuickViewExploreTarget, projectSlot?: number, mediaWorkId?: string) => void;
 };
 
 const EXPERIENCES = [
-  { no: '01', label: 'May', title: '北京新白文化', period: '2026.01–04', organization: '袖珍世界', role: '市场部实习生', detail: '参与品牌新媒体矩阵、达人合作、节点活动和本地生活投放。', bullets: ['推进 54 位带货达人分级合作与文案跟进', '运营小红书素人矩阵，使用 AI 批量剪辑与制作封面', '参与妇女节、上海新店开业等节点营销策划', '复盘 CTR、成交额与 ROI，优化内容和投放'], x: 118, y: 454 },
-  { no: '02', label: 'every', title: '北京行行行广告', period: '2025.07–08', organization: '快手电商 / 神州租车', role: '整合营销部实习生', detail: '同时参与节点整合营销和品牌自媒体代运营两类项目。', bullets: ['为快手“老铁降温季”规划热点、跟进榜单与营销号', '话题曝光 18.41 亿+，累计上榜 39 个，最高 TOP1', '完成神州租车四平台竞品调研与运营策略提案', '方案创意与平台调性选择获得甲方书面好评'], x: 300, y: 150 },
-  { no: '03', label: 'cat', title: '北京氪星创服', period: '2024.07–09', organization: '科创品牌项目', role: '品牌市场部实习生', detail: '负责多平台内容与短视频生产，并参与大型活动传播执行。', bullets: ['参与视频号、公众号等平台的内容规划与运维', '完成科创主题短视频的策划、拍摄协作与剪辑', '参与大型活动的前期传播、现场执行和内容回收', '在并行任务中保证内容产出与活动交付进度'], x: 480, y: 62 },
-  { no: '04', label: 'met', title: '春山里', period: '2023.07–09', organization: '品牌新媒体', role: '新媒体运营实习生', detail: '参与抖音账号运营、短视频制作和日常传播文案输出。', bullets: ['协助账号选题与内容排期', '参与短视频脚本、拍摄和后期制作', '撰写日常运营文案并跟进发布', '根据账号反馈调整内容表达'], x: 725, y: 70 },
+  { no: '01', label: 'May', title: '北京新白文化', period: '2026.01—05', organization: '袖珍世界 · 沉浸式餐饮品牌', role: '市场部实习生', detail: '围绕裸眼 3D 沉浸式餐厅，参与节点营销、内容矩阵、达人合作及本地生活投放。', bullets: ['活动策划｜参与踏春、妇女节及上海新店开业策划，拆解线上内容、线下互动与传播节奏', '达人运营｜推进 54 位带货达人分级合作，撰写合作文案并跟进脚本、选题与封面', '内容矩阵｜独立负责小红书素人矩阵的视频与封面，借助 AI 批量剪辑提升多账号产出效率', '投放复盘｜操作巨量引擎、聚光等本地生活投放，按曝光、成交与 ROI 输出日报周报并迭代素材'], x: 118, y: 454 },
+  { no: '02', label: 'every', title: '北京行行行广告', period: '2025.07—09', organization: '快手电商 / 神州租车', role: '整合营销部实习生', detail: '同期参与快手电商节点整合营销与神州租车自媒体代运营，覆盖热点传播和品牌长期内容策略。', bullets: ['快手项目｜围绕“老铁降温季”规划 26 个热点，跟进热搜、达人、营销号及线下大屏素材', '传播结果｜项目话题曝光 18.41 亿+、累计上榜 39 次，最高进入快手热榜 TOP1', '神州项目｜独立完成微信、微博、小红书、抖音四平台竞品研究，输出账号定位与内容策略', '提案执行｜参与苏超借势创意并承担约 50% 提案制作，创意与平台调性获甲方书面好评'], x: 300, y: 150 },
+  { no: '03', label: 'cat', title: '北京氪星创服', period: '2024.07—09', organization: '科创品牌内容与活动传播', role: '品牌市场部实习生', detail: '负责科创品牌的短视频与多平台内容生产，并为大型行业活动提供现场及传播支持。', bullets: ['视频制作｜独立完成外交官、七夕活动等 4 条视频的创意、拍摄与剪辑，均按期上线', '内容运维｜负责官网、公众号、百家号的推文撰写与排版，维持多平台日常内容供给', '品牌建设｜撰写并优化 2 条百度百科词条，最终通过平台审核', '活动传播｜支持 3 场大型行业活动，完成邀请推文、现场记录、大纲梳理与传播总结'], x: 480, y: 62 },
+  { no: '04', label: 'met', title: '春山里', period: '2023.07—09', organization: '文旅品牌新媒体运营', role: '新媒体运营实习生', detail: '围绕文旅品牌的抖音账号与日常内容，独立完成短视频生产并参与品牌文案输出。', bullets: ['视频策划｜根据文旅项目场景完成抖音选题、脚本与内容排期', '视频制作｜独立完成 3 条抖音短视频的拍摄与剪辑，并参与线下马林巴音乐会拍摄', '传播结果｜其中单条视频自然播放量超过 2000，完成发布后的数据回看与内容调整', '品牌文案｜撰写民宿故事与产品介绍，为账号日常运营和品牌传播持续供稿'], x: 725, y: 70 },
 ] as const;
 
 type PlanNote = { label: string; summary: string; detail: string };
-type PlanPreview = { id: string; title: string; client: string; year: string; cover: string; slot: number | null; notes: PlanNote[] };
+type PlanPreview = { id: string; title: string; client: string; year: string; cover: string; covers?: string[]; slot: number | null; notes: PlanNote[] };
 
 const planCover = (id: string) => WORKS.find((work) => work.id === id)?.cover ?? '';
 const PLAN_PREVIEWS: PlanPreview[] = [
@@ -41,7 +41,7 @@ const PLAN_PREVIEWS: PlanPreview[] = [
     ],
   },
   {
-    id: 'kuaishou', title: '快手电商 · 老铁降温季', client: '快手电商', year: '2025', cover: `${import.meta.env.BASE_URL}diary-book/imgs/kuaishou-kv-flame.jpg`, slot: null,
+    id: 'kuaishou', title: '快手电商 · 老铁降温季', client: '快手电商', year: '2025', cover: `${import.meta.env.BASE_URL}diary-book/imgs/kuaishou-kv-flame.jpg`, covers: [`${import.meta.env.BASE_URL}diary-book/imgs/kuaishou-kv-flame.jpg`, `${import.meta.env.BASE_URL}diary-book/imgs/kuaishou-kv-bingma.jpg`], slot: null,
     notes: [
       { label: '背景', summary: '极端高温话题与网络热梗形成集中流量和消费需求。', detail: '项目需要在高温节点快速承接公众情绪，把“降温”转化为电商消费理由与可持续传播话题。' },
       { label: '洞察', summary: '把高温情绪、老铁语境与降温商品连接成传播抓手。', detail: '以平台用户熟悉的“老铁”关系和铁扇公主文化意象降低营销感，让事件既有话题性也能自然落到消费场景。' },
@@ -87,6 +87,18 @@ const VIDEO_GROUPS = [
   { key: 'portrait', label: '竖屏短片' },
   { key: 'ai', label: 'AI 影像' },
 ] as const;
+
+const VIDEO_QUICK_COPY: Record<string, { title?: string; meta?: string }> = {
+  qixi: { meta: '策划协作、拍摄、剪辑｜商业实习项目' },
+  sanlitun: { meta: '策划协作、拍摄、剪辑｜商业实习项目' },
+  'chunshanli-intro': { meta: '脚本创意、拍摄、剪辑｜独立完成 · 实习项目' },
+  'chunshanli-summer': { meta: '脚本创意、拍摄、剪辑｜独立完成 · 实习项目' },
+  butterfly: { meta: '提案、拍摄｜小组作业' },
+  hbn: { meta: '脚本创意、拍摄、剪辑｜小组作业' },
+  'yike-1020': { meta: '脚本创意、拍摄、剪辑｜独立完成 · 实习项目' },
+  'yike-0814': { meta: '脚本创意、拍摄、剪辑｜独立完成 · 实习项目' },
+  'going-home': { meta: 'AI影像创作、剪辑｜个人实验项目' },
+};
 
 const copyText = (project: (typeof COPY_PROJECTS)[number]) => {
   const raw = project.sections
@@ -193,6 +205,7 @@ export function QuickViewShell({ onBack, onExplore }: QuickViewShellProps) {
   const [drawStep, setDrawStep] = useState(0);
   const [selectedExperience, setSelectedExperience] = useState<number | null>(null);
   const [activePlan, setActivePlan] = useState(0);
+  const [videoPreview, setVideoPreview] = useState<{ id: string; x: number; y: number } | null>(null);
   const drawTimers = useRef<number[]>([]);
 
   const drawCat = () => {
@@ -414,6 +427,17 @@ export function QuickViewShell({ onBack, onExplore }: QuickViewShellProps) {
     { id: 'works', no: '03', en: 'Selected Works', zh: '作品' },
     { id: 'contact', no: '04', en: 'Contact', zh: '联系' },
   ];
+  const previewWork = videoPreview ? MEDIA_WORKS.find((work) => work.id === videoPreview.id) : null;
+  const previewImage = previewWork?.hoverPoster ?? previewWork?.poster;
+  const previewPosition = (clientX: number, clientY: number) => {
+    const cardWidth = 340;
+    const cardHeight = 270;
+    const gap = 22;
+    const margin = 16;
+    const x = clientX + gap + cardWidth > window.innerWidth ? clientX - gap - cardWidth : clientX + gap;
+    const y = Math.min(Math.max(margin, clientY - cardHeight * .34), window.innerHeight - cardHeight - margin);
+    return { x: Math.max(margin, x), y };
+  };
   return <>
     <StudioChrome
       label="My Studio"
@@ -492,13 +516,13 @@ export function QuickViewShell({ onBack, onExplore }: QuickViewShellProps) {
       </article><p className="qv-id__caption">SUN CHENXI / PROFILE 2026</p></div>
       <div className="qv-about__profile qv-reveal">
         <p className="qv-about__lead">广告学专业，拥有四段整合营销、品牌内容与新媒体运营相关实习经历。</p>
-        <div className="qv-about__highlights" aria-label="核心能力"><span>整合营销</span><span>品牌内容</span><span>新媒体运营</span><span>达人投放</span><span>数据复盘</span><span>AI 提效</span></div>
+        <div className="qv-about__highlights" aria-label="核心能力"><span>内容策略</span><span>项目执行</span><span>活动运营</span><span>短视频制作</span><span>数据复盘</span><span>AI协作</span></div>
       </div>
         <div className="qv-about__facts">
-          <section><span>01 / SKILLS</span><h3>我会什么</h3><p>覆盖策略、内容、投放与复盘，可继续推进具体交付。</p><ul><li><strong>整合营销</strong> 竞品调研、传播主题、活动机制与提案</li><li><strong>内容运营</strong> 短视频选题、脚本剪辑与多平台运营</li><li><strong>投放复盘</strong> 达人协作、日报周报、CTR 与 ROI</li><li><strong>工具提效</strong> 来客、巨量、聚光、蒲公英与 AI</li></ul></section>
-          <section><span>02 / EXPERIENCE</span><h3>我干过什么</h3><p>四段品牌市场与新媒体实习，覆盖品牌方和广告公司。</p><ul><li><strong>新白文化</strong> 矩阵账号、54 位达人、节点策划与投放</li><li><strong>行行行广告</strong> 快手整合营销与神州租车运营提案</li><li><strong>氪星创服</strong> 科创品牌内容、短视频与活动传播</li><li><strong>春山里</strong> 抖音账号运营、短视频与日常文案</li></ul></section>
-          <section><span>03 / RESULTS</span><h3>我做出过什么</h3><p>以传播数据、客户反馈和完整交付验证工作结果。</p><ul><li><strong>18.41 亿+</strong> 快手项目话题曝光，累计上榜 39 个</li><li><strong>TOP1</strong> 快手最高榜位，规划热点 26 个</li><li><strong>ROI 2.89</strong> 袖珍世界样本周期单周投放结果</li><li><strong>客户认可</strong> 神州租车核心策略纳入内部参考库</li></ul></section>
-          <section><span>04 / DIRECTION</span><h3>我期待什么</h3><p>求职方向聚焦整合营销、品牌内容与新媒体运营。</p><ul><li><strong>近期</strong> 独立承担调研、策划、内容与达人协作模块</li><li><strong>长期</strong> 提升品牌策略、平台增长与商业化投放能力</li></ul></section>
+          <section><span>01 / SKILLS</span><h3>核心能力</h3><p>能够将用户和市场洞察转化为内容策略、活动机制与具体执行，并结合平台数据持续调整。工作范围覆盖竞品研究、主题策划、短视频、达人协作、传播监测和项目复盘。</p><ul><li><strong>内容策略</strong> 竞品研究、用户洞察与传播主题</li><li><strong>项目执行</strong> 活动机制、内容排期与跨团队协作</li><li><strong>内容生产</strong> 短视频选题、脚本、拍摄与剪辑</li><li><strong>数据复盘</strong> 传播监测、CTR、ROI 与优化建议</li></ul></section>
+          <section><span>02 / EXPERIENCE</span><h3>经历与实践</h3><p>经历覆盖品牌方与广告代理公司，参与新消费品牌内容运营、快手电商节点营销、租车品牌平台策略、短视频生产和大型活动传播。</p><ul><li><strong>新白文化</strong> 品牌内容、达人合作与本地生活投放</li><li><strong>行行行广告</strong> 快手电商整合营销与租车品牌平台策略</li><li><strong>氪星创服</strong> 科创品牌短视频与大型活动传播</li><li><strong>春山里</strong> 抖音账号运营、短视频与品牌文案</li></ul></section>
+          <section><span>03 / RESULTS</span><h3>代表成果</h3><p>参与的快手电商项目整体获得18.41亿+话题曝光；完成神州租车四平台竞品研究与内容策略提案；在新消费品牌项目中参与达人合作、内容矩阵与投放复盘。</p><ul><li><strong>18.41亿+</strong> 快手项目整体话题曝光</li><li><strong>39次</strong> 累计进入平台及社会榜单</li><li><strong>四平台</strong> 神州租车竞品研究与内容策略</li><li><strong>全链路</strong> 内容、达人、投放与复盘实践</li></ul></section>
+          <section><span>04 / DIRECTION</span><h3>职业方向</h3><p>目前重点关注游戏、潮流消费和内容平台中的内容策划、用户运营、创意制片与品牌项目执行岗位。</p><ul><li><strong>内容方向</strong> 内容策划、创意制片与品牌表达</li><li><strong>运营方向</strong> 用户运营、活动运营与项目执行</li></ul></section>
         </div>
       </div></div>
     </section>
@@ -524,7 +548,7 @@ export function QuickViewShell({ onBack, onExplore }: QuickViewShellProps) {
             {EXPERIENCES.map((item, index) => { const available = index === 0 || drawStep >= index + 1; return <g className={`experience-cat__node${index === 0 ? ' is-start' : ''}${drawStep >= index + 1 ? ' is-active' : ''}${selectedExperience === index ? ' is-selected' : ''}${available ? '' : ' is-locked'}`} key={item.no} transform={`translate(${item.x} ${item.y})`} role="button" tabIndex={available ? 0 : -1} aria-disabled={!available} aria-label={`${index === 0 && drawStep === 0 ? '开始绘制并' : ''}查看经历 ${item.no}：${item.title}`} data-cursor={available ? 'View' : undefined} data-cursor-tone="light" onClick={() => openExperience(index)} onKeyDown={(event) => { if (available && (event.key === 'Enter' || event.key === ' ')) openExperience(index); }}><circle r="19"/><text y="-30">{item.label}</text><text y="5">{item.no}</text></g>; })}
           </svg>
         </div>
-        <div className="experience-cat__progress">{EXPERIENCES.map((item, index) => { const available = index === 0 || drawStep >= index + 1; return <button className={selectedExperience === index ? 'is-current' : ''} key={item.no} type="button" disabled={!available} data-cursor={available ? 'View' : undefined} data-cursor-tone="light" onClick={() => openExperience(index)}><span>{item.no}</span>{item.title}</button>; })}</div>
+        <div className="experience-cat__progress">{EXPERIENCES.map((item, index) => { const available = index === 0 || drawStep >= index + 1; return <button className={selectedExperience === index ? 'is-current' : ''} key={item.no} type="button" disabled={!available} data-cursor={available ? 'View' : undefined} data-cursor-tone="light" onClick={() => openExperience(index)}><span>{item.no}</span><span className="experience-cat__progress-copy"><strong>{item.title}</strong><small>{item.period}</small></span></button>; })}</div>
         {selectedExperience !== null && <article className="experience-cat__detail" key={selectedExperience} aria-live="polite">
           <header><span>{EXPERIENCES[selectedExperience].no} / EXPERIENCE</span><h3>{EXPERIENCES[selectedExperience].title}</h3><p>{EXPERIENCES[selectedExperience].detail}</p></header>
           <dl><div><dt>时间</dt><dd>{EXPERIENCES[selectedExperience].period}</dd></div><div><dt>项目</dt><dd>{EXPERIENCES[selectedExperience].organization}</dd></div><div><dt>岗位</dt><dd>{EXPERIENCES[selectedExperience].role}</dd></div></dl>
@@ -535,27 +559,41 @@ export function QuickViewShell({ onBack, onExplore }: QuickViewShellProps) {
 
     <section className="qv-section qv-works" id="works"><BrushMotifs /><SectionHeading no="03" zh="精选作品" variant="portfolio">Selected works</SectionHeading>
       <div className="qv-works__archive">
-        <section className="qv-work-chapter qv-work-chapter--planning" aria-labelledby="qv-planning-title">
-          <header className="qv-work-chapter__header"><div><span>01</span><h3 id="qv-planning-title">Planning</h3><small>策划案</small></div></header>
-          <div className="qv-plan-index" role="tablist" aria-label="选择策划案">
-            {PLAN_PREVIEWS.map((plan, index) => <button key={plan.id} type="button" role="tab" aria-selected={activePlan === index} className={activePlan === index ? 'is-active' : ''} onClick={() => setActivePlan(index)}><span>{String(index + 1).padStart(2, '0')}</span><strong>{plan.title}</strong></button>)}
+        <section className="qv-work-chapter qv-work-chapter--project" aria-labelledby="qv-project-work-title">
+          <header className="qv-work-chapter__header qv-work-chapter__header--parent"><div><span>01</span><h3 id="qv-project-work-title">Project Work</h3><small>项目作品</small></div></header>
+          <div className="qv-work-subchapters">
+            <section className="qv-work-subchapter" aria-labelledby="qv-planning-title">
+              <header className="qv-work-subchapter__header"><span>01-A</span><h4 id="qv-planning-title">Planning</h4><small>策划案</small></header>
+              <div className="qv-plan-index" role="tablist" aria-label="选择策划案">
+                {PLAN_PREVIEWS.map((plan, index) => <button key={plan.id} type="button" role="tab" aria-selected={activePlan === index} className={activePlan === index ? 'is-active' : ''} onClick={() => setActivePlan(index)}><span>{String(index + 1).padStart(2, '0')}</span><strong>{plan.title}</strong></button>)}
+              </div>
+              <article className="qv-plan-case" key={PLAN_PREVIEWS[activePlan].id} role="tabpanel">
+                <figure><div className={`qv-plan-case__gallery${PLAN_PREVIEWS[activePlan].covers ? ' is-pair' : ''}`}>{(PLAN_PREVIEWS[activePlan].covers ?? [PLAN_PREVIEWS[activePlan].cover]).map((src, index) => <img key={src} src={src} alt={`${PLAN_PREVIEWS[activePlan].title}${index === 0 ? '策划案封面' : `项目物料 ${index + 1}`}`} />)}</div><figcaption><span>{PLAN_PREVIEWS[activePlan].client}</span><span>{PLAN_PREVIEWS[activePlan].year}</span></figcaption></figure>
+                <div className="qv-plan-case__copy"><h4>{PLAN_PREVIEWS[activePlan].title}</h4><div className="qv-plan-notes">
+                  {PLAN_PREVIEWS[activePlan].notes.map((note, index) => <details key={note.label}><summary><span>{String(index + 1).padStart(2, '0')}</span><strong>{note.label}</strong><p>{note.summary}</p><i aria-hidden="true">＋</i></summary><div>{note.detail}</div></details>)}
+                </div>{PLAN_PREVIEWS[activePlan].slot === null ? (
+                  <button className="qv-work-enter" type="button" disabled>详细内容整理中</button>
+                ) : (
+                  <button className="qv-work-enter" type="button" onClick={() => onExplore('plans', PLAN_PREVIEWS[activePlan].slot!)} data-cursor="Enter" data-cursor-tone="light">查看完整策划案 <span aria-hidden="true">↗</span></button>
+                )}</div>
+              </article>
+            </section>
+
+            <section className="qv-work-subchapter" aria-labelledby="qv-experiment-title">
+              <header className="qv-work-subchapter__header"><span>01-B</span><h4 id="qv-experiment-title">Personal Experiment</h4><small>个人实验项目</small></header>
+              <button className="qv-experiment-entry" type="button" onClick={() => onExplore('product')} data-cursor="Enter" data-cursor-tone="light" aria-label="查看 FIRST MIX 完整项目">
+                <h4>FIRST MIX</h4>
+                <p>面向零经验用户的网页打碟学习与练习产品，用渐进课程和可操作的双 Deck 控台，让第一次转场真正被听见。</p>
+                <span aria-hidden="true">↗</span>
+              </button>
+            </section>
           </div>
-          <article className="qv-plan-case" key={PLAN_PREVIEWS[activePlan].id} role="tabpanel">
-            <figure><img src={PLAN_PREVIEWS[activePlan].cover} alt={`${PLAN_PREVIEWS[activePlan].title}策划案封面`} /><figcaption><span>{PLAN_PREVIEWS[activePlan].client}</span><span>{PLAN_PREVIEWS[activePlan].year}</span></figcaption></figure>
-            <div className="qv-plan-case__copy"><h4>{PLAN_PREVIEWS[activePlan].title}</h4><div className="qv-plan-notes">
-              {PLAN_PREVIEWS[activePlan].notes.map((note, index) => <details key={note.label}><summary><span>{String(index + 1).padStart(2, '0')}</span><strong>{note.label}</strong><p>{note.summary}</p><i aria-hidden="true">＋</i></summary><div>{note.detail}</div></details>)}
-            </div>{PLAN_PREVIEWS[activePlan].slot === null ? (
-              <button className="qv-work-enter" type="button" disabled>详细内容整理中</button>
-            ) : (
-              <button className="qv-work-enter" type="button" onClick={() => onExplore('plans', PLAN_PREVIEWS[activePlan].slot!)} data-cursor="Enter" data-cursor-tone="light">查看完整策划案 <span aria-hidden="true">↗</span></button>
-            )}</div>
-          </article>
         </section>
 
         <section className="qv-work-chapter" aria-labelledby="qv-video-title">
           <header className="qv-work-chapter__header"><div><span>02</span><h3 id="qv-video-title">Video</h3><small>视频</small></div></header>
           <div className="qv-video-directory">
-            {VIDEO_GROUPS.map((group) => { const items = MEDIA_WORKS.filter((work) => work.channel === group.key); return <section key={group.key}><header><h4>{group.label}</h4><span>{String(items.length).padStart(2, '0')}</span></header><ol>{items.map((work) => <li key={work.id}><button type="button" onClick={() => onExplore('media')} data-cursor="View" data-cursor-tone="light"><span>{work.title}</span><small>{work.length}</small></button></li>)}</ol></section>; })}
+            {VIDEO_GROUPS.map((group) => { const items = MEDIA_WORKS.filter((work) => work.channel === group.key); return <section key={group.key}><header><h4>{group.label}</h4><span>{String(items.length).padStart(2, '0')}</span></header><ol>{items.map((work) => { const quick = VIDEO_QUICK_COPY[work.id]; return <li key={work.id}><button type="button" onClick={() => onExplore('media', undefined, work.id)} onPointerEnter={(event) => { if (event.pointerType === 'touch') return; setVideoPreview({ id: work.id, ...previewPosition(event.clientX, event.clientY) }); }} onPointerMove={(event) => { if (event.pointerType === 'touch') return; setVideoPreview({ id: work.id, ...previewPosition(event.clientX, event.clientY) }); }} onPointerLeave={() => setVideoPreview(null)} onFocus={() => setVideoPreview({ id: work.id, x: Math.max(16, window.innerWidth * .58), y: Math.max(16, window.innerHeight * .22) })} onBlur={() => setVideoPreview(null)} data-cursor="View" data-cursor-tone="light"><span>{quick?.title ?? work.title}</span><small>{quick?.meta ?? work.length}</small></button></li>; })}</ol></section>; })}
           </div>
         </section>
 
@@ -567,6 +605,7 @@ export function QuickViewShell({ onBack, onExplore }: QuickViewShellProps) {
     </section>
 
     <section className="qv-section qv-contact" id="contact"><BrushMotifs /><div className="qv-contact__sky" aria-hidden="true"><span>☆</span><span>★</span><span>☆</span><span>·</span><span>☆</span></div><SectionHeading no="04" zh="联系" variant="portfolio">Let’s connect.</SectionHeading><div className="qv-contact__content qv-reveal"><span className="qv-contact__intro">期待与你相遇，在下一片绿地。</span><a className="qv-contact__email" href={`mailto:${CONTACT.email}`} data-cursor="Email" data-cursor-tone="dark"><small>EMAIL</small><strong>{CONTACT.email}</strong><i aria-hidden="true">↗</i></a><div className="qv-contact__actions"><a href={RESUME_URL} download={RESUME_FILENAME} data-cursor="Resume" data-cursor-tone="dark"><span>DOWNLOAD RESUME <i aria-hidden="true">↓</i></span><small>下载简历</small></a><button className="qv-contact__share" type="button" onClick={() => setShareOpen(true)} aria-label="分享网站" data-cursor="Share" data-cursor-tone="dark"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="m8.2 10.8 7.6-4.5M8.2 13.2l7.6 4.5"/></svg></button></div><button className="qv-enter-explore" type="button" onClick={() => onExplore()} data-cursor="Enter" data-cursor-tone="dark"><span>ENTER EXPLORE</span><small>进入建筑 · 探索内部空间</small></button></div></section>
+    {previewImage && videoPreview && <figure className="qv-video-hover-card" style={{ left: videoPreview.x, top: videoPreview.y }} aria-hidden="true"><img src={previewImage} alt="" /></figure>}
     <ShareCardOverlay open={shareOpen} onClose={() => setShareOpen(false)} />
   </main>
   </>;

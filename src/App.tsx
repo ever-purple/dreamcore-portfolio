@@ -343,12 +343,13 @@ type AppStage = 'home' | 'choice' | 'quick' | 'studio';
 function App() {
   const [studioEntry, setStudioEntry] = useState<QuickViewExploreTarget>('studio');
   const [studioPlanSlot, setStudioPlanSlot] = useState<number | null>(null);
+  const [studioMediaWorkId, setStudioMediaWorkId] = useState<string | null>(null);
   const [returnToQuickWorks, setReturnToQuickWorks] = useState(false);
   const [quickReady, setQuickReady] = useState(false);
-  // ?studio=1 / ?about=1 / ?greenos=1 预览模式：视为已过加载页，便于直接测试
+  // 工作室内部页面的预览参数：视为已过加载页，便于直接测试
   const [entered, setEntered] = useState(() => {
     const params = new URLSearchParams(window.location.search);
-    return params.has('studio') || params.has('about') || params.has('greenos') || params.has('crt') || params.has('quick') || params.has('choice');
+    return params.has('studio') || params.has('about') || params.has('greenos') || params.has('crt') || params.has('product') || params.has('experiments') || params.has('quick') || params.has('choice');
   });
   // 转场白光：idle / on（瞬间亮）/ fading（0.4s 淡出）
   const [flash, setFlash] = useState<'idle' | 'on' | 'fading'>('idle');
@@ -358,7 +359,7 @@ function App() {
     const params = new URLSearchParams(window.location.search);
     if (params.has('quick')) return 'quick';
     if (params.has('choice')) return 'choice';
-    if (params.has('studio') || params.has('about') || params.has('greenos') || params.has('crt')) {
+    if (params.has('studio') || params.has('about') || params.has('greenos') || params.has('crt') || params.has('product') || params.has('experiments')) {
       return 'studio';
     }
     return window.location.hash === '#about' ? 'studio' : 'home';
@@ -632,6 +633,7 @@ function App() {
     clearEntryHash();
     setReturnToQuickWorks(false);
     setStudioEntry(target);
+    setStudioMediaWorkId(null);
     runFlashTransition('studio');
   }, [clearEntryHash, runFlashTransition]);
 
@@ -658,11 +660,12 @@ function App() {
     void warmExploreHero();
   }, []);
 
-  const handleQuickExplore = useCallback((target: QuickViewExploreTarget = 'studio', projectSlot?: number) => {
+  const handleQuickExplore = useCallback((target: QuickViewExploreTarget = 'studio', projectSlot?: number, mediaWorkId?: string) => {
     clearEntryHash();
-    setReturnToQuickWorks(target === 'plans' || target === 'media');
+    setReturnToQuickWorks(target === 'plans' || target === 'product' || target === 'media');
     setStudioEntry(target);
     setStudioPlanSlot(target === 'plans' && projectSlot !== undefined ? projectSlot : null);
+    setStudioMediaWorkId(target === 'media' ? mediaWorkId ?? null : null);
     runFlashTransition('studio');
   }, [clearEntryHash, runFlashTransition]);
 
@@ -758,7 +761,7 @@ function App() {
         )
       ) : (
         <Suspense fallback={<div className="fixed inset-0 bg-[#0a0a0a]" aria-hidden="true" />}>
-          <StudioSection entryTarget={studioEntry} entryPlanSlot={studioPlanSlot} onSelectObject={handleSelectObject} onBack={handleBack} onReturnToQuickWorks={returnToQuickWorks ? handleReturnToQuickWorks : undefined} />
+          <StudioSection entryTarget={studioEntry} entryPlanSlot={studioPlanSlot} entryMediaWorkId={studioMediaWorkId} onSelectObject={handleSelectObject} onBack={handleBack} onReturnToQuickWorks={returnToQuickWorks ? handleReturnToQuickWorks : undefined} />
         </Suspense>
       )}
       {/* 转场白光（z 最高，覆盖页面切换瞬间） */}

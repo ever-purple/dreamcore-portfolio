@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 980" role="img" aria-labelledby="title description">
+  <title id="title">FIRST MIX 首次尝试用户旅程地图</title>
+  <desc id="description">基于 64 条公开表达和四款产品任务体验重组的假设旅程。五个阶段从产生兴趣到确认结果，展示每一步的用户动作、样本提示的摩擦，以及 FIRST MIX 的设计回应。</desc>
+  <defs>
+    <style>
+      .ground{fill:#f7f6f2}.ink{fill:#1f2031}.muted{fill:#686979}.violet{fill:#7953d7}.rule{stroke:#dedbe2;stroke-width:2}.head{fill:#f0ecf9;stroke:#ded3f7;stroke-width:2}.head-focus{fill:#7953d7;stroke:#7953d7;stroke-width:2}.cell{fill:#fff;stroke:#e2dfe6;stroke-width:2}.cell-friction{fill:#f4f0fc;stroke:#dfd3f6;stroke-width:2}.cell-response{fill:#eef6f3;stroke:#d0e5df;stroke-width:2}.pill{fill:#e9ddff}.number{fill:#7953d7}.takeaway{fill:#d7ff7a}.cn{font-family:'Microsoft YaHei UI','PingFang SC',Arial,sans-serif}.latin{font-family:Arial,sans-serif;letter-spacing:3px}.tabular{font-family:Arial,sans-serif;font-variant-numeric:tabular-nums}
+    </style>
+  </defs>
+  <rect class="ground" width="1600" height="980"/>
+  <circle cx="1447" cy="105" r="10" fill="#7953d7" opacity=".35"/><circle cx="1482" cy="105" r="10" fill="#7953d7" opacity=".2"/><circle cx="1517" cy="105" r="10" fill="#7953d7" opacity=".12"/>
+  <text x="84" y="74" class="latin muted" font-size="20">FIRST MIX / CASE STUDY</text>
+  <text x="1362" y="74" class="latin violet" font-size="19">MAP 02</text>
+  <line x1="84" y1="101" x2="1516" y2="101" class="rule"/>
+  <text x="84" y="171" class="cn ink" font-size="51" font-weight="700">首次尝试用户旅程</text>
+  <text x="84" y="220" class="cn muted" font-size="25">问题不是没有兴趣，而是听到第一次转场之前，需要跨过太多步骤。</text>
+
+  <text x="82" y="300" class="latin muted" font-size="17">STAGE</text>
+  <g class="cn" font-size="24" font-weight="700" text-anchor="middle">
+    <rect x="230" y="263" width="240" height="70" rx="17" class="head"/><text x="350" y="308" class="ink">产生兴趣</text>
+    <rect x="485" y="263" width="240" height="70" rx="17" class="head-focus"/><text x="605" y="308" fill="#fff">准备尝试</text>
+    <rect x="740" y="263" width="240" height="70" rx="17" class="head-focus"/><text x="860" y="308" fill="#fff">寻找学习顺序</text>
+    <rect x="995" y="263" width="240" height="70" rx="17" class="head"/><text x="1115" y="308" class="ink">第一次操作</text>
+    <rect x="1250" y="263" width="240" height="70" rx="17" class="head"/><text x="1370" y="308" class="ink">确认结果</text>
+  </g>
+
+  <text x="84" y="409" class="cn ink" font-size="24" font-weight="700">用户想做</text>
+  <g class="cn ink" font-size="21">
+    <rect x="230" y="350" width="240" height="110" rx="16" class="cell"/><text x="254" y="394"><tspan x="254">试试喜欢的音乐，</tspan><tspan x="254" dy="32">感受打碟是什么</tspan></text>
+    <rect x="485" y="350" width="240" height="110" rx="16" class="cell"/><text x="509" y="394"><tspan x="509">找到能开始的</tspan><tspan x="509" dy="32">软件、设备与音乐</tspan></text>
+    <rect x="740" y="350" width="240" height="110" rx="16" class="cell"/><text x="764" y="394"><tspan x="764">知道先学什么、</tspan><tspan x="764" dy="32">第一步做什么</tspan></text>
+    <rect x="995" y="350" width="240" height="110" rx="16" class="cell"/><text x="1019" y="394"><tspan x="1019">按下按钮，</tspan><tspan x="1019" dy="32">完成一次操作</tspan></text>
+    <rect x="1250" y="350" width="240" height="110" rx="16" class="cell"/><text x="1274" y="394"><tspan x="1274">听见变化，</tspan><tspan x="1274" dy="32">知道自己是否完成</tspan></text>
+  </g>
+
+  <text x="84" y="538" class="cn violet" font-size="24" font-weight="700">摩擦信号</text>
+  <text x="84" y="572" class="cn muted" font-size="17">主要问题类型</text>
+  <g class="cn ink" font-size="21">
+    <rect x="230" y="477" width="240" height="147" rx="16" class="cell-friction"/><text x="254" y="534">兴趣已出现</text><text x="254" y="570" class="muted" font-size="18">尚未进入实际操作</text>
+    <rect x="485" y="477" width="240" height="147" rx="16" class="cell-friction"/><text x="509" y="522" font-size="20">准备的选择太多</text><text x="509" y="560" class="violet" font-size="18" font-weight="700">不知道从哪开始 16 条</text><text x="509" y="592" class="violet" font-size="18" font-weight="700">设备门槛 12 条</text>
+    <rect x="740" y="477" width="240" height="147" rx="16" class="cell-friction"/><text x="764" y="522" font-size="20">教程与信息链太长</text><text x="764" y="570" class="violet" font-size="19" font-weight="700">学习负担 13 条</text>
+    <rect x="995" y="477" width="240" height="147" rx="16" class="cell-friction"/><text x="1019" y="522" font-size="20">控件和状态不够明晰</text><text x="1019" y="572" class="muted" font-size="18">界面复杂 5 条</text>
+    <rect x="1250" y="477" width="240" height="147" rx="16" class="cell-friction"/><text x="1274" y="522" font-size="20">不知道做得对不对</text><text x="1274" y="572" class="muted" font-size="18">结果焦虑 3 条</text>
+  </g>
+
+  <text x="84" y="698" class="cn ink" font-size="24" font-weight="700">设计回应</text>
+  <text x="84" y="732" class="cn muted" font-size="17">FIRST MIX 的选择</text>
+  <g class="cn ink" font-size="21">
+    <rect x="230" y="641" width="240" height="131" rx="16" class="cell-response"/><text x="254" y="693"><tspan x="254">打开网页，</tspan><tspan x="254" dy="33">直接看到入口</tspan></text>
+    <rect x="485" y="641" width="240" height="131" rx="16" class="cell-response"/><text x="509" y="693"><tspan x="509">无需先买设备，</tspan><tspan x="509" dy="33">预置训练音乐</tspan></text>
+    <rect x="740" y="641" width="240" height="131" rx="16" class="cell-response"/><text x="764" y="693"><tspan x="764">00 课聚焦转场，</tspan><tspan x="764" dy="33">一次只给一个动作</tspan></text>
+    <rect x="995" y="641" width="240" height="131" rx="16" class="cell-response"/><text x="1019" y="693"><tspan x="1019">实际操作控件，</tspan><tspan x="1019" dy="33">立刻听见变化</tspan></text>
+    <rect x="1250" y="641" width="240" height="131" rx="16" class="cell-response"/><text x="1274" y="693"><tspan x="1274">明确完成结果，</tspan><tspan x="1274" dy="33">做错也能恢复</tspan></text>
+  </g>
+
+  <rect x="84" y="813" width="1432" height="76" rx="17" class="takeaway"/>
+  <text x="111" y="860" class="cn ink" font-size="25" font-weight="700">设计判断：先缩短首次行动路径，再逐步展开完整的 DJ 学习。</text>
+  <text x="84" y="923" class="cn muted" font-size="17">注：这是由公开表达与竞品任务体验重组的假设旅程，非同一批用户的逐步跟访。</text>
+  <text x="84" y="950" class="cn muted" font-size="17">每条公开表达按最主要的问题归入一类；图中数字仅表示本次 64 条样本的出现次数。</text>
+</svg>

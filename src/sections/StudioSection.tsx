@@ -19,6 +19,7 @@ const NewsstandScene = lazy(() => import('@/components/NewsstandScene'));
  */
 const MediaGalleryPage = lazy(() => import('@/components/MediaGalleryPage'));
 const CopyProjectPage = lazy(() => import('@/components/CopyProjectPage'));
+const ProductLabPage = lazy(() => import('@/components/ProductLabPage'));
 const loadAboutOverlay = () =>
   import('@/components/AboutOverlay').then((module) => ({ default: module.AboutOverlay }));
 const AboutOverlay = lazy(loadAboutOverlay);
@@ -52,6 +53,7 @@ type MusicCue = 'away' | 'off';
 type Props = {
   entryTarget?: QuickViewExploreTarget;
   entryPlanSlot?: number | null;
+  entryMediaWorkId?: string | null;
   onSelectObject?: (object: StudioObject) => void;
   onBack?: () => void;
   onReturnToQuickWorks?: () => void;
@@ -137,7 +139,7 @@ const POINT_BY_ID = Object.fromEntries(studioObjects.map((o) => [o.id, o.point])
  * - 点击笔记本：原地打开线圈本弹层（纸张右侧滑入 + 背景模糊）
  * - 点击电脑：原地打开 About Me 页（老式个人主页风格浮层）
  */
-export function StudioSection({ entryTarget = 'studio', entryPlanSlot = null, onSelectObject, onBack, onReturnToQuickWorks }: Props) {
+export function StudioSection({ entryTarget = 'studio', entryPlanSlot = null, entryMediaWorkId = null, onSelectObject, onBack, onReturnToQuickWorks }: Props) {
   const [hoveredId, setHoveredId] = useState<StudioObject['id'] | null>(null);
   const [soundMuted, setSoundMuted] = useState(isGlobalMuted);
   /* —— 预热实习日记单文件（2026-09-28，2026-09-30 改为**只认悬停**）——
@@ -201,6 +203,11 @@ export function StudioSection({ entryTarget = 'studio', entryPlanSlot = null, on
   const [copyOpen, setCopyOpen] = useState(() => {
     return entryTarget === 'copy' || new URLSearchParams(window.location.search).has('copy');
   });
+  /** 第二排后两本书：个人实验作品（?product=1 可直接预览） */
+  const [productOpen, setProductOpen] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return entryTarget === 'product' || params.has('product') || params.has('experiments');
+  });
   // ?about=1 / ?greenos=1 / #about 可直接预览。
   // greenos / crt 也顺带把页面打开 —— 否则想看 Green OS 外观还得写两个参数。
   const [aboutOpen, setAboutOpen] = useState(() => {
@@ -216,6 +223,7 @@ export function StudioSection({ entryTarget = 'studio', entryPlanSlot = null, on
   // 入口目标可能在同一个React批次或复用的Studio实例中更新，不能只依赖useState初始化器。
   useEffect(() => {
     if (entryTarget === 'plans') setWorksOpen(true);
+    if (entryTarget === 'product') setProductOpen(true);
     if (entryTarget === 'media') setMediaOpen(true);
     if (entryTarget === 'copy') setCopyOpen(true);
   }, [entryTarget]);
@@ -324,13 +332,15 @@ export function StudioSection({ entryTarget = 'studio', entryPlanSlot = null, on
     const music = createStudioMusic('/studio/studio-music.mp3');
     musicRef.current = music;
     music.setMuted(soundMuted);
-    music.play(); // 进站时已被手势解锁；若被自动播放策略拦住，下面的 unlock 会补播
+    const directSilentEntry = entryTarget === 'plans' || entryTarget === 'media';
+    if (directSilentEntry) music.halt();
+    else music.play(); // 进站时已被手势解锁；若被自动播放策略拦住，下面的 unlock 会补播
 
     // AudioContext 出生即 suspended，必须在**用户手势**里 resume，
     // 否则整条链静音（见模块头「约束 2」）——这是本改造唯一会静默失效的点。
     const unlock = () => {
       music.unlock();
-      music.play();
+      if (!directSilentEntry) music.play();
       window.removeEventListener('pointerdown', unlock);
       window.removeEventListener('keydown', unlock);
     };
@@ -368,14 +378,14 @@ export function StudioSection({ entryTarget = 'studio', entryPlanSlot = null, on
    * 还没收干净，写在后面会被 `away` 吃掉。
    */
   const musicCue = useMemo<MusicCue | null>(() => {
-    if (mediaOpen) return 'off';
+    if (mediaOpen || worksOpen) return 'off';
     if (dive !== 'idle' || aboutOpen || crtOn) return 'away';
     if (
       menuOpen ||
-      worksOpen ||
       newsstandOpen ||
       notebookOpen ||
-      copyOpen
+      copyOpen ||
+      productOpen
     ) {
       return 'away';
     }
@@ -390,6 +400,7 @@ export function StudioSection({ entryTarget = 'studio', entryPlanSlot = null, on
     newsstandOpen,
     notebookOpen,
     copyOpen,
+    productOpen,
   ]);
 
   useEffect(() => {
@@ -603,7 +614,8 @@ export function StudioSection({ entryTarget = 'studio', entryPlanSlot = null, on
       if (row === 'devices') {
         setMediaChannel(CHANNEL_BY_DEVICE[index] ?? 'landscape');
         setMediaOpen(true);
-      } else setCopyOpen(true);
+      } else if (index === 0) setCopyOpen(true);
+      else if (index === 1) setProductOpen(true);
     },
     [],
   );
@@ -692,6 +704,7 @@ export function StudioSection({ entryTarget = 'studio', entryPlanSlot = null, on
     notebookOpen ||
     mediaOpen ||
     copyOpen ||
+    productOpen ||
     aboutOpen ||
     menuOpen;
 
@@ -856,7 +869,7 @@ export function StudioSection({ entryTarget = 'studio', entryPlanSlot = null, on
         <Suspense fallback={<StudioPanelFallback label="创作档案" onBack={() => { setNewsstandOpen(false); closeFocused(); }} />}>
           <NewsstandScene
             open={newsstandOpen}
-            covered={mediaOpen || copyOpen}
+            covered={mediaOpen || copyOpen || productOpen}
             onClose={() => {
               setNewsstandOpen(false);
               closeFocused(); // 镜头从书架拉回 1:1
@@ -877,6 +890,7 @@ export function StudioSection({ entryTarget = 'studio', entryPlanSlot = null, on
         }} />}>
           <MediaGalleryPage
             channel={mediaChannel}
+            initialWorkId={entryMediaWorkId ?? undefined}
             onClose={() => {
               if (entryTarget === 'media' && onReturnToQuickWorks) {
                 onReturnToQuickWorks();
@@ -896,6 +910,19 @@ export function StudioSection({ entryTarget = 'studio', entryPlanSlot = null, on
               setCopyOpen(false); // → 回到书架模型界面（同第一排，2026-09-16）
             }}
           />
+        </Suspense>
+      ) : null}
+
+      {/* 第二排第二、三本：个人实验作品。先呈现 FIRST MIX，内容会沿同一张横向长纸继续扩展。 */}
+      {productOpen ? (
+        <Suspense fallback={<StudioPanelFallback label="个人实验作品" onBack={() => {
+          if (entryTarget === 'product' && onReturnToQuickWorks) onReturnToQuickWorks();
+          else setProductOpen(false);
+        }} />}>
+          <ProductLabPage initialReading={entryTarget === 'product'} onClose={() => {
+            if (entryTarget === 'product' && onReturnToQuickWorks) onReturnToQuickWorks();
+            else setProductOpen(false);
+          }} />
         </Suspense>
       ) : null}
 

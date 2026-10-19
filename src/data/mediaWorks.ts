@@ -62,6 +62,8 @@ export type MediaWork = {
   channel?: MediaChannel;
   /** 封面静态图（视频加载前 / 不支持时兜底） */
   poster?: string;
+  /** 快速版目录悬浮预览使用的精选视频帧 */
+  hoverPoster?: string;
   /**
    * 视频本体 —— **只有一个文件，没有单独的"低码率预览"**。
    * 2026-09-21：列表里循环播放的就是这一条（静音），点播放只是解除静音、不再换源。
@@ -92,6 +94,7 @@ export type MediaWork = {
  * ⚠️ 改这里的中文标题后必须重跑 `scripts/subset-nanooldsong.py`，否则缺字回退系统字体。
  */
 const M = `${import.meta.env.BASE_URL}media/`;
+const H = `${M}hover/`;
 
 export const MEDIA_WORKS: MediaWork[] = [
   {
@@ -102,6 +105,7 @@ export const MEDIA_WORKS: MediaWork[] = [
     aspect: 16 / 9,
     channel: 'landscape',
     poster: `${M}qixi.jpg`,
+    hoverPoster: `${H}qixi.jpg`,
     video: `${M}qixi.mp4`,
   },
   {
@@ -112,6 +116,7 @@ export const MEDIA_WORKS: MediaWork[] = [
     aspect: 1020 / 1920, // 竖版
     channel: 'portrait',
     poster: `${M}yike-1020.webp`,
+    hoverPoster: `${H}yike-1020.jpg`,
     video: `${M}yike-1020.mp4`,
   },
   {
@@ -122,6 +127,7 @@ export const MEDIA_WORKS: MediaWork[] = [
     aspect: 1360 / 2560, // 竖版
     channel: 'portrait',
     poster: `${M}yike-0814.webp`,
+    hoverPoster: `${H}yike-0814.jpg`,
     video: `${M}yike-0814.mp4`,
   },
   {
@@ -132,6 +138,7 @@ export const MEDIA_WORKS: MediaWork[] = [
     aspect: 16 / 9,
     channel: 'landscape',
     poster: `${M}sanlitun.jpg`,
+    hoverPoster: `${H}sanlitun.jpg`,
     video: `${M}sanlitun.mp4`,
   },
   {
@@ -143,6 +150,7 @@ export const MEDIA_WORKS: MediaWork[] = [
     aspect: 3874 / 2160, // 源片 3874x2160，略宽于 16:9
     channel: 'ai',
     poster: `${M}going-home.jpg`,
+    hoverPoster: `${H}going-home.jpg`,
     video: `${M}going-home.mp4`,
   },
   /* ---- 春山里三条（2026-09-21 补，**原片直拷、未压缩**）----
@@ -160,6 +168,7 @@ export const MEDIA_WORKS: MediaWork[] = [
     aspect: 16 / 9,
     channel: 'landscape',
     poster: `${M}chunshanli-intro.jpg`,
+    hoverPoster: `${H}chunshanli-intro.jpg`,
     video: `${M}chunshanli-intro.mp4`,
   },
   {
@@ -170,6 +179,7 @@ export const MEDIA_WORKS: MediaWork[] = [
     aspect: 16 / 9,
     channel: 'landscape',
     poster: `${M}chunshanli-summer.jpg`,
+    hoverPoster: `${H}chunshanli-summer.jpg`,
     video: `${M}chunshanli-summer.mp4`,
   },
   {
@@ -180,6 +190,7 @@ export const MEDIA_WORKS: MediaWork[] = [
     aspect: 16 / 9,
     channel: 'landscape',
     poster: `${M}butterfly.jpg`,
+    hoverPoster: `${H}butterfly.jpg`,
     video: `${M}butterfly.mp4`,
   },
   {
@@ -191,6 +202,7 @@ export const MEDIA_WORKS: MediaWork[] = [
     aspect: 16 / 9,
     channel: 'landscape',
     poster: `${M}hbn.jpg`,
+    hoverPoster: `${H}hbn.jpg`,
     video: `${M}hbn.mp4`,
   },
 ];

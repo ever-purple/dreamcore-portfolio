@@ -27,6 +27,11 @@ export function LisaHud({ hidden = false }: { hidden?: boolean }) {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const soundCounter = useRef(0);
   const nextSoundAt = useRef(2 + Math.floor(Math.random() * 2));
+  const hiddenRef = useRef(hidden);
+
+  useEffect(() => {
+    hiddenRef.current = hidden;
+  }, [hidden]);
 
   // 打字音效：极短白噪音（~10ms）经快速淡入淡出，音量极低
   const ensureAudio = () => {
@@ -39,7 +44,7 @@ export function LisaHud({ hidden = false }: { hidden?: boolean }) {
     return ctx;
   };
   const playKeySound = () => {
-    if (isGlobalMuted()) return;
+    if (hiddenRef.current || isGlobalMuted()) return;
     const ctx = ensureAudio();
     if (!ctx) return;
     const dur = 0.01; // ~10ms

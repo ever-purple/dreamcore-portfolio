@@ -744,7 +744,6 @@ export function WorkProjectPage({
                 alt=""
                 draggable={false}
                 decoding="async"
-                onLoad={coverAr('.wkp-hero', 16 / 9)}
                 data-cursor="Focus"
                 data-cursor-tone="dark"
                 role="button"
@@ -994,7 +993,12 @@ export function WorkProjectPage({
             <div className="wkp-foot-actions">
               {/* 2026-09-14 按用户要求：详情页不给访客下载完整 PDF，入口已移除。
                   同时 public/works/guanxia-summer.pdf 已移出 public，避免被直接抓 URL。
-                  作者模式的 WorkDetail 表单里仍有 PDF 上传/下载，那是作者自己用的。 */}
+                  作者模式的 WorkDetail 表单里仍有 PDF 上传/下载，那是作者自己用的。
+
+                  2026-10-04 追加：public/works/editor/slot1-pdf-1789390166972.pdf（11.7MB）
+                  也一并移出 public —— 同样不给访客下载，只要策划案里的图片。
+                  这两份原件现都在 _media_originals/source-pdfs/（该目录已在 .gitignore 里，
+                  所以既不会被构建复制进 dist，也不会被直接抓 URL）。 */}
               {/* 「去线上」入口其二（页脚）已删；此处只剩「回到木马」等站内动作 */}
               {canEdit && onEdit ? (
                 <button

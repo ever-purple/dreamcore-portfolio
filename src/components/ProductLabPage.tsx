@@ -463,8 +463,8 @@ export default function ProductLabPage({ onClose, initialReading = false }: Prop
                     <div className="product-reader__lead"><p>小红书小工具采用离线环境。我优先保留课程、内置音乐和操作反馈；在线 AI 教练、「我的」AI 分析与本地导入音乐暂不放入小工具版。完整版网页仍保留这些能力。</p></div>
                     <div className="product-reader__channels"><a href="https://www.xiaohongshu.com/explore/6ad0517b000000001a0296c2" target="_blank" rel="noreferrer"><span>POST 01</span><b>项目的灵感来源</b><i>小红书 App 查看 ↗</i></a><a href="https://www.xiaohongshu.com/explore/6ad1e097000000001a02bd1a" target="_blank" rel="noreferrer"><span>POST 02</span><b>产品玩法展示</b><i>小红书 App 查看 ↗</i></a></div>
                     <p className="product-reader__channel-note">小红书限制部分笔记在电脑端直接浏览；点击后可使用小红书 App 扫码查看原帖。</p>
-                    <div className="product-reader__metrics"><span>封面点击率<em>玩法篇 17.70%<br />灵感篇 16.90%</em></span><span>产品使用人数<em>450＋人</em></span><span>统计周期<em>2026.10.15–10.17</em></span></div>
-                    <p className="product-reader__feedback-note">10 月 15 日至 17 日，产品已有 450＋人使用；两篇推广内容的封面点击率分别为 16.90% 和 17.70%。</p>
+                    <div className="product-reader__metrics"><span>封面点击率<em>玩法篇 17.5%<br />灵感篇 18%</em></span><span>产品使用人数<em>720＋人</em></span><span>数据更新<em>2026.10.23</em></span></div>
+                    <p className="product-reader__feedback-note">截至 10 月 23 日，产品已有 720＋人使用；玩法篇与灵感篇的封面点击率分别为 17.5% 和 18%。</p>
                     <div className="product-reader__archive-actions"><a href={FIRST_MIX_DEMO_URL} target="_blank" rel="noreferrer">重新体验产品 ↗</a><button type="button" onClick={returnToScanner}>返回扫描台 ↑</button></div>
                   </section>
                 </div>

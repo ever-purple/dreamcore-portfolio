@@ -41,3 +41,17 @@
 .first-mix-drawer { inset: auto 24px 24px auto; z-index: 12000; width: min(440px, calc(100vw - 32px)); height: auto; max-height: calc(100dvh - 48px); padding: 20px; border: 1px solid #b5c9c1; border-radius: 12px; transform: translateX(calc(100% + 32px)); box-shadow: 0 16px 60px #001c2c44; }
 .first-mix-drawer > header { margin-bottom: 16px; }
 @media (max-width: 700px) { .first-mix-drawer { right: 16px; bottom: 16px; padding: 16px; } }
+/* Video pull-out attached to the project edge. */
+.qv-experiment-pair--drawer { position: relative; display: block; width: min(640px, 100%); max-width: none; margin-inline: 0; }
+.quick-view--meadow .qv-experiment-pair--drawer .qv-experiment-entry { padding: 24px 64px 24px 0; }
+.first-mix-drawer-anchor { position: absolute; right: 0; top: 50%; width: 44px; }
+.first-mix-drawer-trigger { width: 44px; height: 44px; padding: 0; justify-content: center; border: 0; border-left: 1px solid #b5e3d666; background: transparent; color: #b5e3d6; transform: translateY(-50%); transition: background .2s; }
+.first-mix-drawer-trigger:hover { background: #b5e3d618; }
+.first-mix-drawer { position: absolute; inset: auto auto auto calc(100% + 16px); top: 0; width: 400px; max-height: 70vh; transform: translate(-35px, -50%); opacity: 0; clip-path: inset(0 100% 0 0); transition: transform 280ms ease, opacity 280ms ease, clip-path 280ms ease; }
+.first-mix-drawer.is-open { transform: translate(0, -50%); opacity: 1; clip-path: inset(0 0 0 0); }
+@media (max-width: 1150px) { .qv-experiment-pair--drawer { width: min(540px, calc(100% - 360px)); } .first-mix-drawer { width: 330px; } }
+@media (max-width: 760px) { .qv-experiment-pair--drawer { width: 100%; } .first-mix-drawer { position: fixed; inset: auto 16px 16px auto; width: min(400px, calc(100vw - 32px)); transform: translateX(-30px); } .first-mix-drawer.is-open { transform: translateX(0); } }
+@media (prefers-reduced-motion: reduce) { .first-mix-drawer { transition: none; } }
+.qv-experiment-pair .first-mix-drawer .first-mix-video { --mjp-ink: #31261c; --mjp-cream: #fbf8f0; }
+.qv-experiment-pair .first-mix-drawer .mjp__ctrl-btn { background: #fbf8f0; border-color: #31261c66; }
+.qv-experiment-pair .first-mix-drawer .mjp__ctrl-rail { background: #31261c44; }

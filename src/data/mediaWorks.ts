@@ -103,11 +103,11 @@ export const MEDIA_WORKS: MediaWork[] = [
     length: '01:01',
     year: '2026',
     kind: 'video',
-    aspect: 4 / 3,
+    aspect: 1440 / 1072,
     channel: 'landscape',
     poster: '/product/first-mix-promo-cover.jpg',
     hoverPoster: '/product/first-mix-promo-cover.jpg',
-    video: '/product/first-mix-promo-web.mp4',
+    video: '/product/first-mix-promo-clean.mp4',
   },
   {
     id: 'qixi',

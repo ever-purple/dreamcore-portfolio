@@ -1,0 +1,16 @@
+.first-mix-video { --mjp-ink: #31261c; --mjp-cream: #fbf8f0; margin: 0; min-width: 0; width: 100%; }
+.first-mix-video video { display: block; width: 100%; height: auto; border: 0; border-radius: 8px; cursor: pointer; }
+.first-mix-video .mjp__ctrl { position: relative; left: auto; top: auto; transform: none; width: 100%; margin-top: 12px; }
+.qv-experiment-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: clamp(24px, 3vw, 48px); }
+.quick-view--meadow .qv-experiment-pair .qv-experiment-entry { grid-template-columns: minmax(0, 1fr) 28px; gap: 24px; min-height: 0; padding: clamp(24px, 3vw, 42px); }
+.qv-experiment-pair .qv-experiment-entry h4, .qv-experiment-pair .qv-experiment-entry p { grid-column: 1; }
+.qv-experiment-pair .qv-experiment-entry > span { grid-column: 2; grid-row: 1 / 3; }
+.qv-experiment-pair .first-mix-video { --mjp-ink: #f1ece2; --mjp-cream: #17322c; }
+.qv-experiment-pair .mjp__ctrl-btn { background: #17322c; border-color: #b5e3d6; }
+.qv-experiment-pair .mjp__ctrl-rail { background: #f1ece24d; }
+.product-dossier .product-dossier__overview { grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 32px 44px; padding-top: 44px; padding-bottom: 48px; align-items: center; }
+.product-dossier__overview-copy { display: grid; gap: 20px; }
+.product-dossier__overview-copy .product-dossier__overview-heading span { margin-bottom: 12px; }
+@media (max-width: 700px) {
+  .qv-experiment-pair, .product-dossier .product-dossier__overview { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+}

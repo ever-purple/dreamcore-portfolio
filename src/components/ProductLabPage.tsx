@@ -308,11 +308,13 @@ export default function ProductLabPage({ onClose, initialReading = false }: Prop
                       </div>
                       <div className="product-dossier__overview">
                         <FirstMixVideo />
+                        <div className="product-dossier__overview-copy">
                         <header className="product-dossier__overview-heading">
                           <span>01 / PROJECT OVERVIEW</span>
                           <h3>项目概览</h3>
                         </header>
                         <p className="product-dossier__overview-lead">FIRST MIX 面向想尝试打碟、但尚未准备购买设备的零经验用户。产品通过渐进课程和可操作的双 Deck 控台，让用户从第一次按下按钮开始，完成一段能亲耳听见的转场。</p>
+                        </div>
                         <div className="product-dossier__overview-body">
                           <div className="product-dossier__manifest" aria-label="从用户起点到首次成功的产品路径">
                             <div><small>01 / USER START</small><strong>想尝试打碟<br />尚未准备购买设备</strong><span>用户起点</span></div>

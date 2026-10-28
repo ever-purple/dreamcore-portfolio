@@ -14,3 +14,16 @@
 @media (max-width: 700px) {
   .qv-experiment-pair, .product-dossier .product-dossier__overview { grid-template-columns: minmax(0, 1fr); gap: 24px; }
 }
+
+/* Compact project index, paired with the film. */
+.qv-experiment-pair { max-width: 920px; margin-inline: auto; grid-template-columns: minmax(0, 420px) minmax(0, 1fr); gap: 32px; }
+.quick-view--meadow .qv-experiment-pair .qv-experiment-entry { border: 0; border-top: 1px solid #b5e3d677; border-bottom: 1px solid #b5e3d644; border-radius: 0; background: none; box-shadow: none; backdrop-filter: none; padding: 24px 4px; gap: 18px; }
+.quick-view--meadow .qv-experiment-pair .qv-experiment-entry::before { display: none; }
+.quick-view--meadow .qv-experiment-pair .qv-experiment-entry h4 { font-family: Arial, sans-serif; font-size: clamp(28px, 2.6vw, 40px); letter-spacing: -.04em; font-weight: 600; }
+.quick-view--meadow .qv-experiment-pair .qv-experiment-entry p { font-family: 'Noto Sans SC', sans-serif; font-size: 14px; line-height: 1.8; }
+.quick-view--meadow .qv-experiment-pair .qv-experiment-entry:hover { background: #b5e3d609; }
+.product-dossier .product-dossier__overview { grid-template-columns: minmax(0, 400px) minmax(0, 1fr); }
+.product-dossier__overview-copy .product-dossier__overview-heading h3 { font-size: 32px; }
+.product-dossier__overview-copy .product-dossier__overview-lead { font-size: 17px; max-width: 52ch; }
+.first-mix-video__sound { display: block; margin: 6px 0 0 auto; padding: 4px 0; border: 0; background: transparent; color: var(--mjp-ink); font: 12px/1.4 sans-serif; cursor: pointer; }
+@media (max-width: 700px) { .qv-experiment-pair, .product-dossier .product-dossier__overview { grid-template-columns: minmax(0, 1fr); } .qv-experiment-pair { max-width: 420px; } }

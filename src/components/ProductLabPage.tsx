@@ -4,6 +4,7 @@ import QRCode from 'qrcode';
 import { StudioChrome } from '@/components/StudioChrome';
 import { useEscape } from '@/lib/escape-stack';
 import { playFilmPrinter } from '@/lib/filmPrinterAudio';
+import { FirstMixVideo } from '@/components/FirstMixVideo';
 
 type Props = { onClose: () => void; initialReading?: boolean };
 
@@ -306,6 +307,7 @@ export default function ProductLabPage({ onClose, initialReading = false }: Prop
                         </div>
                       </div>
                       <div className="product-dossier__overview">
+                        <FirstMixVideo />
                         <header className="product-dossier__overview-heading">
                           <span>01 / PROJECT OVERVIEW</span>
                           <h3>项目概览</h3>

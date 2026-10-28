@@ -98,6 +98,18 @@ const H = `${M}hover/`;
 
 export const MEDIA_WORKS: MediaWork[] = [
   {
+    id: 'first-mix',
+    title: 'FIRST MIX',
+    length: '01:01',
+    year: '2026',
+    kind: 'video',
+    aspect: 4 / 3,
+    channel: 'landscape',
+    poster: '/product/first-mix-promo-cover.jpg',
+    hoverPoster: '/product/first-mix-promo-cover.jpg',
+    video: '/product/first-mix-promo-web.mp4',
+  },
+  {
     id: 'qixi',
     title: '七夕活动花絮',
     length: '00:56',

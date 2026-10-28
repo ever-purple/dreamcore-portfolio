@@ -27,3 +27,17 @@
 .product-dossier__overview-copy .product-dossier__overview-lead { font-size: 17px; max-width: 52ch; }
 .first-mix-video__sound { display: block; margin: 6px 0 0 auto; padding: 4px 0; border: 0; background: transparent; color: var(--mjp-ink); font: 12px/1.4 sans-serif; cursor: pointer; }
 @media (max-width: 700px) { .qv-experiment-pair, .product-dossier .product-dossier__overview { grid-template-columns: minmax(0, 1fr); } .qv-experiment-pair { max-width: 420px; } }
+.qv-experiment-pair--drawer { grid-template-columns: minmax(0, 1fr) auto; max-width: 920px; gap: 36px; }
+.first-mix-drawer-trigger { display: flex; align-items: center; gap: 18px; padding: 18px 22px; border: 1px solid #b5e3d666; border-radius: 4px 0 0 4px; color: #f1ece2; background: #173b3ac9; cursor: pointer; font: 15px/1.4 sans-serif; }
+.first-mix-drawer-trigger small { opacity: .6; font-size: 11px; }
+.first-mix-drawer { box-sizing: border-box; position: fixed; inset: 0 0 0 auto; margin: 0; width: min(560px, 94vw); max-width: none; height: 100dvh; max-height: none; padding: 32px; border: 0; border-left: 1px solid #b5e3d655; background: #e8ede7; color: #17322c; overflow-y: auto; transform: translateX(100%); transition: transform 280ms cubic-bezier(.2,.8,.2,1); box-shadow: -20px 0 70px #0003; }
+.first-mix-drawer.is-open { transform: translateX(0); }
+.first-mix-drawer::backdrop { background: #08232c88; }
+.first-mix-drawer > header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 0 32px; font: 12px/1.5 sans-serif; letter-spacing: .08em; }
+.first-mix-drawer > header button { padding: 10px 0 10px 14px; border: 0; background: transparent; color: inherit; cursor: pointer; font: 14px sans-serif; }
+@media (max-width: 700px) { .qv-experiment-pair--drawer { grid-template-columns: minmax(0,1fr); max-width: 420px; gap: 16px; } .first-mix-drawer-trigger { justify-self: end; } .first-mix-drawer { padding: 24px 18px; } }
+@media (prefers-reduced-motion: reduce) { .first-mix-drawer { transition: none; } }
+/* Small non-modal pull-out player, leaving the page available. */
+.first-mix-drawer { inset: auto 24px 24px auto; z-index: 12000; width: min(440px, calc(100vw - 32px)); height: auto; max-height: calc(100dvh - 48px); padding: 20px; border: 1px solid #b5c9c1; border-radius: 12px; transform: translateX(calc(100% + 32px)); box-shadow: 0 16px 60px #001c2c44; }
+.first-mix-drawer > header { margin-bottom: 16px; }
+@media (max-width: 700px) { .first-mix-drawer { right: 16px; bottom: 16px; padding: 16px; } }

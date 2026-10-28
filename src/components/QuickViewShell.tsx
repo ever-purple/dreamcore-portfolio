@@ -4,7 +4,7 @@ import '../meadow-v2.css';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { CursorLabel } from './CursorLabel';
-import { FirstMixVideo } from './FirstMixVideo';
+import { FirstMixVideoDrawer } from './FirstMixVideoDrawer';
 import { ShareCardOverlay } from './ShareCardOverlay';
 import { StudioChrome } from './StudioChrome';
 import { CONTACT, RESUME_FILENAME, RESUME_URL } from '../data/contact';
@@ -582,13 +582,13 @@ export function QuickViewShell({ onBack, onExplore }: QuickViewShellProps) {
 
             <section className="qv-work-subchapter" aria-labelledby="qv-experiment-title">
               <header className="qv-work-subchapter__header"><span>01-B</span><h4 id="qv-experiment-title">Personal Experiment</h4><small>个人实验项目</small></header>
-              <div className="qv-experiment-pair">
-              <FirstMixVideo />
+              <div className="qv-experiment-pair qv-experiment-pair--drawer">
               <button className="qv-experiment-entry" type="button" onClick={() => onExplore('product')} data-cursor="Enter" data-cursor-tone="light" aria-label="查看 FIRST MIX 完整项目">
                 <h4>FIRST MIX</h4>
                 <p>面向零经验用户的网页打碟学习与练习产品，用渐进课程和可操作的双 Deck 控台，让第一次转场真正被听见。</p>
                 <span aria-hidden="true">↗</span>
               </button>
+              <FirstMixVideoDrawer />
               </div>
             </section>
           </div>

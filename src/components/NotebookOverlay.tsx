@@ -345,10 +345,25 @@ function BookFrame({ closing, onClose }: { closing: boolean; onClose: () => void
      书在正中直接弹出（没有从右边滑入）+ 先白一下的空封面、照片 1s 后才补上。
      现在：iframe onLoad 后才加 .is-ready —— 滑入动画挪到那一刻播，
      加载期间只有模糊背景，用户看到的就是"带着完整封面的书从右边滑进来"。 */
-  const [ready, setReady] = useState(false);
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [attempt, setAttempt] = useState(0);
+  const ready = status === 'ready';
+
+  useEffect(() => {
+    setStatus('loading');
+    const timeout = window.setTimeout(() => {
+      const doc = frameRef.current?.contentDocument;
+      if (doc?.getElementById('stage')) setStatus('ready');
+      else setStatus('error');
+    }, 12000);
+    return () => window.clearTimeout(timeout);
+  }, [attempt]);
+
   useEffect(() => {
     const onMsg = (ev: MessageEvent) => {
+      if (ev.source !== frameRef.current?.contentWindow) return;
       if (ev.data === 'diary-book:esc') onClose();
+      if (ev.data === 'diary-book:ready') setStatus('ready');
     };
     window.addEventListener('message', onMsg);
     return () => window.removeEventListener('message', onMsg);
@@ -361,20 +376,51 @@ function BookFrame({ closing, onClose }: { closing: boolean; onClose: () => void
       aria-label="实习日记"
     >
       <div className="notebook-backdrop" onClick={onClose} />
-      <div className={`notebook-page diary-book is-book-file${ready ? ' is-ready' : ''}`}>
+      <div className={`notebook-page diary-book is-book-file${ready ? ' is-ready' : ''}${status === 'error' ? ' is-error' : ''}`}>
         <iframe
+          key={attempt}
           ref={frameRef}
           className="diary-book-frame"
           src={DIARY_BOOK_URL}
           title="实习日记"
           onLoad={() => {
-            setReady(true);
+            const doc = frameRef.current?.contentDocument;
+            if (doc?.getElementById('stage')) setStatus('ready');
+            else setStatus('error');
             const w = frameRef.current?.contentWindow;
             w?.addEventListener('keydown', (ev) => {
               if (ev.key === 'Escape') onClose();
             });
           }}
+          onError={() => setStatus('error')}
         />
+        {status !== 'ready' ? (
+          <div
+            className={`diary-book-state is-${status}`}
+            role={status === 'error' ? 'alert' : 'status'}
+            aria-live="polite"
+          >
+            <svg className="diary-book-state__mark" viewBox="0 0 64 64" aria-hidden="true">
+              <path d="M16 11h27a6 6 0 0 1 6 6v36H22a6 6 0 0 1-6-6V11Z" />
+              <path d="M22 11v42M28 22h14M28 29h10" />
+            </svg>
+            {status === 'loading' ? (
+              <>
+                <strong>正在打开实习日记</strong>
+                <span>首次载入需要几秒，请稍候。</span>
+                <i className="diary-book-state__progress" aria-hidden="true" />
+              </>
+            ) : (
+              <>
+                <strong>日记没有成功打开</strong>
+                <span>可能是网络暂时中断，可以重新加载。</span>
+                <button type="button" onClick={() => setAttempt((value) => value + 1)}>
+                  重新加载
+                </button>
+              </>
+            )}
+          </div>
+        ) : null}
       </div>
       <button type="button" className="notebook-close" onClick={onClose} aria-label="关闭日记">
         <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
@@ -386,7 +432,7 @@ function BookFrame({ closing, onClose }: { closing: boolean; onClose: () => void
 }
 
 /** 单文件书地址 —— StudioSection 挂载时用**同一个 URL** 预热 HTTP 缓存（见那里注释） */
-export const DIARY_BOOK_URL = './diary-book/index.html?embed=1&v=20260926k';
+export const DIARY_BOOK_URL = './diary-book/index.html?embed=1&v=20261029a';
 
 const BOOK_FILE = true;
 

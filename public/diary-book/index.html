@@ -1672,6 +1672,11 @@ syncStacks();
 setStage();
 hudButtons();
 fit();
+/* 告诉作品集外壳：书体、尺寸和首屏内容已经可以显示。
+   外壳同时保留 iframe onLoad 与超时检测，避免单一事件失效时再次出现永久空白。 */
+if (window.parent !== window) {
+  requestAnimationFrame(() => window.parent.postMessage('diary-book:ready', location.origin));
+}
 
 /* 图表点击放大（lightbox）：克隆 SVG 并继承所在纸面的 tone 变量 */
 function toneOf(el, name){

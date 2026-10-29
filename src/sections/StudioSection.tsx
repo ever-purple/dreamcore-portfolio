@@ -29,7 +29,7 @@ const CrtOverlay = lazy(() =>
 const loadNotebookOverlay = () =>
   import('@/components/NotebookOverlay').then((module) => ({ default: module.NotebookOverlay }));
 const NotebookOverlay = lazy(loadNotebookOverlay);
-const DIARY_BOOK_URL = './diary-book/index.html?embed=1&v=20260926k';
+const DIARY_BOOK_URL = './diary-book/index.html?embed=1&v=20261029a';
 import { StudioMenu } from '@/components/StudioMenu';
 import { StudioLensBackground } from '@/components/StudioLensBackground';
 import { StudioContactPanel, type StudioContactHandle } from '@/components/StudioContactPanel';
@@ -530,6 +530,10 @@ export function StudioSection({ entryTarget = 'studio', entryPlanSlot = null, en
         // 电脑走极端版（扎进显像管 + 过曝白光），**不套**温和对焦
         openCrt();
       } else if (object.id === 'notebook') {
+        /* 触屏设备没有 hover：点击后立刻并行预取组件和 3MB 日记文件，
+           利用镜头推近的时间完成大部分加载，避免浮层打开后只剩空背景。 */
+        void loadNotebookOverlay();
+        fetch(DIARY_BOOK_URL).catch(() => {});
         openFocused('notebook', () => setNotebookOpen(true));
       } else if (object.id === 'carousel') {
         openFocused('carousel', () => setWorksOpen(true));
